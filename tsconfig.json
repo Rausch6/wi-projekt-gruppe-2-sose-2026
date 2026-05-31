@@ -1,6 +1,6 @@
 {
-  "allowJs": true
-  "checkJs": false
+  "allowJs": true,
+  "checkJs": false,
   
   "extends": "zotero-types/entries/sandbox/",
   "include": ["src//*.ts", "src//*.js"],
