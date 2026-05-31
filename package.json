@@ -1,10 +1,10 @@
 {
   "name": "zotero-plugin-template",
   "type": "module",
-  "version": "3.1.0",
-  "description": "Zotero Plugin Template",
+  "version": "0.0.1",
+  "description": "Zotero Sentiment Search AI",
   "config": {
-    "addonName": "Zotero Plugin Template",
+    "addonName": "Zotero Sentiment Search AI",
     "addonID": "addontemplate@euclpts.com",
     "addonRef": "addontemplate",
     "addonInstance": "AddonTemplate",
@@ -12,7 +12,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/windingwind/zotero-plugin-template.git"
+    "url": "git+https://gitup.uni-potsdam.de/medda1/wi-projekt-gruppe-2-sose-2026.git"
   },
   "author": "windingwind",
   "bugs": {
