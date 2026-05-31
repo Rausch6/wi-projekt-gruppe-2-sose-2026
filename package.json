@@ -12,13 +12,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://gitup.uni-potsdam.de/medda1/wi-projekt-gruppe-2-sose-2026.git"
+    "url": "git+https://github.com/Rausch6/wi-projekt-gruppe-2-sose-2026.git"
   },
   "author": "windingwind",
   "bugs": {
-    "url": "https://github.com/windingwind/zotero-plugin-template/issues"
+    "url": "https://github.com/Rausch6/wi-projekt-gruppe-2-sose-2026/issues"
   },
-  "homepage": "https://github.com/windingwind/zotero-plugin-template#readme",
+  "homepage": "https://github.com/Rausch6/wi-projekt-gruppe-2-sose-2026#readme",
   "license": "AGPL-3.0-or-later",
   "scripts": {
     "start": "zotero-plugin serve",
