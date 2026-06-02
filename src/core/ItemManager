@@ -1,0 +1,64 @@
+export interface ItemData {
+    id: number;
+    libraryID: number; 
+    firstAuthor: string;
+    year: number;
+    itemtype: string; 
+}
+
+export class ItemManager {
+
+    /**
+     * Holt alle aktuell ausgewählten Items im Zotero-Hauptfenster.
+     * @returns Array von Zotero Item-Objekten
+     */
+
+    static getSelectedItems(): any[] {
+
+        const pane = Zotero.Pane;
+        return pane ? pane.getSelectedItems() : [];
+    }
+
+    /**
+     * Filtert die Auswahl auf "reguläre" Items (Artikel, Bücher etc.).
+     * Dies verhindert Abstürze, falls der Nutzer versehentlich 
+     * ein PDF-Attachment oder eine Notiz direkt angeklickt hat.
+     */
+
+    static filterItems(): any[]{
+        const items=this.getSelectedItems();
+        return items.filter(item => item.isRegularItem());
+    }
+
+    /**
+     * Extrahiert die relevanten Metadaten aus einem Zotero-Item.
+     * @param item Das Zotero Item-Objekt
+     * @returns Ein strukturiertes ItemMetadata-Objekt
+     */
+    static extractMetadata(item: any): ItemMetadata {
+        return {
+            id: item.id,
+            libraryID: item.libraryID, // Wichtig für Group Libraries
+            title: item.getField('title') || 'Ohne Titel',
+            firstCreator: item.getField('firstCreator') || 'Unbekannter Autor',
+            year: item.getField('year') || '',
+            itemType: Zotero.ItemTypes.getName(item.itemTypeID) // Z.B. "journalArticle"
+        };
+    }
+
+    /**
+     * Convenience-Methode: Holt sofort die Metadaten des ersten 
+     * markierten, gültigen Papers. Perfekt für den Start eines Chats.
+     */
+    static getFirstSelectedMetadata(): ItemMetadata | null {
+        const validItems = this.getValidParentItems();
+        
+        if (validItems.length === 0) {
+            Zotero.debug("KI-Plugin: Kein gültiges Paper ausgewählt.");
+            return null;
+        }
+
+        return this.extractMetadata(validItems[0]);
+    }
+
+}
