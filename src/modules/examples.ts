@@ -1,11 +1,12 @@
 import { getLocaleID, getString } from "../utils/locale";
 import {
-  markAssistantSidenavBody,
-  openAssistantStandaloneSidebar,
   registerAssistantStandaloneSidebar,
-  toggleAssistantStandaloneSidebar,
   unregisterAssistantStandaloneSidebar,
 } from "../ui/assistantStandaloneSidebar";
+import {
+  registerAssistantToolbarButton,
+  unregisterAssistantToolbarButton,
+} from "../ui/assistantToolbarButton";
 
 function example(
   target: any,
@@ -153,30 +154,19 @@ export class UIExampleFactory {
   }
 
   @example
-  static registerAssistantSidenavButton() {
-    const paneID = `${addon.data.config.addonRef}-ai-assistant-trigger`;
-    const icon = `chrome://${addon.data.config.addonRef}/content/icons/assistant.svg`;
+  static registerAssistantToolbarButton(win: _ZoteroTypes.MainWindow) {
+    registerAssistantToolbarButton(win);
+  }
 
+  @example
+  static unregisterAssistantToolbarButton(win: _ZoteroTypes.MainWindow) {
+    unregisterAssistantToolbarButton(win);
+  }
+
+  @example
+  static unregisterAssistantSidenavButton() {
+    const paneID = `${addon.data.config.addonRef}-ai-assistant-trigger`;
     Zotero.ItemPaneManager.unregisterSection(paneID);
-    Zotero.ItemPaneManager.registerSection({
-      paneID,
-      pluginID: addon.data.config.addonID,
-      header: {
-        l10nID: getLocaleID("item-section-ai-assistant-head-text"),
-        icon,
-      },
-      sidenav: {
-        l10nID: getLocaleID("item-section-ai-assistant-sidenav-tooltip"),
-        icon,
-      },
-      onRender: ({ body }) => {
-        markAssistantSidenavBody(body);
-        openAssistantStandaloneSidebar(Zotero.getMainWindow());
-      },
-      onToggle: () => {
-        toggleAssistantStandaloneSidebar(Zotero.getMainWindow());
-      },
-    });
   }
 
   @example

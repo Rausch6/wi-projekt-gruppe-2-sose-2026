@@ -30,7 +30,7 @@ async function onStartup() {
 
   UIExampleFactory.registerItemPaneCustomInfoRow();
 
-  UIExampleFactory.registerAssistantSidenavButton();
+  UIExampleFactory.unregisterAssistantSidenavButton();
 
   UIExampleFactory.registerItemPaneSection();
 
@@ -69,7 +69,7 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
 
   UIExampleFactory.registerStyleSheet(win);
 
-  UIExampleFactory.registerAssistantStandaloneSidebar(win);
+  UIExampleFactory.registerAssistantToolbarButton(win);
 
   UIExampleFactory.registerRightClickMenuItem();
 
@@ -95,6 +95,9 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
 }
 
 async function onMainWindowUnload(win: Window): Promise<void> {
+  UIExampleFactory.unregisterAssistantToolbarButton(
+    win as _ZoteroTypes.MainWindow,
+  );
   UIExampleFactory.unregisterAssistantStandaloneSidebar(
     win as _ZoteroTypes.MainWindow,
   );
@@ -104,8 +107,10 @@ async function onMainWindowUnload(win: Window): Promise<void> {
 
 function onShutdown(): void {
   Zotero.getMainWindows().forEach((win) => {
+    UIExampleFactory.unregisterAssistantToolbarButton(win);
     UIExampleFactory.unregisterAssistantStandaloneSidebar(win);
   });
+  UIExampleFactory.unregisterAssistantSidenavButton();
   ztoolkit.unregisterAll();
   addon.data.dialog?.window?.close();
   // Remove addon object
