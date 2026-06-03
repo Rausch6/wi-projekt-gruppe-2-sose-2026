@@ -138,49 +138,76 @@ export class UIExampleFactory {
 
   @example
   static registerRightClickMenuItem() {
-    const menuIcon = `chrome://${addon.data.config.addonRef}/content/icons/favicon@0.5x.png`;
-    // item menuitem with icon
-    ztoolkit.Menu.register("item", {
-      tag: "menuitem",
-      id: "zotero-itemmenu-addontemplate-test",
-      label: getString("menuitem-label"),
-      commandListener: (ev) => addon.hooks.onDialogEvents("dialogExample"),
-      icon: menuIcon,
+    const menuIcon = `chrome://${addon.data.config.addonRef}/content/icons/favicon_0.5x.png`;
+    const menuID = `${addon.data.config.addonRef}-item-helper-examples`;
+    Zotero.MenuManager.unregisterMenu(menuID);
+    Zotero.MenuManager.registerMenu({
+      menuID,
+      pluginID: addon.data.config.addonID,
+      target: "main/library/item",
+      menus: [
+        {
+          menuType: "menuitem",
+          l10nID: getLocaleID("menuitem-label"),
+          icon: menuIcon,
+          onCommand: () => addon.hooks.onDialogEvents("dialogExample"),
+        },
+      ],
     });
   }
 
   @example
-  static registerRightClickMenuPopup(win: Window) {
-    ztoolkit.Menu.register(
-      "item",
-      {
-        tag: "menu",
-        label: getString("menupopup-label"),
-        children: [
-          {
-            tag: "menuitem",
-            label: getString("menuitem-submenulabel"),
-            oncommand: "alert('Hello World! Sub Menuitem.')",
-          },
-        ],
-      },
-      "before",
-      win.document?.querySelector(
-        "#zotero-itemmenu-addontemplate-test",
-      ) as XUL.MenuItem,
-    );
+  static registerRightClickMenuPopup(_win: Window) {
+    const menuID = `${addon.data.config.addonRef}-item-submenu-example`;
+    Zotero.MenuManager.unregisterMenu(menuID);
+    Zotero.MenuManager.registerMenu({
+      menuID,
+      pluginID: addon.data.config.addonID,
+      target: "main/library/item",
+      menus: [
+        {
+          menuType: "submenu",
+          l10nID: getLocaleID("menupopup-label"),
+          menus: [
+            {
+              menuType: "menuitem",
+              l10nID: getLocaleID("menuitem-submenulabel"),
+              onCommand: () =>
+                Zotero.alert(
+                  Zotero.getMainWindow(),
+                  addon.data.config.addonName,
+                  "Hello World! Sub Menuitem.",
+                ),
+            },
+          ],
+        },
+      ],
+    });
   }
 
   @example
   static registerWindowMenuWithSeparator() {
-    ztoolkit.Menu.register("menuFile", {
-      tag: "menuseparator",
-    });
-    // menu->File menuitem
-    ztoolkit.Menu.register("menuFile", {
-      tag: "menuitem",
-      label: getString("menuitem-filemenulabel"),
-      oncommand: "alert('Hello World! File Menuitem.')",
+    const menuID = `${addon.data.config.addonRef}-file-menu-example`;
+    Zotero.MenuManager.unregisterMenu(menuID);
+    Zotero.MenuManager.registerMenu({
+      menuID,
+      pluginID: addon.data.config.addonID,
+      target: "main/menubar/file",
+      menus: [
+        {
+          menuType: "separator",
+        },
+        {
+          menuType: "menuitem",
+          l10nID: getLocaleID("menuitem-filemenulabel"),
+          onCommand: () =>
+            Zotero.alert(
+              Zotero.getMainWindow(),
+              addon.data.config.addonName,
+              "Hello World! File Menuitem.",
+            ),
+        },
+      ],
     });
   }
 
@@ -370,7 +397,7 @@ export class PromptExampleFactory {
         callback: async (prompt) => {
           // https://github.com/zotero/zotero/blob/7262465109c21919b56a7ab214f7c7a8e1e63909/chrome/content/zotero/integration/quickFormat.js#L589
           function getItemDescription(item: Zotero.Item) {
-            const nodes = [];
+            const nodes: string[] = [];
             let str = "";
             let author,
               authorDate = "";
@@ -397,7 +424,7 @@ export class PromptExampleFactory {
             if (issue) volumeIssue += "(" + issue + ")";
             if (volumeIssue) nodes.push(volumeIssue);
 
-            const publisherPlace = [];
+            const publisherPlace: string[] = [];
             let field;
             if ((field = item.getField("publisher")))
               publisherPlace.push(field);
