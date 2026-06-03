@@ -1,4 +1,11 @@
 import { getLocaleID, getString } from "../utils/locale";
+import {
+  markAssistantSidenavBody,
+  openAssistantStandaloneSidebar,
+  registerAssistantStandaloneSidebar,
+  toggleAssistantStandaloneSidebar,
+  unregisterAssistantStandaloneSidebar,
+} from "../ui/assistantStandaloneSidebar";
 
 function example(
   target: any,
@@ -133,7 +140,43 @@ export class UIExampleFactory {
       },
     });
     doc.documentElement?.appendChild(styles);
-    doc.getElementById("zotero-item-pane-content")?.classList.add("makeItRed");
+  }
+
+  @example
+  static registerAssistantStandaloneSidebar(win: _ZoteroTypes.MainWindow) {
+    registerAssistantStandaloneSidebar(win);
+  }
+
+  @example
+  static unregisterAssistantStandaloneSidebar(win: _ZoteroTypes.MainWindow) {
+    unregisterAssistantStandaloneSidebar(win);
+  }
+
+  @example
+  static registerAssistantSidenavButton() {
+    const paneID = `${addon.data.config.addonRef}-ai-assistant-trigger`;
+    const icon = `chrome://${addon.data.config.addonRef}/content/icons/assistant.svg`;
+
+    Zotero.ItemPaneManager.unregisterSection(paneID);
+    Zotero.ItemPaneManager.registerSection({
+      paneID,
+      pluginID: addon.data.config.addonID,
+      header: {
+        l10nID: getLocaleID("item-section-ai-assistant-head-text"),
+        icon,
+      },
+      sidenav: {
+        l10nID: getLocaleID("item-section-ai-assistant-sidenav-tooltip"),
+        icon,
+      },
+      onRender: ({ body }) => {
+        markAssistantSidenavBody(body);
+        openAssistantStandaloneSidebar(Zotero.getMainWindow());
+      },
+      onToggle: () => {
+        toggleAssistantStandaloneSidebar(Zotero.getMainWindow());
+      },
+    });
   }
 
   @example

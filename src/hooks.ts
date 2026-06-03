@@ -30,6 +30,8 @@ async function onStartup() {
 
   UIExampleFactory.registerItemPaneCustomInfoRow();
 
+  UIExampleFactory.registerAssistantSidenavButton();
+
   UIExampleFactory.registerItemPaneSection();
 
   UIExampleFactory.registerReaderItemPaneSection();
@@ -67,6 +69,8 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
 
   UIExampleFactory.registerStyleSheet(win);
 
+  UIExampleFactory.registerAssistantStandaloneSidebar(win);
+
   UIExampleFactory.registerRightClickMenuItem();
 
   UIExampleFactory.registerRightClickMenuPopup(win);
@@ -91,11 +95,17 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
 }
 
 async function onMainWindowUnload(win: Window): Promise<void> {
+  UIExampleFactory.unregisterAssistantStandaloneSidebar(
+    win as _ZoteroTypes.MainWindow,
+  );
   ztoolkit.unregisterAll();
   addon.data.dialog?.window?.close();
 }
 
 function onShutdown(): void {
+  Zotero.getMainWindows().forEach((win) => {
+    UIExampleFactory.unregisterAssistantStandaloneSidebar(win);
+  });
   ztoolkit.unregisterAll();
   addon.data.dialog?.window?.close();
   // Remove addon object
