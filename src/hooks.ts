@@ -9,6 +9,34 @@ import { getString, initLocale } from "./utils/locale";
 import { registerPrefsScripts } from "./modules/preferenceScript";
 import { createZToolkit } from "./utils/ztoolkit";
 
+// Reads one setting from Zotero's preference storage for this plugin.
+// The prefix keeps our settings separate from Zotero's own settings.
+function getPluginPref(key: string) {
+  return Zotero.Prefs.get(`${addon.data.config.prefsPrefix}.${key}`, true);
+}
+
+function getStringSetting(key: string, fallback = "") {
+  const value = getPluginPref(key);
+  return typeof value === "string" ? value : fallback;
+}
+
+function getNumberSetting(key: string, fallback: number) {
+  const value = getPluginPref(key);
+  return typeof value === "number" ? value : fallback;
+}
+
+function loadSettings() {
+  // Copy saved Zotero preferences into addon.data.settings.
+  // Other code can then read settings from one central place.
+  addon.data.settings = {
+    provider: "kisski",
+    apiKey: getStringSetting("apiKey"),
+    baseUrl: getStringSetting("baseUrl"),
+    model: getStringSetting("model"),
+    maxItems: getNumberSetting("maxItems", 20),
+  };
+}
+
 async function onStartup() {
   await Promise.all([
     Zotero.initializationPromise,
@@ -17,6 +45,7 @@ async function onStartup() {
   ]);
 
   initLocale();
+  loadSettings();
 
   BasicExampleFactory.registerPrefs();
 
@@ -136,6 +165,7 @@ async function onNotify(
 async function onPrefsEvent(type: string, data: { [key: string]: any }) {
   switch (type) {
     case "load":
+      loadSettings();
       registerPrefsScripts(data.window);
       break;
     default:
