@@ -1,9 +1,10 @@
 export interface ItemData {
     id: number;
     libraryID: number; 
-    firstAuthor: string;
-    year: number;
-    itemtype: string; 
+    title: string;
+    firstCreator: string;
+    year: string;
+    itemType: string; 
 }
 
 export class ItemManager {
@@ -13,19 +14,18 @@ export class ItemManager {
      * @returns Array von Zotero Item-Objekten
      */
 
-    static getSelectedItems(): any[] {
+    static getSelectedItems(): Zotero.Item[] {
 
-        const pane = Zotero.Pane;
-        return pane ? pane.getSelectedItems() : [];
+        const pane = Zotero.getActiveZoteroPane();
+        return pane ? (pane.getSelectedItems() as Zotero.Item[]) : [];
     }
 
     /**
-     * Filtert die Auswahl auf "reguläre" Items (Artikel, Bücher etc.).
-     * Dies verhindert Abstürze, falls der Nutzer versehentlich 
-     * ein PDF-Attachment oder eine Notiz direkt angeklickt hat.
+     * Filtert die Auswahl auf reguläre Items, wie Artikel, Bücher etc.
+     * Verhindert Abstürze, falls ein PDF-Attachment oder eine Notiz direkt angeklickt hat.
      */
 
-    static filterItems(): any[]{
+    static filterItems(): Zotero.Item[]{
         const items=this.getSelectedItems();
         return items.filter(item => item.isRegularItem());
     }
@@ -33,32 +33,32 @@ export class ItemManager {
     /**
      * Extrahiert die relevanten Metadaten aus einem Zotero-Item.
      * @param item Das Zotero Item-Objekt
-     * @returns Ein strukturiertes ItemMetadata-Objekt
+     * @returns Ein strukturiertes ItemData-Objekt
      */
-    static extractMetadata(item: any): ItemMetadata {
+    static extractItemData(item: Zotero.Item): ItemData {
         return {
             id: item.id,
-            libraryID: item.libraryID, // Wichtig für Group Libraries
+            libraryID: item.libraryID, 
             title: item.getField('title') || 'Ohne Titel',
-            firstCreator: item.getField('firstCreator') || 'Unbekannter Autor',
+            firstCreator: item.getField('firstCreator') || 'Unbekannter Creator',
             year: item.getField('year') || '',
-            itemType: Zotero.ItemTypes.getName(item.itemTypeID) // Z.B. "journalArticle"
+            itemType: Zotero.ItemTypes.getName(item.itemTypeID) 
         };
     }
 
     /**
      * Convenience-Methode: Holt sofort die Metadaten des ersten 
-     * markierten, gültigen Papers. Perfekt für den Start eines Chats.
+     * markierten, gültigen Papers. Schnittstelle für die UI, um direkt mit einem Item zu arbeiten.
      */
-    static getFirstSelectedMetadata(): ItemMetadata | null {
-        const validItems = this.getValidParentItems();
+    static getFirstSelectedItemData(): ItemData | null {
+        const validItems = this.filterItems();
         
         if (validItems.length === 0) {
             Zotero.debug("KI-Plugin: Kein gültiges Paper ausgewählt.");
             return null;
         }
 
-        return this.extractMetadata(validItems[0]);
+        return this.extractItemData(validItems[0]);
     }
 
 }
