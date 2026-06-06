@@ -8,19 +8,14 @@ import {
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
-const BUTTON_ID = `${config.addonRef}-ai-assistant-toolbar-button`;
-const FALLBACK_ID = `${config.addonRef}-ai-assistant-toolbar-fallback`;
+const LEGACY_BUTTON_ID = `${config.addonRef}-ai-assistant-toolbar-button`;
+const LEGACY_FALLBACK_ID = `${config.addonRef}-ai-assistant-toolbar-fallback`;
+const BUTTON_ATTRIBUTE = "data-zai-assistant-trigger";
+const SLOT_ATTRIBUTE = "data-zai-assistant-trigger-slot";
 const BUTTON_LABEL = "Zotero AI Assistent";
 const BUTTON_TOOLTIP = "Zotero AI Assistent öffnen/schließen";
 
-const TOOLBAR_SELECTORS = [
-  "#zotero-items-toolbar",
-  "#zotero-toolbar",
-  "#zotero-pane-toolbar",
-  "#zotero-collections-toolbar",
-  "#zotero-view-toolbar",
-  "toolbar",
-];
+const SIDENAV_IDS = ["zotero-view-item-sidenav", "zotero-context-pane-sidenav"];
 
 const states = new WeakMap<Window, { cleanup: () => void }>();
 
@@ -28,40 +23,101 @@ type XulDocument = Document & {
   createXULElement?: (tagName: string) => XULElement;
 };
 
+type SidenavElement = Element & {
+  container?: Element;
+};
+
+type MountedButton = {
+  root: Element;
+  button: Element;
+  activationEvent: "click" | "command";
+  onActivate: EventListener;
+  onKeyDown?: EventListener;
+  stopClick?: EventListener;
+};
+
 export function registerAssistantToolbarButton(win: _ZoteroTypes.MainWindow) {
   const doc = win.document;
   unregisterAssistantToolbarButton(win);
   registerAssistantStandaloneSidebar(win);
 
-  const target = findToolbarTarget(doc) ?? createFallbackTarget(doc);
-  if (!target) {
-    return;
-  }
+  const buttons = new Set<MountedButton>();
 
-  const button = createToolbarButton(doc, target);
   const syncButtonState = () => {
     const open = isAssistantStandaloneSidebarOpen(win);
-    button.classList.toggle("zai-toolbar-button-active", open);
-    button.setAttribute("aria-pressed", String(open));
-    button.setAttribute("checked", String(open));
+    for (const mounted of [...buttons]) {
+      if (!mounted.button.isConnected) {
+        cleanupMountedButton(mounted);
+        buttons.delete(mounted);
+        continue;
+      }
+
+      mounted.button.classList.toggle("zai-sidenav-button-active", open);
+      mounted.button.setAttribute("aria-pressed", String(open));
+      mounted.button.setAttribute("checked", String(open));
+    }
   };
-  const onActivate = () => {
-    toggleAssistantStandaloneSidebar(win);
+
+  const mountButtons = () => {
+    for (const target of findSidenavTargets(win)) {
+      if (hasAssistantButton(target)) {
+        continue;
+      }
+
+      const created = createSidenavButton(doc, target);
+      const { button } = created;
+      const activationEvent =
+        button.namespaceURI === XUL_NS ? "command" : "click";
+      const onActivate: EventListener = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleAssistantStandaloneSidebar(win);
+        syncButtonState();
+      };
+      const mounted: MountedButton = {
+        root: created.root,
+        button,
+        activationEvent,
+        onActivate,
+      };
+
+      if (activationEvent === "command") {
+        mounted.stopClick = (event) => event.stopPropagation();
+        button.addEventListener("click", mounted.stopClick);
+      }
+
+      if (created.needsKeyboardActivation) {
+        mounted.onKeyDown = (event) => {
+          const key = (event as KeyboardEvent).key;
+          if (key !== " " && key !== "Enter") {
+            return;
+          }
+          onActivate(event);
+        };
+        button.addEventListener("keydown", mounted.onKeyDown);
+      }
+
+      button.addEventListener(activationEvent, onActivate);
+      mountSidenavButton(target, created.root);
+      buttons.add(mounted);
+    }
+
     syncButtonState();
   };
-  const activationEvent = button.namespaceURI === XUL_NS ? "command" : "click";
+  const observer = new win.MutationObserver(mountButtons);
 
-  button.addEventListener(activationEvent, onActivate);
   win.addEventListener(ASSISTANT_STATE_EVENT, syncButtonState);
-  target.append(button);
-  syncButtonState();
+  observer.observe(doc.documentElement, { childList: true, subtree: true });
+  mountButtons();
 
   states.set(win, {
     cleanup: () => {
-      button.removeEventListener(activationEvent, onActivate);
       win.removeEventListener(ASSISTANT_STATE_EVENT, syncButtonState);
-      button.remove();
-      cleanupFallbackTarget(doc);
+      observer.disconnect();
+      for (const mounted of buttons) {
+        cleanupMountedButton(mounted);
+      }
+      buttons.clear();
     },
   });
 }
@@ -71,46 +127,99 @@ export function unregisterAssistantToolbarButton(win: Window) {
   states.delete(win);
 
   const doc = win.document;
-  doc.getElementById(BUTTON_ID)?.remove();
-  cleanupFallbackTarget(doc);
+  removeAssistantButtons(doc);
+  cleanupLegacyToolbarButton(doc);
 }
 
-function findToolbarTarget(doc: Document) {
-  for (const selector of TOOLBAR_SELECTORS) {
-    const element = doc.querySelector(selector);
+function findSidenavTargets(win: _ZoteroTypes.MainWindow) {
+  const doc = win.document;
+  const sidenavs = new Set<Element>();
+  const targets = new Set<Element>();
+
+  for (const id of SIDENAV_IDS) {
+    const element = doc.getElementById(id);
     if (element) {
-      return element;
+      sidenavs.add(element);
     }
   }
-  return undefined;
-}
 
-function createFallbackTarget(doc: Document) {
-  const existing = doc.getElementById(FALLBACK_ID);
-  if (existing) {
-    return existing;
+  const contextPane = (win as unknown as { ZoteroContextPane?: unknown })
+    .ZoteroContextPane as { sidenav?: SidenavElement } | undefined;
+  if (contextPane?.sidenav) {
+    sidenavs.add(contextPane.sidenav);
   }
 
-  const root = doc.getElementById("zotero-pane") ?? doc.documentElement;
-  if (!root) {
-    return undefined;
+  for (const sidenav of sidenavs) {
+    const nativeSidenav = getNativeSidenavElement(sidenav);
+    targets.add(
+      nativeSidenav ?? sidenav.querySelector(".inherit-flex") ?? sidenav,
+    );
   }
 
-  const fallback = doc.createElementNS(HTML_NS, "div");
-  fallback.id = FALLBACK_ID;
-  fallback.className = "zai-toolbar-fallback";
-  root.prepend(fallback);
-  return fallback;
+  return [...targets];
 }
 
-function cleanupFallbackTarget(doc: Document) {
-  const fallback = doc.getElementById(FALLBACK_ID);
-  if (fallback && !fallback.childElementCount) {
-    fallback.remove();
+function hasAssistantButton(target: Element) {
+  return Boolean(target.querySelector(`[${BUTTON_ATTRIBUTE}="true"]`));
+}
+
+function createSidenavButton(doc: Document, target: Element) {
+  if (isNativeSidenavElement(target)) {
+    return createNativeSidenavButton(doc);
   }
+
+  return createFallbackSidenavButton(doc, target);
 }
 
-function createToolbarButton(doc: Document, target: Element) {
+function getNativeSidenavElement(target: Element) {
+  if (isNativeSidenavElement(target)) {
+    return target;
+  }
+
+  return target.closest("item-pane-sidenav");
+}
+
+function isNativeSidenavElement(target: Element) {
+  return target.localName === "item-pane-sidenav";
+}
+
+function createNativeSidenavButton(doc: Document) {
+  const slot = doc.createElementNS(HTML_NS, "div") as HTMLElement;
+  slot.className = "zai-sidenav-assistant-slot";
+  slot.setAttribute(SLOT_ATTRIBUTE, "true");
+
+  const divider = doc.createElementNS(HTML_NS, "div") as HTMLElement;
+  divider.className = "divider";
+
+  const wrapper = doc.createElementNS(HTML_NS, "div") as HTMLElement;
+  wrapper.className = "pin-wrapper";
+
+  const button = doc.createElementNS(HTML_NS, "div") as HTMLElement;
+  button.classList.add("btn");
+  button.setAttribute(BUTTON_ATTRIBUTE, "true");
+  button.setAttribute("custom", "true");
+  button.setAttribute("tabindex", "0");
+  button.setAttribute("role", "button");
+  button.setAttribute("label", BUTTON_LABEL);
+  button.setAttribute("aria-label", BUTTON_LABEL);
+  button.setAttribute("title", BUTTON_TOOLTIP);
+  button.setAttribute("tooltiptext", BUTTON_TOOLTIP);
+  button.style.setProperty(
+    "--custom-sidenav-icon-light",
+    `url('${getAssistantIcon()}')`,
+  );
+  button.style.setProperty(
+    "--custom-sidenav-icon-dark",
+    `url('${getAssistantIcon()}')`,
+  );
+
+  wrapper.append(button);
+  slot.append(divider, wrapper);
+
+  return { root: slot, button, needsKeyboardActivation: true };
+}
+
+function createFallbackSidenavButton(doc: Document, target: Element) {
   const xulDoc = doc as XulDocument;
   const useXulButton = target.namespaceURI === XUL_NS;
   const button = useXulButton
@@ -118,8 +227,8 @@ function createToolbarButton(doc: Document, target: Element) {
       doc.createElementNS(XUL_NS, "toolbarbutton"))
     : doc.createElementNS(HTML_NS, "button");
 
-  button.id = BUTTON_ID;
-  button.classList.add("zai-toolbar-button");
+  button.classList.add("zai-sidenav-button");
+  button.setAttribute(BUTTON_ATTRIBUTE, "true");
   button.setAttribute("type", "button");
   button.setAttribute("label", BUTTON_LABEL);
   button.setAttribute("aria-label", BUTTON_LABEL);
@@ -128,19 +237,60 @@ function createToolbarButton(doc: Document, target: Element) {
   button.setAttribute("image", getAssistantIcon());
 
   if (useXulButton) {
-    button.classList.add("toolbarbutton-1", "chromeclass-toolbar-additional");
+    button.classList.add("toolbarbutton-1");
   } else {
     const icon = doc.createElementNS(HTML_NS, "img");
-    icon.className = "zai-toolbar-button-icon";
+    icon.className = "zai-sidenav-button-icon";
     icon.setAttribute("alt", "");
     icon.setAttribute("aria-hidden", "true");
     icon.setAttribute("src", getAssistantIcon());
     button.append(icon);
   }
 
-  return button;
+  return { root: button, button, needsKeyboardActivation: false };
+}
+
+function mountSidenavButton(target: Element, root: Element) {
+  if (!isNativeSidenavElement(target)) {
+    target.append(root);
+    return;
+  }
+
+  target.insertBefore(root, target.querySelector("popupset"));
+}
+
+function cleanupMountedButton(mounted: MountedButton) {
+  mounted.button.removeEventListener(
+    mounted.activationEvent,
+    mounted.onActivate,
+  );
+  if (mounted.onKeyDown) {
+    mounted.button.removeEventListener("keydown", mounted.onKeyDown);
+  }
+  if (mounted.stopClick) {
+    mounted.button.removeEventListener("click", mounted.stopClick);
+  }
+  mounted.root.remove();
+}
+
+function removeAssistantButtons(doc: Document) {
+  doc
+    .querySelectorAll(`[${SLOT_ATTRIBUTE}="true"]`)
+    .forEach((slot) => slot.remove());
+  doc
+    .querySelectorAll(`[${BUTTON_ATTRIBUTE}="true"]`)
+    .forEach((button) => button.remove());
+}
+
+function cleanupLegacyToolbarButton(doc: Document) {
+  doc.getElementById(LEGACY_BUTTON_ID)?.remove();
+
+  const fallback = doc.getElementById(LEGACY_FALLBACK_ID);
+  if (fallback && !fallback.childElementCount) {
+    fallback.remove();
+  }
 }
 
 function getAssistantIcon() {
-  return `chrome://${config.addonRef}/content/icons/assistant.svg`;
+  return `chrome://${config.addonRef}/content/icons/IconPlugin.png`;
 }

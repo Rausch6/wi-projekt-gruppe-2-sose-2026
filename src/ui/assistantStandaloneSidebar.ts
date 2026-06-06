@@ -4,6 +4,7 @@ import { renderAssistantSidebar } from "./assistantSidebar";
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const SIDEBAR_ID = `${config.addonRef}-standalone-ai-sidebar`;
 const DEFAULT_PANEL_WIDTH = 390;
+const ASSISTANT_TRIGGER_SELECTOR = '[data-zai-assistant-trigger="true"]';
 export const ASSISTANT_STATE_EVENT = `${config.addonRef}-ai-assistant-state-change`;
 
 const states = new WeakMap<
@@ -111,7 +112,11 @@ export function registerAssistantStandaloneSidebar(
     setOpen(open);
     return open;
   };
-  const closeOnSidenavActivate = () => {
+  const closeOnSidenavActivate = (event: Event) => {
+    if (isAssistantTriggerEvent(event)) {
+      return;
+    }
+
     if (panel.hidden === true) {
       return;
     }
@@ -171,7 +176,7 @@ export function markAssistantSidenavBody(body: HTMLElement) {
 
 function addSidenavCloseListeners(
   win: _ZoteroTypes.MainWindow,
-  close: () => void,
+  close: (event: Event) => void,
 ) {
   const sidenavs = getSidenavElements(win);
   const eventTypes = ["click", "command"];
@@ -189,6 +194,11 @@ function addSidenavCloseListeners(
       }
     }
   };
+}
+
+function isAssistantTriggerEvent(event: Event) {
+  const target = event.target as Element | null;
+  return Boolean(target?.closest?.(ASSISTANT_TRIGGER_SELECTOR));
 }
 
 function getSidenavElements(win: _ZoteroTypes.MainWindow) {

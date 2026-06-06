@@ -2,27 +2,29 @@
   background-color: tomato;
 }
 
-.zai-toolbar-button {
+.zai-sidenav-button {
   -moz-context-properties: fill, stroke;
   fill: currentColor;
   stroke: currentColor;
-  list-style-image: url("icons/assistant.svg");
+  list-style-image: url("icons/IconPlugin.png");
 }
 
-toolbarbutton.zai-toolbar-button {
+toolbarbutton.zai-sidenav-button {
+  margin: 2px 0;
+  min-height: 32px;
   min-width: 32px;
 }
 
-toolbarbutton.zai-toolbar-button .toolbarbutton-icon {
+toolbarbutton.zai-sidenav-button .toolbarbutton-icon {
   width: 18px;
   height: 18px;
 }
 
-toolbarbutton.zai-toolbar-button .toolbarbutton-text {
+toolbarbutton.zai-sidenav-button .toolbarbutton-text {
   display: none;
 }
 
-button.zai-toolbar-button {
+button.zai-sidenav-button {
   align-items: center;
   appearance: none;
   background: transparent;
@@ -30,32 +32,56 @@ button.zai-toolbar-button {
   border-radius: 6px;
   color: inherit;
   display: inline-flex;
+  flex: 0 0 auto;
   height: 32px;
   justify-content: center;
-  margin: 0 2px;
+  margin: 2px 0;
   padding: 0;
   width: 32px;
 }
 
-.zai-toolbar-button:hover,
-.zai-toolbar-button:focus-visible,
-.zai-toolbar-button-active {
+.zai-sidenav-button:hover,
+.zai-sidenav-button:focus-visible,
+.zai-sidenav-button.zai-sidenav-button-active {
   background-color: color-mix(in srgb, currentColor 12%, transparent);
 }
 
-.zai-toolbar-button-icon {
+.zai-sidenav-button-icon {
   display: block;
   height: 18px;
   width: 18px;
 }
 
-.zai-toolbar-fallback {
+item-pane-sidenav
+  .btn[data-zai-assistant-trigger="true"].zai-sidenav-button-active {
+  background-color: var(--fill-quinary);
+}
+
+item-pane-sidenav .btn[data-zai-assistant-trigger="true"] {
+  background-size: 25px 25px;
+}
+
+item-pane-sidenav .zai-sidenav-assistant-slot {
   align-items: center;
   display: flex;
-  position: fixed;
-  right: 72px;
-  top: 8px;
-  z-index: 1000;
+  flex-direction: column;
+  gap: inherit;
+}
+
+item-pane-sidenav:not(.stacked) .zai-sidenav-assistant-slot > .divider {
+  border-bottom: 1px solid var(--fill-quinary);
+  height: 0;
+  width: 20px;
+}
+
+item-pane-sidenav.stacked .zai-sidenav-assistant-slot {
+  flex-direction: row;
+}
+
+item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
+  border-inline-end: 1px solid var(--fill-quinary);
+  height: 20px;
+  width: 0;
 }
 
 .zai-standalone-sidebar {
