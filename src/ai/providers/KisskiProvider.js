@@ -5,16 +5,16 @@ import {
   httpClient,
 } from "../../utils/httpClient.js";
 
-const DEFAULT_BASE_URL = "https://api.deepseek.com";
-const DEFAULT_MODEL = "deepseek-v4-flash";
+export const KISSKI_DEFAULT_BASE_URL = "https://chat-ai.academiccloud.de/v1";
+export const KISSKI_DEFAULT_MODEL = "deepseek-r1-distill-llama-70b";
 
-export class DeepSeekProvider extends AIProvider {
+export class KisskiProvider extends AIProvider {
   constructor(options = {}) {
     super({
-      id: "deepseek",
-      name: "DeepSeek Cloud",
-      baseUrl: options.baseUrl ?? DEFAULT_BASE_URL,
-      model: options.model ?? DEFAULT_MODEL,
+      id: "kisski",
+      name: "KISSKI DeepSeek",
+      baseUrl: options.baseUrl ?? KISSKI_DEFAULT_BASE_URL,
+      model: options.model ?? KISSKI_DEFAULT_MODEL,
       apiKey: options.apiKey ?? "",
     });
     this.timeout = options.timeout ?? 120_000;
@@ -38,18 +38,26 @@ export class DeepSeekProvider extends AIProvider {
 
   async listModels() {
     const url = `${this.baseUrl}/models`;
-    const response = await httpClient.get(url, {
+    const requestOptions = {
       headers: this.getAuthHeaders(),
       timeout: Math.min(this.timeout, 30_000),
       mode: "cloud",
-    });
+    };
+
+    let response = await httpClient.get(url, requestOptions);
+
+    // KISSKI documents POST for /models, while OpenAI-compatible clients
+    // normally use GET. Support both variants.
+    if (response.status === 404 || response.status === 405) {
+      response = await httpClient.post(url, undefined, requestOptions);
+    }
     await assertHttpOk(url, response);
 
     const payload = await response.json();
     if (!Array.isArray(payload?.data)) {
       throw new AIProviderResponseError(
         this.id,
-        "DeepSeek returned an invalid model list",
+        "KISSKI returned an invalid model list",
         { details: payload },
       );
     }
@@ -59,7 +67,7 @@ export class DeepSeekProvider extends AIProvider {
       .map((model) => ({
         id: model.id,
         name: model.id,
-        ownedBy: model.owned_by ?? "deepseek",
+        ownedBy: model.owned_by ?? "kisski",
       }));
   }
 
@@ -75,7 +83,6 @@ export class DeepSeekProvider extends AIProvider {
       max_tokens: options.maxTokens,
       stop: options.stop,
       response_format: options.responseFormat,
-      thinking: options.thinking,
       tools: options.tools,
       tool_choice: options.toolChoice,
     });
@@ -95,7 +102,7 @@ export class DeepSeekProvider extends AIProvider {
       if (!message || typeof message.content !== "string") {
         throw new AIProviderResponseError(
           this.id,
-          "DeepSeek returned no assistant message",
+          "KISSKI returned no assistant message",
           { details: payload },
         );
       }
@@ -136,9 +143,7 @@ function normalizeUsage(usage) {
     promptTokens: usage.prompt_tokens ?? null,
     completionTokens: usage.completion_tokens ?? null,
     totalTokens: usage.total_tokens ?? null,
-    cacheHitTokens: usage.prompt_cache_hit_tokens ?? null,
-    cacheMissTokens: usage.prompt_cache_miss_tokens ?? null,
   };
 }
 
-export default DeepSeekProvider;
+export default KisskiProvider;
