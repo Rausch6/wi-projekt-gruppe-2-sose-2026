@@ -1,3 +1,5 @@
+import { bindAssistantChat } from "./assistantChatController";
+
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -10,6 +12,7 @@ export function renderAssistantSidebar(host: HTMLElement) {
   host.classList.remove("makeItRed");
   host.classList.add("zotero-ai-assistant-host");
   host.replaceChildren(createSidebar(doc));
+  bindAssistantChat(host);
 }
 
 function createSidebar(doc: Document) {
@@ -54,7 +57,9 @@ function createSidebar(doc: Document) {
     "Wählen Sie einen Chat aus oder stellen Sie eine Frage zu Ihrer Bibliothek.",
   );
   welcome.append(welcomeTitle, welcomeText);
-  main.append(welcome);
+  const messages = createHtmlElement(doc, "div", "zai-messages");
+  messages.setAttribute("aria-live", "polite");
+  main.append(welcome, messages);
 
   const footer = createHtmlElement(doc, "footer", "zai-footer");
   const actions = createHtmlElement(doc, "div", "zai-actions");
@@ -79,20 +84,19 @@ function createSidebar(doc: Document) {
     "zai-model-select",
   ) as HTMLSelectElement;
   modelSelect.setAttribute("aria-label", "KI-Modell auswählen");
-  ["Cloud (GPT-4o)", "Lokal (Ollama)", "Cloud (Claude 3.5)"].forEach(
-    (label) => {
-      const option = createHtmlElement(doc, "option", undefined, label);
-      option.setAttribute("value", label);
-      modelSelect.append(option);
-    },
-  );
   modelWrap.append(modelSelect);
 
+  const chatStatus = createHtmlElement(
+    doc,
+    "span",
+    "zai-chat-status",
+    "KISSKI Cloud",
+  );
   const sendButton = createButton(doc, "zai-send-button");
   sendButton.setAttribute("aria-label", "Nachricht senden");
   sendButton.append(createSendIcon(doc));
 
-  composerFooter.append(modelWrap, sendButton);
+  composerFooter.append(modelWrap, chatStatus, sendButton);
   composer.append(textarea, composerFooter);
   footer.append(actions, composer);
 
