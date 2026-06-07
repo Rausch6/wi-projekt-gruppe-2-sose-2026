@@ -17,7 +17,7 @@ function getPluginPref(key: string) {
 
 function getStringSetting(key: string, fallback = "") {
   const value = getPluginPref(key);
-  return typeof value === "string" ? value : fallback;
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
 function getNumberSetting(key: string, fallback: number) {
@@ -26,15 +26,14 @@ function getNumberSetting(key: string, fallback: number) {
 }
 
 function loadSettings() {
-  // Copy saved Zotero preferences into addon.data.settings.
-  // Other code can then read settings from one central place.
   addon.data.settings = {
     provider: "kisski",
     apiKey: getStringSetting("apiKey"),
-    baseUrl: getStringSetting("baseUrl"),
-    model: getStringSetting("model"),
+    baseUrl: getStringSetting("baseUrl", "https://chat-ai.academiccloud.de/v1"),
+    model: getStringSetting("model", "deepseek-r1-distill-llama-70b"),
     maxItems: getNumberSetting("maxItems", 20),
   };
+  addon.api.configureAI();
 }
 
 async function onStartup() {
@@ -167,6 +166,9 @@ async function onPrefsEvent(type: string, data: { [key: string]: any }) {
     case "load":
       loadSettings();
       registerPrefsScripts(data.window);
+      break;
+    case "change":
+      loadSettings();
       break;
     default:
       return;

@@ -1,11 +1,11 @@
 import { AIProviderConfigurationError } from "./AIProvider.js";
-import { DeepSeekProvider } from "./providers/DeepSeekProvider.js";
+import { KisskiProvider } from "./providers/KisskiProvider.js";
 
 export class AIProviderManager {
   constructor(options = {}) {
     this.providers = new Map();
-    this.register(new DeepSeekProvider(options.deepseek));
-    this.activeProviderId = options.activeProvider ?? "deepseek";
+    this.register(new KisskiProvider(options.kisski));
+    this.activeProviderId = options.activeProvider ?? "kisski";
   }
 
   register(provider) {
@@ -36,7 +36,10 @@ export class AIProviderManager {
   configureProvider(providerId, config = {}) {
     const provider = this.getProvider(providerId);
 
-    if (config.apiKey !== undefined) provider.setApiKey(config.apiKey);
+    if (config.apiKey !== undefined) {
+      if (config.apiKey) provider.setApiKey(config.apiKey);
+      else provider.clearApiKey();
+    }
     if (config.model !== undefined) provider.setModel(config.model);
     if (config.baseUrl !== undefined) provider.setBaseUrl(config.baseUrl);
     if (config.timeout !== undefined) provider.timeout = config.timeout;

@@ -1,8 +1,10 @@
 {
-  "allowJs": true,
-  "checkJs": false,
-  
   "extends": "zotero-types/entries/sandbox/",
-  "include": ["src//*.ts", "src//*.js"],
-  "exclude": ["build", "addon"]
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "noImplicitAny": false
+  },
+  "include": ["src/**/*.ts", "src/**/*.js", "typings/**/*.d.ts"],
+  "exclude": ["build", "addon", ".scaffold"]
 }

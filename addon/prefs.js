@@ -1,3 +1,5 @@
 /* eslint-disable no-undef */
-pref("enable", true);
-pref("input", "This is input");
+pref("apiKey", "");
+pref("baseUrl", "https://chat-ai.academiccloud.de/v1");
+pref("model", "deepseek-r1-distill-llama-70b");
+pref("maxItems", 20);

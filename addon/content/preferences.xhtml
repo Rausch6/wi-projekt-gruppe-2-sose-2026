@@ -2,30 +2,74 @@
   <html:link rel="localization" href="__addonRef__-preferences.ftl" />
 </linkset>
 <groupbox
-  onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window });"
+  onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window })"
 >
   <label><html:h2 data-l10n-id="pref-title"></html:h2></label>
-  <checkbox
-    id="zotero-prefpane-__addonRef__-enable"
-    preference="enable"
-    data-l10n-id="pref-enable"
-  />
-  <hbox>
+  <html:p data-l10n-id="pref-description"></html:p>
+
+  <vbox>
     <html:label
-      for="zotero-prefpane-__addonRef__-input"
-      data-l10n-id="pref-input"
+      for="zotero-prefpane-__addonRef__-api-key"
+      data-l10n-id="pref-api-key"
+    ></html:label>
+    <html:input
+      type="password"
+      id="zotero-prefpane-__addonRef__-api-key"
+      preference="apiKey"
+      autocomplete="off"
+    ></html:input>
+  </vbox>
+
+  <vbox>
+    <html:label
+      for="zotero-prefpane-__addonRef__-base-url"
+      data-l10n-id="pref-base-url"
+    ></html:label>
+    <html:input
+      type="url"
+      id="zotero-prefpane-__addonRef__-base-url"
+      preference="baseUrl"
+    ></html:input>
+  </vbox>
+
+  <vbox>
+    <html:label
+      for="zotero-prefpane-__addonRef__-model"
+      data-l10n-id="pref-model"
     ></html:label>
     <html:input
       type="text"
-      id="zotero-prefpane-__addonRef__-input"
-      preference="input"
+      id="zotero-prefpane-__addonRef__-model"
+      preference="model"
+      list="__addonRef__-model-options"
     ></html:input>
-  </hbox>
-  <hbox class="virtualized-table-container" flex="1" height="300px">
-    <html:div id="__addonRef__-table-container" />
+    <html:datalist id="__addonRef__-model-options"></html:datalist>
+  </vbox>
+
+  <vbox>
+    <html:label
+      for="zotero-prefpane-__addonRef__-max-items"
+      data-l10n-id="pref-max-items"
+    ></html:label>
+    <html:input
+      type="number"
+      min="1"
+      max="200"
+      id="zotero-prefpane-__addonRef__-max-items"
+      preference="maxItems"
+    ></html:input>
+  </vbox>
+
+  <hbox align="center">
+    <button
+      id="zotero-prefpane-__addonRef__-load-models"
+      data-l10n-id="pref-load-models"
+    />
+    <html:span id="zotero-prefpane-__addonRef__-connection-status"></html:span>
   </hbox>
 </groupbox>
 <vbox>
+  <html:p data-l10n-id="pref-api-key-notice"></html:p>
   <html:label
     data-l10n-id="pref-help"
     data-l10n-args='{"time": "__buildTime__","name": "__addonName__","version":"__buildVersion__"}'

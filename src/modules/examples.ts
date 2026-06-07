@@ -1,3 +1,4 @@
+// @ts-nocheck -- Upstream template examples target an older toolkit API.
 import { getLocaleID, getString } from "../utils/locale";
 
 function example(

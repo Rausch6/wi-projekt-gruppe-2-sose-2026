@@ -1,6 +1,24 @@
 # Wi Projekt Gruppe 2 SoSe 2026
 
+## KISSKI DeepSeek
 
+Das Plugin verwendet die OpenAI-kompatible KISSKI/SAIA-API unter
+`https://chat-ai.academiccloud.de/v1`. API-Key, Base-URL und Modell werden in
+den Zotero-Plugin-Einstellungen konfiguriert. Als Standardmodell ist
+`deepseek-r1-distill-llama-70b` eingetragen.
+
+Nach dem Plugin-Start kann eine erste Anfrage ueber die oeffentliche API
+ausgefuehrt werden:
+
+```js
+const result = await Zotero.AddonTemplate.api.analyze(
+  "Fasse die Kernaussage dieses Textes zusammen.",
+);
+Zotero.log(result.content);
+```
+
+Verfuegbare Modelle lassen sich in den Plugin-Einstellungen laden oder ueber
+`Zotero.AddonTemplate.api.ai.listModels("kisski")` abrufen.
 
 ## Getting started
 

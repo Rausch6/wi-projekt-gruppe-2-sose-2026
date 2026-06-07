@@ -1,5 +1,10 @@
-pref-title = Addon Template Example
-pref-enable =
-    .label = Enable
-pref-input = Input
+pref-title = KISSKI AI
+pref-description = Connect the plugin to DeepSeek through the KISSKI/SAIA OpenAI-compatible API.
+pref-api-key = KISSKI API key
+pref-base-url = API base URL
+pref-model = Model
+pref-max-items = Maximum items per analysis
+pref-load-models =
+    .label = Load available models
+pref-api-key-notice = The API key is stored in the local Zotero preferences. Never commit an API key to the repository.
 pref-help = { $name } Build { $version } { $time }
