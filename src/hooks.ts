@@ -32,9 +32,7 @@ async function onStartup() {
 
   UIExampleFactory.unregisterAssistantSidenavButton();
 
-  UIExampleFactory.registerItemPaneSection();
-
-  UIExampleFactory.registerReaderItemPaneSection();
+  UIExampleFactory.unregisterTemplateItemPaneSections();
 
   await Promise.all(
     Zotero.getMainWindows().map((win) => onMainWindowLoad(win)),
@@ -111,6 +109,7 @@ function onShutdown(): void {
     UIExampleFactory.unregisterAssistantStandaloneSidebar(win);
   });
   UIExampleFactory.unregisterAssistantSidenavButton();
+  UIExampleFactory.unregisterTemplateItemPaneSections();
   ztoolkit.unregisterAll();
   addon.data.dialog?.window?.close();
   // Remove addon object
