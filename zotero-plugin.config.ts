@@ -14,7 +14,10 @@ export default defineConfig({
     "https://github.com/{{owner}}/{{repo}}/releases/download/v{{version}}/{{xpiName}}.xpi",
 
   build: {
-    assets: ["addon/**/*.*"],
+    assets: [
+      "addon/**/*.*",
+      "node_modules/pdfjs-dist/build/pdf.worker.js" 
+    ],
     define: {
       ...pkg.config,
       author: pkg.author,
@@ -33,7 +36,7 @@ export default defineConfig({
           __env__: `"${process.env.NODE_ENV}"`,
         },
         bundle: true,
-        target: "firefox115",
+        target: "firefox140",
         outfile: `.scaffold/build/addon/content/scripts/${pkg.config.addonRef}.js`,
       },
     ],

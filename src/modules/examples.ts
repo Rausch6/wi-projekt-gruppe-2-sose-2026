@@ -1,5 +1,13 @@
 // @ts-nocheck -- Upstream template examples target an older toolkit API.
 import { getLocaleID, getString } from "../utils/locale";
+import {
+  registerAssistantStandaloneSidebar,
+  unregisterAssistantStandaloneSidebar,
+} from "../ui/assistantStandaloneSidebar";
+import {
+  registerAssistantToolbarButton,
+  unregisterAssistantToolbarButton,
+} from "../ui/assistantToolbarButton";
 
 function example(
   target: any,
@@ -134,54 +142,112 @@ export class UIExampleFactory {
       },
     });
     doc.documentElement?.appendChild(styles);
-    doc.getElementById("zotero-item-pane-content")?.classList.add("makeItRed");
+  }
+
+  @example
+  static registerAssistantStandaloneSidebar(win: _ZoteroTypes.MainWindow) {
+    registerAssistantStandaloneSidebar(win);
+  }
+
+  @example
+  static unregisterAssistantStandaloneSidebar(win: _ZoteroTypes.MainWindow) {
+    unregisterAssistantStandaloneSidebar(win);
+  }
+
+  @example
+  static registerAssistantToolbarButton(win: _ZoteroTypes.MainWindow) {
+    registerAssistantToolbarButton(win);
+  }
+
+  @example
+  static unregisterAssistantToolbarButton(win: _ZoteroTypes.MainWindow) {
+    unregisterAssistantToolbarButton(win);
+  }
+
+  @example
+  static unregisterAssistantSidenavButton() {
+    const paneID = `${addon.data.config.addonRef}-ai-assistant-trigger`;
+    Zotero.ItemPaneManager.unregisterSection(paneID);
+  }
+
+  @example
+  static unregisterTemplateItemPaneSections() {
+    Zotero.ItemPaneManager.unregisterSection("example");
+    Zotero.ItemPaneManager.unregisterSection("reader-example");
   }
 
   @example
   static registerRightClickMenuItem() {
-    const menuIcon = `chrome://${addon.data.config.addonRef}/content/icons/favicon@0.5x.png`;
-    // item menuitem with icon
-    ztoolkit.Menu.register("item", {
-      tag: "menuitem",
-      id: "zotero-itemmenu-addontemplate-test",
-      label: getString("menuitem-label"),
-      commandListener: (ev) => addon.hooks.onDialogEvents("dialogExample"),
-      icon: menuIcon,
+    const menuIcon = `chrome://${addon.data.config.addonRef}/content/icons/favicon_0.5x.png`;
+    const menuID = `${addon.data.config.addonRef}-item-helper-examples`;
+    Zotero.MenuManager.unregisterMenu(menuID);
+    Zotero.MenuManager.registerMenu({
+      menuID,
+      pluginID: addon.data.config.addonID,
+      target: "main/library/item",
+      menus: [
+        {
+          menuType: "menuitem",
+          l10nID: getLocaleID("menuitem-label"),
+          icon: menuIcon,
+          onCommand: () => addon.hooks.onDialogEvents("dialogExample"),
+        },
+      ],
     });
   }
 
   @example
-  static registerRightClickMenuPopup(win: Window) {
-    ztoolkit.Menu.register(
-      "item",
-      {
-        tag: "menu",
-        label: getString("menupopup-label"),
-        children: [
-          {
-            tag: "menuitem",
-            label: getString("menuitem-submenulabel"),
-            oncommand: "alert('Hello World! Sub Menuitem.')",
-          },
-        ],
-      },
-      "before",
-      win.document?.querySelector(
-        "#zotero-itemmenu-addontemplate-test",
-      ) as XUL.MenuItem,
-    );
+  static registerRightClickMenuPopup(_win: Window) {
+    const menuID = `${addon.data.config.addonRef}-item-submenu-example`;
+    Zotero.MenuManager.unregisterMenu(menuID);
+    Zotero.MenuManager.registerMenu({
+      menuID,
+      pluginID: addon.data.config.addonID,
+      target: "main/library/item",
+      menus: [
+        {
+          menuType: "submenu",
+          l10nID: getLocaleID("menupopup-label"),
+          menus: [
+            {
+              menuType: "menuitem",
+              l10nID: getLocaleID("menuitem-submenulabel"),
+              onCommand: () =>
+                Zotero.alert(
+                  Zotero.getMainWindow(),
+                  addon.data.config.addonName,
+                  "Hello World! Sub Menuitem.",
+                ),
+            },
+          ],
+        },
+      ],
+    });
   }
 
   @example
   static registerWindowMenuWithSeparator() {
-    ztoolkit.Menu.register("menuFile", {
-      tag: "menuseparator",
-    });
-    // menu->File menuitem
-    ztoolkit.Menu.register("menuFile", {
-      tag: "menuitem",
-      label: getString("menuitem-filemenulabel"),
-      oncommand: "alert('Hello World! File Menuitem.')",
+    const menuID = `${addon.data.config.addonRef}-file-menu-example`;
+    Zotero.MenuManager.unregisterMenu(menuID);
+    Zotero.MenuManager.registerMenu({
+      menuID,
+      pluginID: addon.data.config.addonID,
+      target: "main/menubar/file",
+      menus: [
+        {
+          menuType: "separator",
+        },
+        {
+          menuType: "menuitem",
+          l10nID: getLocaleID("menuitem-filemenulabel"),
+          onCommand: () =>
+            Zotero.alert(
+              Zotero.getMainWindow(),
+              addon.data.config.addonName,
+              "Hello World! File Menuitem.",
+            ),
+        },
+      ],
     });
   }
 
@@ -239,114 +305,6 @@ export class UIExampleFactory {
     });
   }
 
-  @example
-  static registerItemPaneSection() {
-    Zotero.ItemPaneManager.registerSection({
-      paneID: "example",
-      pluginID: addon.data.config.addonID,
-      header: {
-        l10nID: getLocaleID("item-section-example1-head-text"),
-        icon: "chrome://zotero/skin/16/universal/book.svg",
-      },
-      sidenav: {
-        l10nID: getLocaleID("item-section-example1-sidenav-tooltip"),
-        icon: "chrome://zotero/skin/20/universal/save.svg",
-      },
-      onRender: ({ body, item, editable, tabType }) => {
-        body.textContent = JSON.stringify({
-          id: item?.id,
-          editable,
-          tabType,
-        });
-      },
-    });
-  }
-
-  @example
-  static async registerReaderItemPaneSection() {
-    Zotero.ItemPaneManager.registerSection({
-      paneID: "reader-example",
-      pluginID: addon.data.config.addonID,
-      header: {
-        l10nID: getLocaleID("item-section-example2-head-text"),
-        // Optional
-        l10nArgs: `{"status": "Initialized"}`,
-        // Can also have a optional dark icon
-        icon: "chrome://zotero/skin/16/universal/book.svg",
-      },
-      sidenav: {
-        l10nID: getLocaleID("item-section-example2-sidenav-tooltip"),
-        icon: "chrome://zotero/skin/20/universal/save.svg",
-      },
-      // Optional
-      bodyXHTML:
-        '<html:h1 id="test">THIS IS TEST</html:h1><browser disableglobalhistory="true" remote="true" maychangeremoteness="true" type="content" flex="1" id="browser" style="width: 180%; height: 280px"/>',
-      // Optional, Called when the section is first created, must be synchronous
-      onInit: ({ item }) => {
-        ztoolkit.log("Section init!", item?.id);
-      },
-      // Optional, Called when the section is destroyed, must be synchronous
-      onDestroy: (props) => {
-        ztoolkit.log("Section destroy!");
-      },
-      // Optional, Called when the section data changes (setting item/mode/tabType/inTrash), must be synchronous. return false to cancel the change
-      onItemChange: ({ item, setEnabled, tabType }) => {
-        ztoolkit.log(`Section item data changed to ${item?.id}`);
-        setEnabled(tabType === "reader");
-        return true;
-      },
-      // Called when the section is asked to render, must be synchronous.
-      onRender: ({
-        body,
-        item,
-        setL10nArgs,
-        setSectionSummary,
-        setSectionButtonStatus,
-      }) => {
-        ztoolkit.log("Section rendered!", item?.id);
-        const title = body.querySelector("#test") as HTMLElement;
-        title.style.color = "red";
-        title.textContent = "LOADING";
-        setL10nArgs(`{ "status": "Loading" }`);
-        setSectionSummary("loading!");
-        setSectionButtonStatus("test", { hidden: true });
-      },
-      // Optional, can be asynchronous.
-      onAsyncRender: async ({
-        body,
-        item,
-        setL10nArgs,
-        setSectionSummary,
-        setSectionButtonStatus,
-      }) => {
-        ztoolkit.log("Section secondary render start!", item?.id);
-        await Zotero.Promise.delay(1000);
-        ztoolkit.log("Section secondary render finish!", item?.id);
-        const title = body.querySelector("#test") as HTMLElement;
-        title.style.color = "green";
-        title.textContent = item.getField("title");
-        setL10nArgs(`{ "status": "Loaded" }`);
-        setSectionSummary("rendered!");
-        setSectionButtonStatus("test", { hidden: false });
-      },
-      // Optional, Called when the section is toggled. Can happen anytime even if the section is not visible or not rendered
-      onToggle: ({ item }) => {
-        ztoolkit.log("Section toggled!", item?.id);
-      },
-      // Optional, Buttons to be shown in the section header
-      sectionButtons: [
-        {
-          type: "test",
-          icon: "chrome://zotero/skin/16/universal/empty-trash.svg",
-          l10nID: getLocaleID("item-section-example2-button-tooltip"),
-          onClick: ({ item, paneID }) => {
-            ztoolkit.log("Section clicked!", item?.id);
-            Zotero.ItemPaneManager.unregisterSection(paneID);
-          },
-        },
-      ],
-    });
-  }
 }
 
 export class PromptExampleFactory {
@@ -371,7 +329,7 @@ export class PromptExampleFactory {
         callback: async (prompt) => {
           // https://github.com/zotero/zotero/blob/7262465109c21919b56a7ab214f7c7a8e1e63909/chrome/content/zotero/integration/quickFormat.js#L589
           function getItemDescription(item: Zotero.Item) {
-            const nodes = [];
+            const nodes: string[] = [];
             let str = "";
             let author,
               authorDate = "";
@@ -398,7 +356,7 @@ export class PromptExampleFactory {
             if (issue) volumeIssue += "(" + issue + ")";
             if (volumeIssue) nodes.push(volumeIssue);
 
-            const publisherPlace = [];
+            const publisherPlace: string[] = [];
             let field;
             if ((field = item.getField("publisher")))
               publisherPlace.push(field);

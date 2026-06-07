@@ -6,5 +6,5 @@
     "noImplicitAny": false
   },
   "include": ["src/**/*.ts", "src/**/*.js", "typings/**/*.d.ts"],
-  "exclude": ["build", "addon", ".scaffold"]
+  "exclude": ["build", "addon", "node_modules", ".scaffold"]
 }
