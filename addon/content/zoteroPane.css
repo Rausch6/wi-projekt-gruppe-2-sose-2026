@@ -1,3 +1,292 @@
 .makeItRed {
   background-color: tomato;
 }
+
+.zai-sidenav-button {
+  -moz-context-properties: fill, stroke;
+  fill: currentColor;
+  stroke: currentColor;
+  list-style-image: url("icons/IconPlugin.png");
+}
+
+toolbarbutton.zai-sidenav-button {
+  margin: 2px 0;
+  min-height: 32px;
+  min-width: 32px;
+}
+
+toolbarbutton.zai-sidenav-button .toolbarbutton-icon {
+  width: 18px;
+  height: 18px;
+}
+
+toolbarbutton.zai-sidenav-button .toolbarbutton-text {
+  display: none;
+}
+
+button.zai-sidenav-button {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: inherit;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 32px;
+  justify-content: center;
+  margin: 2px 0;
+  padding: 0;
+  width: 32px;
+}
+
+.zai-sidenav-button:hover,
+.zai-sidenav-button:focus-visible,
+.zai-sidenav-button.zai-sidenav-button-active {
+  background-color: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.zai-sidenav-button-icon {
+  display: block;
+  height: 18px;
+  width: 18px;
+}
+
+item-pane-sidenav
+  .btn[data-zai-assistant-trigger="true"].zai-sidenav-button-active {
+  background-color: var(--fill-quinary);
+}
+
+item-pane-sidenav .btn[data-zai-assistant-trigger="true"] {
+  background-size: 25px 25px;
+}
+
+item-pane-sidenav .zai-sidenav-assistant-slot {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: inherit;
+}
+
+item-pane-sidenav:not(.stacked) .zai-sidenav-assistant-slot > .divider {
+  border-bottom: 1px solid var(--fill-quinary);
+  height: 0;
+  width: 20px;
+}
+
+item-pane-sidenav.stacked .zai-sidenav-assistant-slot {
+  flex-direction: row;
+}
+
+item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
+  border-inline-end: 1px solid var(--fill-quinary);
+  height: 20px;
+  width: 0;
+}
+
+.zai-standalone-sidebar {
+  background: var(--material-sidepane, var(--material-background, #fff));
+  border-left: 1px solid var(--border-color, rgba(0, 0, 0, 0.18));
+  bottom: var(--zai-standalone-bottom, 0);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+  box-sizing: border-box;
+  color: var(--text-primary, #1f2933);
+  display: flex;
+  max-width: calc(100vw - 24px);
+  min-width: 320px;
+  position: fixed;
+  right: var(--zai-standalone-right, 0);
+  top: var(--zai-standalone-top, 48px);
+  width: min(
+    var(--zai-standalone-width, 390px),
+    calc(100vw - var(--zai-standalone-right, 0px) - 20px)
+  );
+  z-index: 1100;
+}
+
+.zai-standalone-sidebar[hidden] {
+  display: none !important;
+}
+
+.zotero-ai-assistant-host {
+  box-sizing: border-box;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.zai-sidebar {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
+  width: 100%;
+}
+
+.zai-top {
+  border-bottom: 1px solid var(--border-color, rgba(0, 0, 0, 0.12));
+  padding: 16px 16px 12px;
+}
+
+.zai-title {
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.3;
+  margin: 0;
+}
+
+.zai-divider {
+  background: var(--border-color, rgba(0, 0, 0, 0.12));
+  height: 1px;
+  margin: 12px 0;
+}
+
+.zai-chat-list {
+  display: grid;
+  gap: 6px;
+}
+
+.zai-chat-entry,
+.zai-see-all,
+.zai-action-pill,
+.zai-send-button {
+  appearance: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.zai-chat-entry {
+  background: transparent;
+  border: 1px solid transparent;
+  color: inherit;
+  min-height: 30px;
+  overflow: hidden;
+  padding: 6px 8px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zai-chat-entry:hover,
+.zai-chat-entry:focus-visible {
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.zai-see-all {
+  background: transparent;
+  border: 0;
+  color: var(--accent-blue, #2563eb);
+  margin-top: 8px;
+  padding: 4px 2px;
+}
+
+.zai-main {
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 16px;
+}
+
+.zai-welcome {
+  background: color-mix(in srgb, currentColor 5%, transparent);
+  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.12));
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.zai-welcome-title {
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.35;
+  margin: 0 0 6px;
+}
+
+.zai-welcome-text {
+  color: var(--text-secondary, #5f6b7a);
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.zai-footer {
+  border-top: 1px solid var(--border-color, rgba(0, 0, 0, 0.12));
+  padding: 12px;
+}
+
+.zai-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.zai-action-pill {
+  background: color-mix(in srgb, currentColor 6%, transparent);
+  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.12));
+  color: inherit;
+  min-height: 28px;
+  padding: 4px 8px;
+}
+
+.zai-composer {
+  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.14));
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.zai-input {
+  background: transparent;
+  border: 0;
+  box-sizing: border-box;
+  color: inherit;
+  display: block;
+  font: inherit;
+  min-height: 72px;
+  padding: 10px;
+  resize: vertical;
+  width: 100%;
+}
+
+.zai-input:focus {
+  outline: none;
+}
+
+.zai-composer:focus-within {
+  border-color: var(--accent-blue, #2563eb);
+  box-shadow: 0 0 0 2px color-mix(in srgb, #2563eb 20%, transparent);
+}
+
+.zai-composer-footer {
+  align-items: center;
+  background: color-mix(in srgb, currentColor 4%, transparent);
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 8px;
+}
+
+.zai-model-select {
+  background: var(--material-background, #fff);
+  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.14));
+  border-radius: 6px;
+  color: inherit;
+  font: inherit;
+  max-width: 210px;
+  min-height: 30px;
+}
+
+.zai-send-button {
+  align-items: center;
+  background: var(--accent-blue, #2563eb);
+  border: 1px solid transparent;
+  color: #fff;
+  display: inline-flex;
+  height: 32px;
+  justify-content: center;
+  min-width: 36px;
+  padding: 0 8px;
+}
+
+.zai-send-button:hover,
+.zai-send-button:focus-visible {
+  background: color-mix(in srgb, var(--accent-blue, #2563eb) 85%, #000);
+}
