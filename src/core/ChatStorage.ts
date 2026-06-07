@@ -1,3 +1,5 @@
+/// <reference types="zotero-types" />
+
 // Typdefinition für eine einzelne Chat-Nachricht
 export interface ChatMessage {
     role: 'user' | 'assistant' | 'system';

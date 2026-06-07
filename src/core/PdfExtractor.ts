@@ -1,3 +1,5 @@
+/// <reference types="zotero-types" />
+
 import * as pdfjsLib from 'pdfjs-dist';
 
 // Konfiguriere den Worker für pdf.js; notwendig für den reibungslosen Ablauf in Browser-Umgebungen
@@ -109,7 +111,7 @@ export class PdfExtractor {
         const chunks = await this.getStructuredText(parentItem);
         if (!chunks || chunks.length === 0) return null;
         
-        // Fügt alle Chunks (Seiten) mit doppelten Zeilenumbrüchen als einen String zusammen
+        // Fügt alle Chunks mit doppelten Zeilenumbrüchen als einen String zusammen
         return chunks.map(chunk => chunk.text).join('\n\n');
     }
 }

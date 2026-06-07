@@ -1,3 +1,5 @@
+/// <reference types="zotero-types" />
+
 export interface ItemData {
     id: number;
     libraryID: number; 
