@@ -114,6 +114,14 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   overflow: hidden;
 }
 
+.zai-native-section {
+  box-sizing: border-box;
+  height: min(680px, 72vh);
+  min-height: 480px;
+  overflow: hidden;
+  padding: 0 !important;
+}
+
 .zai-sidebar {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
@@ -207,6 +215,58 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   margin: 0;
 }
 
+.zai-messages {
+  display: grid;
+  gap: 10px;
+}
+
+.zai-message {
+  border-radius: 10px;
+  box-sizing: border-box;
+  font-size: 13px;
+  line-height: 1.45;
+  max-width: 92%;
+  padding: 9px 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.zai-message-user {
+  background: var(--accent-blue, #2563eb);
+  color: #fff;
+  justify-self: end;
+}
+
+.zai-message-assistant {
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.12));
+  justify-self: start;
+}
+
+.zai-message-error {
+  background: color-mix(in srgb, #dc2626 12%, transparent);
+  border: 1px solid color-mix(in srgb, #dc2626 35%, transparent);
+  color: var(--text-primary, inherit);
+  justify-self: start;
+}
+
+.zai-message-pending {
+  color: var(--text-secondary, #5f6b7a);
+  font-style: italic;
+  justify-self: start;
+}
+
+.zai-message-label {
+  display: block;
+  font-size: 11px;
+  margin-bottom: 3px;
+  opacity: 0.8;
+}
+
+.zai-message-content {
+  white-space: pre-wrap;
+}
+
 .zai-footer {
   border-top: 1px solid var(--border-color, rgba(0, 0, 0, 0.12));
   padding: 12px;
@@ -274,6 +334,21 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   min-height: 30px;
 }
 
+.zai-chat-status {
+  color: var(--text-secondary, #5f6b7a);
+  flex: 1;
+  font-size: 11px;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zai-chat-status-simulation {
+  color: #b45309;
+  font-weight: 600;
+}
+
 .zai-send-button {
   align-items: center;
   background: var(--accent-blue, #2563eb);
@@ -284,6 +359,12 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   justify-content: center;
   min-width: 36px;
   padding: 0 8px;
+}
+
+.zai-send-button:disabled,
+.zai-input:disabled {
+  cursor: wait;
+  opacity: 0.6;
 }
 
 .zai-send-button:hover,

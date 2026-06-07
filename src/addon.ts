@@ -6,6 +6,13 @@ import {
   KISSKI_DEFAULT_MODEL,
 } from "./ai/providers/KisskiProvider.js";
 import hooks from "./hooks";
+import {
+  chatSimulation,
+  clearChat,
+  getChatMessages,
+  sendChatPrompt,
+} from "./ui/assistantChatController";
+import { openAssistantStandaloneSidebar } from "./ui/assistantStandaloneSidebar";
 import { createZToolkit } from "./utils/ztoolkit";
 
 // Provider nur KISSKI.
@@ -48,6 +55,13 @@ class Addon {
       query: string,
       options?: Record<string, unknown>,
     ) => Promise<unknown>;
+    chat: {
+      send: typeof sendChatPrompt;
+      clear: typeof clearChat;
+      getMessages: typeof getChatMessages;
+    };
+    chatSimulation: typeof chatSimulation;
+    openChat: () => boolean;
   };
 
   constructor() {
@@ -86,6 +100,19 @@ class Addon {
         } finally {
           this.data.runtime.isAnalyzing = false;
         }
+      },
+      chat: {
+        send: sendChatPrompt,
+        clear: clearChat,
+        getMessages: getChatMessages,
+      },
+      chatSimulation,
+      openChat: () => {
+        const win = Zotero.getMainWindow();
+        if (!win) return false;
+
+        openAssistantStandaloneSidebar(win);
+        return true;
       },
     };
   }
