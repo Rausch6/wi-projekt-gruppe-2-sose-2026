@@ -1,0 +1,11 @@
+img[src$="LogoPlugin.png"],
+image[src$="LogoPlugin.png"] {
+  align-self: center;
+  height: auto !important;
+  margin-block: auto;
+  max-height: 36px !important;
+  max-width: 36px !important;
+  object-fit: contain;
+  vertical-align: middle;
+  width: auto !important;
+}

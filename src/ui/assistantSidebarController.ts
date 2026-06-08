@@ -4,6 +4,7 @@ import { renderAssistantSidebar } from "./assistantSidebar";
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const SIDEBAR_ID = `${config.addonRef}-standalone-ai-sidebar`;
 const DEFAULT_PANEL_WIDTH = 390;
+const MIN_PANEL_WIDTH = 240;
 const ASSISTANT_TRIGGER_SELECTOR = '[data-zai-assistant-trigger="true"]';
 export const ASSISTANT_STATE_EVENT = `${config.addonRef}-ai-assistant-state-change`;
 
@@ -27,6 +28,12 @@ type OverlayRect = Pick<
   DOMRectReadOnly,
   "top" | "right" | "bottom" | "left" | "width" | "height"
 >;
+type PanelMetrics = {
+  rightOffset: number;
+  panelWidth: number;
+  panelTop: number;
+  panelBottom: number;
+};
 
 export function registerAssistantSidebarController(
   win: _ZoteroTypes.MainWindow,
@@ -40,6 +47,9 @@ export function registerAssistantSidebarController(
   unregisterAssistantSidebarController(win);
 
   const panel = createPanel(doc);
+  let lastPanelMetrics: PanelMetrics | undefined;
+  let pendingOpenFrame: number | undefined;
+  let pendingOpenResyncFrame: number | undefined;
   const paneObserver = new win.MutationObserver(() => {
     if (isNativeItemPaneCollapsed(win)) {
       if (panel.hidden !== true) {
@@ -57,45 +67,70 @@ export function registerAssistantSidebarController(
     const winWidth = win.innerWidth || root.clientWidth;
     const winHeight = win.innerHeight || root.clientHeight;
     const rect = getRightSideOverlayRect(win, winWidth, winHeight);
-    const rightOffset = rect
-      ? Math.max(0, Math.round(winWidth - rect.right))
-      : 0;
-    const panelWidth = rect?.width
-      ? Math.max(320, Math.round(rect.width))
-      : DEFAULT_PANEL_WIDTH;
-    const panelTop = Math.max(0, Math.round(rect?.top ?? 48));
-    const panelBottom = Math.max(
-      0,
-      Math.round(rect ? winHeight - rect.bottom : 0),
-    );
-    const maxPanelWidth = Math.max(320, winWidth - rightOffset - 20);
+    const measuredMetrics = rect
+      ? {
+          rightOffset: Math.max(0, Math.round(winWidth - rect.right)),
+          panelWidth: Math.max(1, Math.round(rect.width)),
+          panelTop: Math.max(0, Math.round(rect.top)),
+          panelBottom: Math.max(0, Math.round(winHeight - rect.bottom)),
+        }
+      : undefined;
+    const metrics =
+      measuredMetrics ?? lastPanelMetrics ?? getFallbackPanelMetrics(winHeight);
+    if (measuredMetrics) {
+      lastPanelMetrics = measuredMetrics;
+    }
 
-    panel.style.setProperty("--zai-standalone-right", `${rightOffset}px`);
-    panel.style.setProperty("--zai-standalone-width", `${panelWidth}px`);
-    panel.style.setProperty("--zai-standalone-top", `${panelTop}px`);
-    panel.style.setProperty("--zai-standalone-bottom", `${panelBottom}px`);
+    const maxPanelWidth = Math.max(
+      MIN_PANEL_WIDTH,
+      winWidth - metrics.rightOffset - 20,
+    );
+
+    panel.style.setProperty(
+      "--zai-standalone-right",
+      `${metrics.rightOffset}px`,
+    );
+    panel.style.setProperty(
+      "--zai-standalone-width",
+      `${metrics.panelWidth}px`,
+    );
+    panel.style.setProperty("--zai-standalone-top", `${metrics.panelTop}px`);
+    panel.style.setProperty(
+      "--zai-standalone-bottom",
+      `${metrics.panelBottom}px`,
+    );
     panel.style.position = "fixed";
-    panel.style.right = `${rightOffset}px`;
-    panel.style.top = `${panelTop}px`;
-    panel.style.bottom = `${panelBottom}px`;
-    panel.style.width = `${Math.min(panelWidth, maxPanelWidth)}px`;
-    panel.style.minWidth = "320px";
+    panel.style.right = `${metrics.rightOffset}px`;
+    panel.style.top = `${metrics.panelTop}px`;
+    panel.style.bottom = `${metrics.panelBottom}px`;
+    panel.style.width = `${Math.min(metrics.panelWidth, maxPanelWidth)}px`;
+    panel.style.minWidth = "0";
     panel.style.maxWidth = "calc(100vw - 24px)";
     panel.style.zIndex = "1100";
+  };
+
+  const cancelPendingOpenFrames = () => {
+    if (pendingOpenFrame !== undefined) {
+      win.cancelAnimationFrame(pendingOpenFrame);
+      pendingOpenFrame = undefined;
+    }
+    if (pendingOpenResyncFrame !== undefined) {
+      win.cancelAnimationFrame(pendingOpenResyncFrame);
+      pendingOpenResyncFrame = undefined;
+    }
   };
 
   const setOpen = (
     open: boolean,
     options: { updateNativePane?: boolean } = {},
   ) => {
+    cancelPendingOpenFrames();
+
     const updateNativePane = options.updateNativePane !== false;
     if (updateNativePane) {
       setNativeItemPaneCollapsed(win, !open);
     }
 
-    if (open) {
-      syncPanelPosition();
-    }
     panel.hidden = !open;
     panel.style.display = open ? "flex" : "none";
     panel.classList.toggle("zai-standalone-sidebar-open", open);
@@ -103,7 +138,19 @@ export function registerAssistantSidebarController(
     emitStateChange(win, open);
 
     if (open) {
-      win.requestAnimationFrame(syncPanelPosition);
+      panel.style.visibility = "hidden";
+      syncPanelPosition();
+      pendingOpenFrame = win.requestAnimationFrame(() => {
+        pendingOpenFrame = undefined;
+        syncPanelPosition();
+        panel.style.visibility = "";
+        pendingOpenResyncFrame = win.requestAnimationFrame(() => {
+          pendingOpenResyncFrame = undefined;
+          syncPanelPosition();
+        });
+      });
+    } else {
+      panel.style.visibility = "";
     }
   };
 
@@ -136,6 +183,7 @@ export function registerAssistantSidebarController(
 
   states.set(win, {
     cleanup: () => {
+      cancelPendingOpenFrames();
       win.removeEventListener("resize", syncPanelPosition);
       removeSidenavCloseListeners();
       paneObserver.disconnect();
@@ -444,6 +492,15 @@ function ensureAssistantSidebarController(win: _ZoteroTypes.MainWindow) {
     registerAssistantSidebarController(win);
   }
   return states.get(win);
+}
+
+function getFallbackPanelMetrics(winHeight: number): PanelMetrics {
+  return {
+    rightOffset: 0,
+    panelWidth: DEFAULT_PANEL_WIDTH,
+    panelTop: Math.max(0, Math.min(48, winHeight)),
+    panelBottom: 0,
+  };
 }
 
 function createPanel(doc: Document) {

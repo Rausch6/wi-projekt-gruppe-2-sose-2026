@@ -1,5 +1,5 @@
 // @ts-nocheck -- Upstream template examples target an older toolkit API.
-import { getLocaleID, getString } from "../utils/locale";
+import { getLocaleID } from "../utils/locale";
 import {
   registerAssistantSidebarController,
   unregisterAssistantSidebarController,
@@ -74,16 +74,6 @@ export class BasicExampleFactory {
   @example
   private static unregisterNotifier(notifierID: string) {
     Zotero.Notifier.unregisterObserver(notifierID);
-  }
-
-  @example
-  static registerPrefs() {
-    Zotero.PreferencePanes.register({
-      pluginID: addon.data.config.addonID,
-      src: rootURI + "content/preferences.xhtml",
-      label: getString("prefs-title"),
-      image: `chrome://${addon.data.config.addonRef}/content/icons/favicon.png`,
-    });
   }
 }
 

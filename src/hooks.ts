@@ -6,6 +6,7 @@ import {
   UIExampleFactory,
 } from "./modules/examples";
 import { getString, initLocale } from "./utils/locale";
+import { registerPreferencesPane } from "./modules/preferences";
 import { registerPrefsScripts } from "./modules/preferenceScript";
 import { unregisterAssistantSidebarController } from "./ui/assistantSidebarController";
 import { createZToolkit } from "./utils/ztoolkit";
@@ -47,7 +48,7 @@ async function onStartup() {
   initLocale();
   loadSettings();
 
-  BasicExampleFactory.registerPrefs();
+  await registerPreferencesPane();
 
   BasicExampleFactory.registerNotifier();
 

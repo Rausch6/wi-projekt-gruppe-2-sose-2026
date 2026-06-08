@@ -145,7 +145,9 @@ function renderHost(host: HTMLElement) {
 
   if (!main || !messageList) return;
 
-  welcome?.toggleAttribute("hidden", messages.length > 0);
+  const showWelcome = messages.length === 0;
+  main.classList.toggle("zai-main-empty", showWelcome);
+  welcome?.toggleAttribute("hidden", !showWelcome);
   messageList.replaceChildren(
     ...messages.map((message) => createMessageElement(host, message)),
   );
@@ -168,7 +170,7 @@ function renderHost(host: HTMLElement) {
     status.classList.toggle("zai-chat-status-simulation", simulationEnabled);
   }
 
-  main.scrollTop = main.scrollHeight;
+  main.scrollTop = showWelcome ? 0 : main.scrollHeight;
 }
 
 function createMessageElement(
