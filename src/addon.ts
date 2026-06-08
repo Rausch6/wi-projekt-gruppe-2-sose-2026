@@ -12,7 +12,7 @@ import {
   getChatMessages,
   sendChatPrompt,
 } from "./ui/assistantChatController";
-import { openAssistantStandaloneSidebar } from "./ui/assistantStandaloneSidebar";
+import { openAssistantSidebar } from "./ui/assistantSidebarController";
 import { createZToolkit } from "./utils/ztoolkit";
 
 // Provider nur KISSKI.
@@ -111,7 +111,7 @@ class Addon {
         const win = Zotero.getMainWindow();
         if (!win) return false;
 
-        openAssistantStandaloneSidebar(win);
+        openAssistantSidebar(win);
         return true;
       },
     };

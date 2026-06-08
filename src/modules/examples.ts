@@ -1,9 +1,9 @@
 // @ts-nocheck -- Upstream template examples target an older toolkit API.
-import { getLocaleID, getString } from "../utils/locale";
+import { getLocaleID } from "../utils/locale";
 import {
-  registerAssistantStandaloneSidebar,
-  unregisterAssistantStandaloneSidebar,
-} from "../ui/assistantStandaloneSidebar";
+  registerAssistantSidebarController,
+  unregisterAssistantSidebarController,
+} from "../ui/assistantSidebarController";
 import {
   registerAssistantToolbarButton,
   unregisterAssistantToolbarButton,
@@ -75,16 +75,6 @@ export class BasicExampleFactory {
   private static unregisterNotifier(notifierID: string) {
     Zotero.Notifier.unregisterObserver(notifierID);
   }
-
-  @example
-  static registerPrefs() {
-    Zotero.PreferencePanes.register({
-      pluginID: addon.data.config.addonID,
-      src: rootURI + "content/preferences.xhtml",
-      label: getString("prefs-title"),
-      image: `chrome://${addon.data.config.addonRef}/content/icons/favicon.png`,
-    });
-  }
 }
 
 export class KeyExampleFactory {
@@ -138,7 +128,7 @@ export class UIExampleFactory {
       properties: {
         type: "text/css",
         rel: "stylesheet",
-        href: `chrome://${addon.data.config.addonRef}/content/zoteroPane.css`,
+        href: `chrome://${addon.data.config.addonRef}/content/assistantSidebar.css`,
       },
     });
     doc.documentElement?.appendChild(styles);
@@ -146,12 +136,12 @@ export class UIExampleFactory {
 
   @example
   static registerAssistantStandaloneSidebar(win: _ZoteroTypes.MainWindow) {
-    registerAssistantStandaloneSidebar(win);
+    registerAssistantSidebarController(win);
   }
 
   @example
   static unregisterAssistantStandaloneSidebar(win: _ZoteroTypes.MainWindow) {
-    unregisterAssistantStandaloneSidebar(win);
+    unregisterAssistantSidebarController(win);
   }
 
   @example
@@ -304,7 +294,6 @@ export class UIExampleFactory {
       },
     });
   }
-
 }
 
 export class PromptExampleFactory {
