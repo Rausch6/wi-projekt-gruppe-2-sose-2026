@@ -114,14 +114,6 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   overflow: hidden;
 }
 
-.zai-native-section {
-  box-sizing: border-box;
-  height: min(680px, 72vh);
-  min-height: 480px;
-  overflow: hidden;
-  padding: 0 !important;
-}
-
 .zai-sidebar {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
