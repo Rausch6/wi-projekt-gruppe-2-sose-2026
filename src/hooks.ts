@@ -7,7 +7,7 @@ import {
 } from "./modules/examples";
 import { getString, initLocale } from "./utils/locale";
 import { registerPrefsScripts } from "./modules/preferenceScript";
-import { unregisterAssistantStandaloneSidebar } from "./ui/assistantStandaloneSidebar";
+import { unregisterAssistantSidebarController } from "./ui/assistantSidebarController";
 import { createZToolkit } from "./utils/ztoolkit";
 
 // Reads one setting from Zotero's preference storage for this plugin.
@@ -125,7 +125,7 @@ async function onMainWindowUnload(win: Window): Promise<void> {
   UIExampleFactory.unregisterAssistantToolbarButton(
     win as _ZoteroTypes.MainWindow,
   );
-  unregisterAssistantStandaloneSidebar(win);
+  unregisterAssistantSidebarController(win);
   ztoolkit.unregisterAll();
   addon.data.dialog?.window?.close();
 }
@@ -133,7 +133,7 @@ async function onMainWindowUnload(win: Window): Promise<void> {
 function onShutdown(): void {
   Zotero.getMainWindows().forEach((win) => {
     UIExampleFactory.unregisterAssistantToolbarButton(win);
-    unregisterAssistantStandaloneSidebar(win);
+    unregisterAssistantSidebarController(win);
   });
   UIExampleFactory.unregisterAssistantSidenavButton();
   UIExampleFactory.unregisterTemplateItemPaneSections();

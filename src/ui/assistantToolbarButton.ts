@@ -1,10 +1,10 @@
 import { config } from "../../package.json";
 import {
   ASSISTANT_STATE_EVENT,
-  isAssistantStandaloneSidebarOpen,
-  registerAssistantStandaloneSidebar,
-  toggleAssistantStandaloneSidebar,
-} from "./assistantStandaloneSidebar";
+  isAssistantSidebarOpen,
+  registerAssistantSidebarController,
+  toggleAssistantSidebar,
+} from "./assistantSidebarController";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
@@ -39,12 +39,12 @@ type MountedButton = {
 export function registerAssistantToolbarButton(win: _ZoteroTypes.MainWindow) {
   const doc = win.document;
   unregisterAssistantToolbarButton(win);
-  registerAssistantStandaloneSidebar(win);
+  registerAssistantSidebarController(win);
 
   const buttons = new Set<MountedButton>();
 
   const syncButtonState = () => {
-    const open = isAssistantStandaloneSidebarOpen(win);
+    const open = isAssistantSidebarOpen(win);
     for (const mounted of [...buttons]) {
       if (!mounted.button.isConnected) {
         cleanupMountedButton(mounted);
@@ -71,7 +71,7 @@ export function registerAssistantToolbarButton(win: _ZoteroTypes.MainWindow) {
       const onActivate: EventListener = (event) => {
         event.preventDefault();
         event.stopPropagation();
-        toggleAssistantStandaloneSidebar(win);
+        toggleAssistantSidebar(win);
         syncButtonState();
       };
       const mounted: MountedButton = {

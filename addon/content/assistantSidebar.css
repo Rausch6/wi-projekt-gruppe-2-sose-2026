@@ -1,7 +1,3 @@
-.makeItRed {
-  background-color: tomato;
-}
-
 .zai-sidenav-button {
   -moz-context-properties: fill, stroke;
   fill: currentColor;

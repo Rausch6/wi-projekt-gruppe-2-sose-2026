@@ -28,7 +28,7 @@ type OverlayRect = Pick<
   "top" | "right" | "bottom" | "left" | "width" | "height"
 >;
 
-export function registerAssistantStandaloneSidebar(
+export function registerAssistantSidebarController(
   win: _ZoteroTypes.MainWindow,
 ) {
   const doc = win.document;
@@ -37,7 +37,7 @@ export function registerAssistantStandaloneSidebar(
     return;
   }
 
-  unregisterAssistantStandaloneSidebar(win);
+  unregisterAssistantSidebarController(win);
 
   const panel = createPanel(doc);
   const paneObserver = new win.MutationObserver(() => {
@@ -147,7 +147,7 @@ export function registerAssistantStandaloneSidebar(
   });
 }
 
-export function unregisterAssistantStandaloneSidebar(win: Window) {
+export function unregisterAssistantSidebarController(win: Window) {
   states.get(win)?.cleanup();
   states.delete(win);
 
@@ -155,17 +155,17 @@ export function unregisterAssistantStandaloneSidebar(win: Window) {
   doc.getElementById(SIDEBAR_ID)?.remove();
 }
 
-export function openAssistantStandaloneSidebar(win: _ZoteroTypes.MainWindow) {
-  const state = ensureAssistantStandaloneSidebar(win);
+export function openAssistantSidebar(win: _ZoteroTypes.MainWindow) {
+  const state = ensureAssistantSidebarController(win);
   state?.setOpen(true);
 }
 
-export function toggleAssistantStandaloneSidebar(win: _ZoteroTypes.MainWindow) {
-  const state = ensureAssistantStandaloneSidebar(win);
+export function toggleAssistantSidebar(win: _ZoteroTypes.MainWindow) {
+  const state = ensureAssistantSidebarController(win);
   return state?.toggle() ?? false;
 }
 
-export function isAssistantStandaloneSidebarOpen(win: _ZoteroTypes.MainWindow) {
+export function isAssistantSidebarOpen(win: _ZoteroTypes.MainWindow) {
   return states.get(win)?.isOpen() ?? false;
 }
 
@@ -439,9 +439,9 @@ function isRightSidePane(
   );
 }
 
-function ensureAssistantStandaloneSidebar(win: _ZoteroTypes.MainWindow) {
+function ensureAssistantSidebarController(win: _ZoteroTypes.MainWindow) {
   if (!states.has(win)) {
-    registerAssistantStandaloneSidebar(win);
+    registerAssistantSidebarController(win);
   }
   return states.get(win);
 }
