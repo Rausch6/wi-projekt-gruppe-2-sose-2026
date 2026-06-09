@@ -124,11 +124,15 @@ export class UIExampleFactory {
   @example
   static registerStyleSheet(win: _ZoteroTypes.MainWindow) {
     const doc = win.document;
+    const styleId = `${addon.data.config.addonRef}-assistant-sidebar-styles`;
+    doc.getElementById(styleId)?.remove();
+
     const styles = ztoolkit.UI.createElement(doc, "link", {
       properties: {
+        id: styleId,
         type: "text/css",
         rel: "stylesheet",
-        href: `chrome://${addon.data.config.addonRef}/content/assistantSidebar.css`,
+        href: `chrome://${addon.data.config.addonRef}/content/assistantSidebar.css?v=${Date.now()}`,
       },
     });
     doc.documentElement?.appendChild(styles);

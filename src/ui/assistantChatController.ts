@@ -58,6 +58,7 @@ export function bindAssistantChat(host: HTMLElement) {
     }
   });
   modelSelect?.addEventListener("change", () => {
+    updateModelSelectDisplay(modelSelect);
     if (modelSelect.value) {
       addon.api.ai.setModel(modelSelect.value, "kisski");
     }
@@ -505,6 +506,20 @@ function syncModelSelect(select: HTMLSelectElement | null) {
   option.textContent = addon.data.settings.model;
   option.selected = true;
   select.replaceChildren(option);
+  updateModelSelectDisplay(select);
+}
+
+function updateModelSelectDisplay(select: HTMLSelectElement | null) {
+  if (!select) return;
+
+  const value = select.selectedOptions[0]?.textContent || select.value;
+  const display = select.parentElement?.querySelector<HTMLElement>(
+    ".zai-model-select-value",
+  );
+  if (!display) return;
+
+  display.textContent = value;
+  display.title = value;
 }
 
 function logSimulationPrompt(message: AssistantChatMessage) {

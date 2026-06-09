@@ -109,6 +109,12 @@ function createSidebar(doc: Document) {
     "select",
     "zai-model-select",
   ) as HTMLSelectElement;
+  const modelValue = createHtmlElement(
+    doc,
+    "span",
+    "zai-model-select-value",
+    "Cloud (GPT-4o)",
+  );
   modelSelect.setAttribute("aria-label", "Modell auswählen");
   ["Cloud (GPT-4o)", "Lokal (Ollama)", "Cloud (Claude 3.5)"].forEach(
     (label) => {
@@ -117,7 +123,7 @@ function createSidebar(doc: Document) {
       modelSelect.append(option);
     },
   );
-  modelWrap.append(modelSelect);
+  modelWrap.append(modelValue, modelSelect);
 
   const chatStatus = createHtmlElement(doc, "span", "zai-chat-status", "");
   chatStatus.hidden = true;
