@@ -13,7 +13,7 @@ const LEGACY_FALLBACK_ID = `${config.addonRef}-ai-assistant-toolbar-fallback`;
 const BUTTON_ATTRIBUTE = "data-zai-assistant-trigger";
 const SLOT_ATTRIBUTE = "data-zai-assistant-trigger-slot";
 const BUTTON_LABEL = "Zotero AI Assistent";
-const BUTTON_TOOLTIP = "Zotero AI Assistent öffnen/schließen";
+const BUTTON_TOOLTIP = "ZAIA-Plugin öffnen/schließen";
 
 const SIDENAV_IDS = ["zotero-view-item-sidenav", "zotero-context-pane-sidenav"];
 

@@ -126,6 +126,10 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   padding: 16px 16px 12px;
 }
 
+.zai-top-chat-active {
+  padding-bottom: 0;
+}
+
 .zai-header {
   align-items: center;
   box-sizing: border-box;
@@ -181,9 +185,19 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   margin: 12px 0;
 }
 
+.zai-top-chat-active .zai-divider {
+  margin-bottom: 0;
+}
+
 .zai-chat-list {
   display: grid;
   gap: 6px;
+}
+
+.zai-chat-list[hidden],
+.zai-see-all[hidden],
+.zai-welcome[hidden] {
+  display: none !important;
 }
 
 .zai-chat-entry,
@@ -236,6 +250,10 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
 .zai-main-empty {
   align-content: center;
   display: grid;
+}
+
+.zai-main-chat-active {
+  padding-top: 10px;
 }
 
 .zai-welcome {
@@ -304,10 +322,28 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   justify-self: start;
 }
 
-.zai-message-pending {
+.zai-activity-line {
+  animation: zai-activity-pulse 1.4s ease-in-out infinite;
+  box-sizing: border-box;
   color: var(--text-secondary, #5f6b7a);
-  font-style: italic;
+  font-size: 13px;
   justify-self: start;
+  line-height: 1.45;
+  max-width: 92%;
+  padding: 2px 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@keyframes zai-activity-pulse {
+  0%,
+  100% {
+    opacity: 0.48;
+  }
+
+  50% {
+    opacity: 1;
+  }
 }
 
 .zai-message-label {
@@ -392,9 +428,24 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
 .zai-model-select-wrap {
   flex: 1 1 140px;
   min-width: 0;
+  position: relative;
+}
+
+.zai-model-select-wrap::after {
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid currentColor;
+  content: "";
+  opacity: 0.7;
+  pointer-events: none;
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-40%);
 }
 
 .zai-model-select {
+  appearance: none;
   background: var(--material-background, #fff);
   border: 1px solid var(--border-color, rgba(0, 0, 0, 0.14));
   border-radius: 6px;
@@ -404,6 +455,7 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   max-width: 210px;
   min-height: 30px;
   min-width: 0;
+  padding-right: 26px;
   width: 100%;
 }
 
@@ -416,6 +468,10 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.zai-chat-status[hidden] {
+  display: none !important;
 }
 
 .zai-chat-status-simulation {

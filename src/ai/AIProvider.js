@@ -108,6 +108,29 @@ export class AIProvider {
   async chat(_messages, _options = {}) {
     throw new Error(`${this.name}.chat() is not implemented`);
   }
+
+  async *chatStream(messages, options = {}) {
+    const response = await this.chat(messages, options);
+    const content =
+      typeof response?.content === "string" ? response.content : "";
+
+    if (content) {
+      yield {
+        type: "content",
+        content,
+        provider: response.provider ?? this.id,
+        model: response.model ?? this.model,
+      };
+    }
+
+    yield {
+      type: "done",
+      provider: response?.provider ?? this.id,
+      model: response?.model ?? this.model,
+      finishReason: response?.finishReason ?? null,
+      usage: response?.usage ?? null,
+    };
+  }
 }
 
 export class AIProviderError extends Error {

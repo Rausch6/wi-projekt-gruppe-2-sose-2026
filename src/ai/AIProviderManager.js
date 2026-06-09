@@ -71,6 +71,11 @@ export class AIProviderManager {
     return this.getProvider(providerId).chat(messages, providerOptions);
   }
 
+  chatStream(messages, options = {}) {
+    const { providerId, ...providerOptions } = options;
+    return this.getProvider(providerId).chatStream(messages, providerOptions);
+  }
+
   complete(prompt, options = {}) {
     const { providerId, ...providerOptions } = options;
     return this.getProvider(providerId).complete(prompt, providerOptions);
