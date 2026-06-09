@@ -19,6 +19,7 @@
  * @property {Record<string, string>} headers
  * @property {() => Promise<unknown>} json
  * @property {() => Promise<string>} text
+ * @property {() => AsyncGenerator<string>} [streamText]
  */
 
 function isLocalUrl(url) {
@@ -69,29 +70,186 @@ function createResponse(status, headers, bodyText) {
 }
 
 async function sendWithFetch(method, url, options) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), options.timeout);
-
   try {
-    const response = await fetch(url, {
+    const { response, bodyText } = await fetchTextWithTimeout(
       method,
-      headers: options.headers,
-      body: options.body,
-      signal: controller.signal,
-    });
+      url,
+      options,
+    );
     const headers = {};
     response.headers.forEach((value, name) => {
       headers[name.toLowerCase()] = value;
     });
 
-    return createResponse(response.status, headers, await response.text());
+    return createResponse(response.status, headers, bodyText);
   } catch (cause) {
-    if (cause?.name === "AbortError") {
+    if (cause instanceof HttpTimeoutError || cause?.name === "AbortError") {
       throw new HttpTimeoutError(url, options.timeout);
     }
     throw new HttpNetworkError(url, cause);
+  }
+}
+
+async function fetchTextWithTimeout(method, url, options) {
+  const controller = createAbortController();
+  let timedOut = false;
+  let timer;
+
+  try {
+    if (controller) {
+      timer = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, options.timeout);
+
+      const response = await fetch(url, {
+        method,
+        headers: options.headers,
+        body: options.body,
+        signal: controller.signal,
+      });
+      return { response, bodyText: await response.text() };
+    }
+
+    return await raceWithTimeout(
+      (async () => {
+        const response = await fetch(url, {
+          method,
+          headers: options.headers,
+          body: options.body,
+        });
+        return { response, bodyText: await response.text() };
+      })(),
+      url,
+      options.timeout,
+    );
+  } catch (cause) {
+    if (timedOut || cause instanceof HttpTimeoutError) {
+      throw new HttpTimeoutError(url, options.timeout);
+    }
+    throw cause;
   } finally {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function sendStreamWithFetch(method, url, options) {
+  if (typeof fetch !== "function") {
+    throw new HttpStreamingUnsupportedError(url, "fetch is not available");
+  }
+  if (typeof TextDecoder !== "function") {
+    throw new HttpStreamingUnsupportedError(
+      url,
+      "TextDecoder is not available",
+    );
+  }
+
+  const controller = createAbortController();
+  const startedAt = Date.now();
+  let timedOut = false;
+  let timer;
+
+  try {
+    const request = fetch(url, {
+      method,
+      headers: options.headers,
+      body: options.body,
+      ...(controller ? { signal: controller.signal } : {}),
+    });
+    if (controller) {
+      timer = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, options.timeout);
+    }
+
+    const response = controller
+      ? await request
+      : await raceWithTimeout(request, url, options.timeout);
+    const headers = {};
+    response.headers.forEach((value, name) => {
+      headers[name.toLowerCase()] = value;
+    });
+    let cachedBodyText;
+    const readBodyText = async () => {
+      if (cachedBodyText === undefined) {
+        cachedBodyText = await response.text();
+      }
+      if (timer) clearTimeout(timer);
+      return cachedBodyText;
+    };
+
+    return {
+      status: response.status,
+      ok: response.status >= 200 && response.status < 300,
+      headers,
+      json: async () => {
+        const text = await readBodyText();
+        if (!text) return null;
+
+        try {
+          return JSON.parse(text);
+        } catch (cause) {
+          throw new HttpParseError(response.status, text, cause);
+        }
+      },
+      text: readBodyText,
+      streamText: async function* () {
+        if (!response.body || typeof response.body.getReader !== "function") {
+          if (timer) clearTimeout(timer);
+          throw new HttpStreamingUnsupportedError(
+            url,
+            "ReadableStream is not available",
+          );
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        try {
+          while (true) {
+            const remainingTimeout = Math.max(
+              0,
+              options.timeout - (Date.now() - startedAt),
+            );
+            const result = controller
+              ? await reader.read()
+              : await raceWithTimeout(reader.read(), url, remainingTimeout);
+
+            if (result.done) break;
+
+            const text = decoder.decode(result.value, { stream: true });
+            if (text) yield text;
+          }
+
+          const finalText = decoder.decode();
+          if (finalText) yield finalText;
+        } catch (cause) {
+          if (timedOut || cause instanceof HttpTimeoutError) {
+            throw new HttpTimeoutError(url, options.timeout);
+          }
+          throw new HttpNetworkError(url, cause);
+        } finally {
+          if (timer) clearTimeout(timer);
+          reader.releaseLock?.();
+        }
+      },
+    };
+  } catch (cause) {
+    if (timer) clearTimeout(timer);
+    if (cause instanceof HttpTimeoutError || timedOut) {
+      throw new HttpTimeoutError(url, options.timeout);
+    }
+    if (cause?.name === "AbortError") {
+      throw new HttpTimeoutError(url, options.timeout);
+    }
+    if (
+      cause instanceof HttpStreamingUnsupportedError ||
+      cause instanceof HttpNetworkError
+    ) {
+      throw cause;
+    }
+    throw new HttpNetworkError(url, cause);
   }
 }
 
@@ -165,6 +323,58 @@ async function request(method, url, options = {}) {
     : sendWithZotero(method, url, transportOptions);
 }
 
+/**
+ * Send an HTTP request and expose the response body as a text stream.
+ *
+ * Zotero.HTTP.request buffers the whole response, so real streaming uses
+ * fetch when the runtime exposes a ReadableStream-capable implementation.
+ *
+ * @param {string} method
+ * @param {string} url
+ * @param {RequestOptions} [options]
+ * @returns {Promise<HttpResponse>}
+ */
+async function streamRequest(method, url, options = {}) {
+  const timeout = options.timeout ?? 30_000;
+  const body = serializeBody(options.body);
+  const headers = {
+    Accept: "text/event-stream",
+    ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+    ...options.headers,
+  };
+
+  return sendStreamWithFetch(method, url, { timeout, body, headers });
+}
+
+function createAbortController() {
+  if (typeof AbortController !== "function") return null;
+  return new AbortController();
+}
+
+function raceWithTimeout(promise, url, timeout) {
+  return new Promise((resolve, reject) => {
+    if (timeout <= 0) {
+      reject(new HttpTimeoutError(url, timeout));
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      reject(new HttpTimeoutError(url, timeout));
+    }, timeout);
+
+    Promise.resolve(promise).then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 export class HttpError extends Error {
   constructor(message, options = {}) {
     super(message);
@@ -190,6 +400,14 @@ export class HttpNetworkError extends HttpError {
       cause,
     });
     this.name = "HttpNetworkError";
+  }
+}
+
+export class HttpStreamingUnsupportedError extends HttpError {
+  constructor(url, reason) {
+    super(`HTTP streaming is not supported for ${url}: ${reason}`, { url });
+    this.name = "HttpStreamingUnsupportedError";
+    this.reason = reason;
   }
 }
 
@@ -249,6 +467,7 @@ export async function assertHttpOk(url, response) {
 
 export const httpClient = {
   request,
+  streamRequest,
 
   get(url, options = {}) {
     return request("GET", url, options);
@@ -256,6 +475,10 @@ export const httpClient = {
 
   post(url, body, options = {}) {
     return request("POST", url, { ...options, body });
+  },
+
+  streamPost(url, body, options = {}) {
+    return streamRequest("POST", url, { ...options, body });
   },
 
   put(url, body, options = {}) {

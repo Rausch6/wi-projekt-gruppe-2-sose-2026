@@ -27,7 +27,7 @@ function createSidebar(doc: Document) {
     doc,
     "h1",
     "zai-title",
-    "ZAIA - Zotero AI Assistent",
+    "ZAIA – Zotero AI Assistent",
   );
   const headerActions = createHtmlElement(doc, "div", "zai-header-actions");
   const aboutButton = createButton(doc, "zai-header-icon-button");
@@ -52,7 +52,7 @@ function createSidebar(doc: Document) {
   [
     "Machine Learning Papers",
     "Neuronale Netzwerke Übersicht",
-    "Konzeptuelle Modelle & KI",
+    "Konzeptuelle Modelle",
   ].forEach((label) => {
     const entry = createButton(doc, "zai-chat-entry", label);
     chatList.append(entry);
@@ -109,7 +109,13 @@ function createSidebar(doc: Document) {
     "select",
     "zai-model-select",
   ) as HTMLSelectElement;
-  modelSelect.setAttribute("aria-label", "KI-Modell auswählen");
+  const modelValue = createHtmlElement(
+    doc,
+    "span",
+    "zai-model-select-value",
+    "Cloud (GPT-4o)",
+  );
+  modelSelect.setAttribute("aria-label", "Modell auswählen");
   ["Cloud (GPT-4o)", "Lokal (Ollama)", "Cloud (Claude 3.5)"].forEach(
     (label) => {
       const option = createHtmlElement(doc, "option", undefined, label);
@@ -117,14 +123,10 @@ function createSidebar(doc: Document) {
       modelSelect.append(option);
     },
   );
-  modelWrap.append(modelSelect);
+  modelWrap.append(modelValue, modelSelect);
 
-  const chatStatus = createHtmlElement(
-    doc,
-    "span",
-    "zai-chat-status",
-    "KISSKI Cloud",
-  );
+  const chatStatus = createHtmlElement(doc, "span", "zai-chat-status", "");
+  chatStatus.hidden = true;
   const sendButton = createButton(doc, "zai-send-button");
   sendButton.setAttribute("aria-label", "Nachricht senden");
   sendButton.append(createSendIcon(doc));
