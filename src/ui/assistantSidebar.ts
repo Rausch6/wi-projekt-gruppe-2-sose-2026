@@ -45,21 +45,26 @@ function createSidebar(doc: Document) {
   headerActions.append(aboutButton, settingsButton);
   header.append(title, headerActions);
 
+  const activeChatBar = createHtmlElement(doc, "div", "zai-active-chat-bar");
+  activeChatBar.hidden = true;
+  const backButton = createButton(doc, "zai-chat-back-button");
+  backButton.setAttribute("aria-label", "Zurück zur Startansicht");
+  backButton.setAttribute("title", "Zurück");
+  backButton.append(createBackIcon(doc));
+  const activeChatTitle = createHtmlElement(
+    doc,
+    "div",
+    "zai-active-chat-title",
+  );
+  activeChatBar.append(backButton, activeChatTitle);
+
   const divider = createHtmlElement(doc, "div", "zai-divider");
   divider.setAttribute("aria-hidden", "true");
 
   const chatList = createHtmlElement(doc, "div", "zai-chat-list");
-  [
-    "Machine Learning Papers",
-    "Neuronale Netzwerke Übersicht",
-    "Konzeptuelle Modelle",
-  ].forEach((label) => {
-    const entry = createButton(doc, "zai-chat-entry", label);
-    chatList.append(entry);
-  });
 
   const seeAll = createButton(doc, "zai-see-all", "Alle ansehen");
-  top.append(header, divider, chatList, seeAll);
+  top.append(header, divider, activeChatBar, chatList, seeAll);
 
   const main = createHtmlElement(doc, "main", "zai-main");
   const welcome = createHtmlElement(doc, "div", "zai-welcome");
@@ -222,6 +227,19 @@ function createGearIcon(doc: Document) {
   );
 
   svg.append(circle, gear);
+  return svg;
+}
+
+function createBackIcon(doc: Document) {
+  const svg = createIconSvg(doc, "18");
+
+  const line = doc.createElementNS(SVG_NS, "path");
+  line.setAttribute("d", "M19 12H5");
+
+  const arrow = doc.createElementNS(SVG_NS, "path");
+  arrow.setAttribute("d", "m12 19-7-7 7-7");
+
+  svg.append(line, arrow);
   return svg;
 }
 

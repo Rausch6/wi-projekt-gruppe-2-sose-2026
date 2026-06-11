@@ -1,4 +1,30 @@
-type ChatRole = "user" | "assistant" | "error";
+import { ChatRepository } from "../core/ChatRepository";
+import { ItemManager } from "../core/ItemManager";
+import { CreateChatInput, StoredChat } from "../core/chatTypes";
+
+const HTML_NS = "http://www.w3.org/1999/xhtml";
+const MAX_GENERATED_TITLE_LENGTH = 80;
+const TITLE_GENERATION_SYSTEM_PROMPT =
+  "Erstelle einen knappen, natürlichen Chat-Titel auf der Sprache der ersten Nachricht des Nutzers.\n\n" +
+  "Leite den Titel aus der ersten Nutzernachricht ab. Erfasse das zentrale Anliegen oder Thema, nicht zwingend den Satzanfang oder einzelne Schlüsselwörter.\n\n" +
+  "Der Titel soll folgendermaßen wirken: kurz, präzise, thematisch, als Tab- oder Listenlabel geeignet.\n\n" +
+  "Regeln:\n\n" +
+  "* 2 bis 6 Wörter\n" +
+  "* Keine ganzen Sätze\n" +
+  "* Keine Frageform\n" +
+  "* Keine Einleitung\n" +
+  "* Keine Anführungszeichen\n" +
+  "* Kein Punkt am Ende\n" +
+  "* Keine Ich-Form\n" +
+  "* Keine Höflichkeits- oder Füllwörter wie bitte, gerade, kannst du, ich, mein\n" +
+  "* Keine Formulierungen wie „Hilfe bei“, „Frage zu“ oder „Anfrage über“, außer sie sind inhaltlich notwendig\n" +
+  "* Verwende möglichst konkrete Substantive oder kurze Nominalgruppen\n" +
+  "* Bei technischen Fragen nenne das konkrete Thema, Tool oder Problem\n" +
+  "* Bei Schreibaufgaben nenne Textart und Ziel, zum Beispiel „Bewerbung optimieren“ oder „E-Mail formulieren“\n" +
+  "* Bei Smalltalk abstrahiere sinnvoll, zum Beispiel „Begrüßung“, „Vorstellung“ oder „Namensfrage“\n\n" +
+  "Gib ausschließlich den Titel zurück.";
+
+type ChatRole = "user" | "assistant" | "system" | "error";
 
 export type AssistantChatMessage = {
   id: number;
@@ -19,11 +45,21 @@ type ActiveAssistantResponse = {
   pendingContent: string;
 };
 
+type ActiveChatResolution = {
+  chatID: string;
+  shouldGenerateTitle: boolean;
+};
+
 const hosts = new Set<HTMLElement>();
 const messages: AssistantChatMessage[] = [];
+const chatSummaries: StoredChat[] = [];
 const pendingSimulationPrompts: PendingSimulationPrompt[] = [];
+const pendingGeneratedTitleChatIDs = new Set<string>();
 
 let nextMessageID = 1;
+let activeChatID: string | null = null;
+let showAllChats = false;
+let chatSummariesLoaded = false;
 let simulationEnabled = false;
 let requestRunning = false;
 let activeAssistantResponse: ActiveAssistantResponse | null = null;
@@ -33,11 +69,20 @@ export function bindAssistantChat(host: HTMLElement) {
 
   const textarea = host.querySelector<HTMLTextAreaElement>(".zai-input");
   const sendButton = host.querySelector<HTMLButtonElement>(".zai-send-button");
+  const chatList = host.querySelector<HTMLElement>(".zai-chat-list");
+  const seeAllButton = host.querySelector<HTMLButtonElement>(".zai-see-all");
+  const backButton = host.querySelector<HTMLButtonElement>(
+    ".zai-chat-back-button",
+  );
   const modelSelect =
     host.querySelector<HTMLSelectElement>(".zai-model-select");
 
   syncModelSelect(modelSelect);
+  if (!activeChatID) invalidateChatSummaries();
   renderHost(host);
+  void refreshChatSummaries(true).catch((error) => {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+  });
 
   const sendCurrentPrompt = () => {
     const prompt = textarea?.value.trim() ?? "";
@@ -50,6 +95,40 @@ export function bindAssistantChat(host: HTMLElement) {
   };
 
   sendButton?.addEventListener("click", sendCurrentPrompt);
+  chatList?.addEventListener("click", (event) => {
+    const button = (event.target as Element | null)?.closest<HTMLButtonElement>(
+      ".zai-chat-entry[data-chat-id]",
+    );
+    const chatID = button?.dataset.chatId;
+    if (!chatID || requestRunning) return;
+
+    void loadChat(chatID).catch((error) => {
+      Zotero.logError(
+        error instanceof Error ? error : new Error(String(error)),
+      );
+      void refreshChatSummaries(true).catch((refreshError) => {
+        Zotero.logError(
+          refreshError instanceof Error
+            ? refreshError
+            : new Error(String(refreshError)),
+        );
+      });
+    });
+  });
+  seeAllButton?.addEventListener("click", () => {
+    void (async () => {
+      await refreshChatSummaries(false);
+      showAllChats = chatSummaries.length > 3 ? !showAllChats : false;
+      renderAllHosts();
+    })().catch((error) => {
+      Zotero.logError(
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    });
+  });
+  backButton?.addEventListener("click", () => {
+    if (!requestRunning) returnToWelcome();
+  });
   textarea?.addEventListener("keydown", (event) => {
     const keyboardEvent = event as KeyboardEvent;
     if (keyboardEvent.key === "Enter" && !keyboardEvent.shiftKey) {
@@ -65,13 +144,36 @@ export function bindAssistantChat(host: HTMLElement) {
   });
 }
 
+export async function initializeChatPersistence() {
+  await refreshChatSummaries(false);
+  activeChatID = null;
+  showAllChats = false;
+  resetMessages();
+  renderAllHosts();
+}
+
 export async function sendChatPrompt(prompt: string) {
   const content = prompt.trim();
   if (!content) {
     throw new Error("Der Prompt darf nicht leer sein.");
   }
 
+  const chat = await ensureActiveChat(content);
+  const chatID = chat.chatID;
+  const shouldGenerateTitle = chat.shouldGenerateTitle && !simulationEnabled;
+  if (shouldGenerateTitle) {
+    pendingGeneratedTitleChatIDs.add(chatID);
+  }
   const userMessage = appendMessage("user", content);
+  try {
+    await persistChatMessage(chatID, userMessage);
+  } catch (error) {
+    if (shouldGenerateTitle) {
+      pendingGeneratedTitleChatIDs.delete(chatID);
+      renderAllHosts();
+    }
+    throw error;
+  }
 
   if (simulationEnabled) {
     pendingSimulationPrompts.push({
@@ -84,6 +186,12 @@ export async function sendChatPrompt(prompt: string) {
   }
 
   requestRunning = true;
+  renderAllHosts();
+
+  if (shouldGenerateTitle) {
+    void tryGenerateChatTitle(chatID, content);
+  }
+
   activeAssistantResponse = {
     prompt: content,
     activity: deriveActivityMessage(content, "waiting"),
@@ -102,6 +210,8 @@ export async function sendChatPrompt(prompt: string) {
       throw new Error("ZAIA hat keine Textantwort zurückgegeben.");
     }
 
+    await persistChatMessage(chatID, assistantMessage);
+    await refreshChatSummaries(false);
     return assistantMessage;
   } catch (error) {
     finalizeActiveAssistantMessage();
@@ -121,11 +231,117 @@ export function getChatMessages() {
   return messages.map((message) => ({ ...message }));
 }
 
-export function clearChat() {
-  messages.length = 0;
+export function getActiveChatID() {
+  return activeChatID;
+}
+
+export async function listChats() {
+  await refreshChatSummaries(false);
+  return chatSummaries.map((chat) => ({ ...chat }));
+}
+
+export async function createChat(input: CreateChatInput = {}) {
+  if (requestRunning) {
+    throw new Error(
+      "Während ZAIA antwortet kann kein neuer Chat erstellt werden.",
+    );
+  }
+
+  const chat = await ChatRepository.createChat({
+    ...getSelectedItemChatInput(),
+    ...input,
+  });
+  activeChatID = chat.id;
+  showAllChats = false;
+  resetMessages();
+  await refreshChatSummaries(false);
+  renderAllHosts();
+
+  return chat;
+}
+
+export async function loadChat(chatID: string) {
+  if (requestRunning) {
+    throw new Error(
+      "Während ZAIA antwortet kann kein anderer Chat geladen werden.",
+    );
+  }
+
+  const chat = await ChatRepository.getChatWithMessages(chatID);
+  if (!chat) {
+    throw new Error(`Chat nicht gefunden: ${chatID}`);
+  }
+
+  activeChatID = chat.id;
+  showAllChats = false;
+  resetMessages();
+  for (const message of chat.messages) {
+    messages.push({
+      id: nextMessageID++,
+      role: message.role,
+      content: message.content,
+    });
+  }
   pendingSimulationPrompts.length = 0;
   activeAssistantResponse = null;
   renderAllHosts();
+
+  return chat;
+}
+
+export async function deleteChat(chatID: string) {
+  if (requestRunning) {
+    throw new Error("Während ZAIA antwortet kann kein Chat gelöscht werden.");
+  }
+
+  await ChatRepository.deleteChat(chatID);
+  pendingGeneratedTitleChatIDs.delete(chatID);
+  showAllChats = false;
+  await refreshChatSummaries(false);
+
+  if (activeChatID === chatID) {
+    activeChatID = null;
+    showAllChats = false;
+    resetMessages();
+  }
+
+  renderAllHosts();
+}
+
+export function clearChat() {
+  returnToWelcome();
+}
+
+function returnToWelcome() {
+  activeChatID = null;
+  showAllChats = false;
+  invalidateChatSummaries();
+  resetMessages();
+  pendingSimulationPrompts.length = 0;
+  activeAssistantResponse = null;
+  renderAllHosts();
+  void refreshChatSummaries(true).catch((error) => {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+  });
+}
+
+async function refreshChatSummaries(render = true) {
+  try {
+    const chats = await ChatRepository.listChats();
+    chatSummaries.splice(0, chatSummaries.length, ...chats);
+    chatSummariesLoaded = true;
+  } catch (error) {
+    invalidateChatSummaries();
+    chatSummariesLoaded = true;
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+  }
+
+  if (render) renderAllHosts();
+}
+
+function invalidateChatSummaries() {
+  chatSummariesLoaded = false;
+  chatSummaries.length = 0;
 }
 
 async function requestAssistantResponse(
@@ -387,6 +603,181 @@ function appendMessage(role: ChatRole, content: string) {
   return message;
 }
 
+async function ensureActiveChat(
+  firstPrompt: string,
+): Promise<ActiveChatResolution> {
+  if (activeChatID) {
+    const activeSummary = chatSummaries.find(
+      (chat) => chat.id === activeChatID,
+    );
+    const needsInitialTitle = !hasRealChatMessages() && !activeSummary?.title;
+
+    if (needsInitialTitle) {
+      await ChatRepository.updateChatTitle(
+        activeChatID,
+        deriveChatTitle(firstPrompt),
+      );
+      await refreshChatSummaries(false);
+    }
+
+    return {
+      chatID: activeChatID,
+      shouldGenerateTitle: needsInitialTitle,
+    };
+  }
+
+  const chat = await ChatRepository.createChat({
+    ...getSelectedItemChatInput(),
+    title: deriveChatTitle(firstPrompt),
+  });
+  activeChatID = chat.id;
+  showAllChats = false;
+  await refreshChatSummaries(false);
+
+  return {
+    chatID: chat.id,
+    shouldGenerateTitle: true,
+  };
+}
+
+async function tryGenerateChatTitle(chatID: string, firstPrompt: string) {
+  try {
+    await generateChatTitle(chatID, firstPrompt);
+  } catch (error) {
+    Zotero.debug(`ZAIA: Chat-Titel konnte nicht generiert werden: ${error}`);
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+  } finally {
+    pendingGeneratedTitleChatIDs.delete(chatID);
+    renderAllHosts();
+  }
+}
+
+async function generateChatTitle(chatID: string, firstPrompt: string) {
+  const content = await requestGeneratedTitleContent([
+    {
+      role: "system",
+      content: TITLE_GENERATION_SYSTEM_PROMPT,
+    },
+    {
+      role: "user",
+      content: firstPrompt,
+    },
+  ]);
+  const title = normalizeGeneratedChatTitle(content);
+
+  if (!title) return;
+
+  await ChatRepository.updateChatTitle(chatID, title);
+  await refreshChatSummaries(true);
+}
+
+async function requestGeneratedTitleContent(
+  requestMessages: Array<{ role: "system" | "user"; content: string }>,
+) {
+  const options = {
+    providerId: "kisski",
+    model: addon.data.settings.model,
+    temperature: 0.2,
+  };
+
+  if (typeof addon.api.ai.chatStream === "function") {
+    try {
+      let content = "";
+      for await (const event of addon.api.ai.chatStream(
+        requestMessages,
+        options,
+      ) as AsyncIterable<{ type?: unknown; content?: unknown }>) {
+        if (
+          event?.type === "content" &&
+          typeof event.content === "string" &&
+          event.content
+        ) {
+          content += event.content;
+        }
+        if (event?.type === "done") break;
+      }
+
+      if (content.trim()) return content;
+    } catch (error) {
+      if (!shouldFallbackToBufferedChat(error)) throw error;
+    }
+  }
+
+  const result = (await addon.api.ai.chat(requestMessages, options)) as {
+    content?: unknown;
+  };
+  if (typeof result?.content === "string" && result.content.trim()) {
+    return result.content;
+  }
+
+  throw new Error("ZAIA konnte keinen Chat-Titel generieren.");
+}
+
+function normalizeGeneratedChatTitle(content: unknown) {
+  if (typeof content !== "string") return "";
+
+  const firstLine = content.trim().split(/\r?\n/)[0] ?? "";
+  const title = firstLine
+    .replace(/^\s*(titel|title)\s*:\s*/i, "")
+    .replace(/^["'`“”„‚‘]+|["'`“”„‚‘]+$/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/[.。]+$/g, "")
+    .trim();
+
+  if (title.length <= MAX_GENERATED_TITLE_LENGTH) return title;
+
+  return `${title.slice(0, MAX_GENERATED_TITLE_LENGTH - 3).trim()}...`;
+}
+
+async function persistChatMessage(
+  chatID: string,
+  message: AssistantChatMessage,
+) {
+  if (message.role !== "user" && message.role !== "assistant") {
+    return;
+  }
+
+  const position = messages.filter(
+    (entry) => entry.role === "user" || entry.role === "assistant",
+  ).length;
+
+  await ChatRepository.appendMessage({
+    chatId: chatID,
+    role: message.role,
+    content: message.content,
+    position: Math.max(0, position - 1),
+  });
+}
+
+function resetMessages() {
+  messages.length = 0;
+  nextMessageID = 1;
+}
+
+function getSelectedItemChatInput(): CreateChatInput {
+  try {
+    const item = ItemManager.filterItems()[0];
+    if (!item) return {};
+
+    return {
+      zoteroLibraryID: item.libraryID,
+      zoteroItemKey: item.key,
+    };
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Zotero-Item-Kontext konnte nicht gelesen werden: ${error}`,
+    );
+    return {};
+  }
+}
+
+function deriveChatTitle(prompt: string) {
+  const normalized = prompt.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 60) return normalized;
+
+  return `${normalized.slice(0, 57)}...`;
+}
+
 function renderAllHosts() {
   for (const host of [...hosts]) {
     if (!host.isConnected) {
@@ -403,20 +794,45 @@ function renderHost(host: HTMLElement) {
   const welcome = host.querySelector<HTMLElement>(".zai-welcome");
   const messageList = host.querySelector<HTMLElement>(".zai-messages");
   const chatList = host.querySelector<HTMLElement>(".zai-chat-list");
-  const seeAll = host.querySelector<HTMLElement>(".zai-see-all");
+  const seeAll = host.querySelector<HTMLButtonElement>(".zai-see-all");
+  const activeChatBar = host.querySelector<HTMLElement>(".zai-active-chat-bar");
+  const activeChatTitle = host.querySelector<HTMLElement>(
+    ".zai-active-chat-title",
+  );
+  const backButton = host.querySelector<HTMLButtonElement>(
+    ".zai-chat-back-button",
+  );
   const sendButton = host.querySelector<HTMLButtonElement>(".zai-send-button");
   const textarea = host.querySelector<HTMLTextAreaElement>(".zai-input");
   const status = host.querySelector<HTMLElement>(".zai-chat-status");
 
   if (!main || !messageList) return;
 
-  const showWelcome = !hasRealChatMessages();
-  top?.classList.toggle("zai-top-chat-active", !showWelcome);
+  const showWelcome = !activeChatID;
+  const showChat = !showWelcome;
+  top?.classList.toggle("zai-top-chat-active", showChat);
   main.classList.toggle("zai-main-empty", showWelcome);
-  main.classList.toggle("zai-main-chat-active", !showWelcome);
+  main.classList.toggle("zai-main-chat-active", showChat);
   welcome?.toggleAttribute("hidden", !showWelcome);
+  messageList.toggleAttribute("hidden", showWelcome);
   chatList?.toggleAttribute("hidden", !showWelcome);
-  seeAll?.toggleAttribute("hidden", !showWelcome);
+  seeAll?.toggleAttribute("hidden", !showWelcome || chatSummaries.length <= 3);
+  activeChatBar?.toggleAttribute("hidden", !showChat);
+
+  if (activeChatTitle) {
+    const title = getActiveChatTitle();
+    activeChatTitle.textContent = title;
+    activeChatTitle.classList.toggle(
+      "zai-active-chat-title-pending",
+      Boolean(activeChatID && pendingGeneratedTitleChatIDs.has(activeChatID)),
+    );
+  }
+  if (backButton) backButton.disabled = requestRunning;
+  if (seeAll) {
+    seeAll.textContent = showAllChats ? "Weniger anzeigen" : "Alle ansehen";
+  }
+
+  if (chatList && showWelcome) renderChatList(host, chatList);
 
   const renderedMessages = messages
     .map((message) => createMessageElement(host, message))
@@ -454,18 +870,15 @@ function createMessageElement(
   if (message.role === "assistant" && !message.content.trim()) {
     return null;
   }
+  if (message.role === "system") {
+    return null;
+  }
 
   const doc = host.ownerDocument!;
-  const wrapper = doc.createElementNS(
-    "http://www.w3.org/1999/xhtml",
-    "article",
-  ) as HTMLElement;
+  const wrapper = doc.createElementNS(HTML_NS, "article") as HTMLElement;
   wrapper.className = `zai-message zai-message-${message.role}`;
 
-  const label = doc.createElementNS(
-    "http://www.w3.org/1999/xhtml",
-    "strong",
-  ) as HTMLElement;
+  const label = doc.createElementNS(HTML_NS, "strong") as HTMLElement;
   label.className = "zai-message-label";
   label.textContent =
     message.role === "user"
@@ -474,10 +887,7 @@ function createMessageElement(
         ? "ZAIA"
         : "Fehler";
 
-  const content = doc.createElementNS(
-    "http://www.w3.org/1999/xhtml",
-    "div",
-  ) as HTMLElement;
+  const content = doc.createElementNS(HTML_NS, "div") as HTMLElement;
   content.className = "zai-message-content";
   content.textContent = message.content;
 
@@ -487,12 +897,70 @@ function createMessageElement(
 
 function createActivityElement(host: HTMLElement, text: string) {
   const element = host.ownerDocument!.createElementNS(
-    "http://www.w3.org/1999/xhtml",
+    HTML_NS,
     "div",
   ) as HTMLElement;
   element.className = "zai-activity-line";
   element.textContent = text;
   return element;
+}
+
+function renderChatList(host: HTMLElement, chatList: HTMLElement) {
+  const doc = host.ownerDocument!;
+  if (!chatSummariesLoaded) {
+    chatList.replaceChildren();
+    return;
+  }
+
+  const visibleChats = showAllChats ? chatSummaries : chatSummaries.slice(0, 3);
+  const entries = visibleChats.map((chat) => {
+    const entry = doc.createElementNS(HTML_NS, "button") as HTMLButtonElement;
+    const title = chat.title || "Unbenannter Chat";
+    const chatTitle = doc.createElementNS(HTML_NS, "span") as HTMLElement;
+    const chatTime = doc.createElementNS(HTML_NS, "span") as HTMLElement;
+
+    entry.type = "button";
+    entry.className = "zai-chat-entry";
+    entry.dataset.chatId = chat.id;
+    entry.classList.toggle("zai-chat-entry-active", chat.id === activeChatID);
+
+    chatTitle.className = "zai-chat-entry-title";
+    chatTitle.textContent = title;
+    chatTime.className = "zai-chat-entry-time";
+    chatTime.textContent = formatRelativeTime(chat.updatedAt);
+    entry.append(chatTitle, chatTime);
+
+    return entry;
+  });
+
+  chatList.replaceChildren(...entries);
+}
+
+function getActiveChatTitle() {
+  if (!activeChatID) return "";
+
+  const chat = chatSummaries.find((entry) => entry.id === activeChatID);
+  return chat?.title || "Unbenannter Chat";
+}
+
+function formatRelativeTime(value: string) {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return "";
+
+  const elapsedMinutes = Math.max(
+    0,
+    Math.floor((Date.now() - timestamp) / 60_000),
+  );
+  if (elapsedMinutes < 1) return "jetzt";
+  if (elapsedMinutes < 60) return `${elapsedMinutes} min`;
+
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  if (elapsedHours < 24) return `${elapsedHours} h`;
+
+  const elapsedDays = Math.floor(elapsedHours / 24);
+  if (elapsedDays < 7) return `${elapsedDays} t`;
+
+  return `${Math.floor(elapsedDays / 7)} w`;
 }
 
 function syncModelSelect(select: HTMLSelectElement | null) {
@@ -577,6 +1045,15 @@ function replyToSimulation(content: string, promptID?: number) {
 
   const [prompt] = pendingSimulationPrompts.splice(promptIndex, 1);
   const message = appendMessage("assistant", answer);
+  if (activeChatID) {
+    void persistChatMessage(activeChatID, message)
+      .then(() => refreshChatSummaries(false))
+      .catch((error) => {
+        Zotero.logError(
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      });
+  }
   Zotero.debug(
     `[Zotero AI Simulation] Antwort für Prompt #${prompt.id} übernommen.`,
   );

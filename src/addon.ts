@@ -9,7 +9,12 @@ import hooks from "./hooks";
 import {
   chatSimulation,
   clearChat,
+  createChat,
+  deleteChat,
+  getActiveChatID,
   getChatMessages,
+  listChats,
+  loadChat,
   sendChatPrompt,
 } from "./ui/assistantChatController";
 import { openAssistantSidebar } from "./ui/assistantSidebarController";
@@ -59,6 +64,11 @@ class Addon {
       send: typeof sendChatPrompt;
       clear: typeof clearChat;
       getMessages: typeof getChatMessages;
+      getActiveChatID: typeof getActiveChatID;
+      list: typeof listChats;
+      create: typeof createChat;
+      load: typeof loadChat;
+      delete: typeof deleteChat;
     };
     chatSimulation: typeof chatSimulation;
     openChat: () => boolean;
@@ -105,6 +115,11 @@ class Addon {
         send: sendChatPrompt,
         clear: clearChat,
         getMessages: getChatMessages,
+        getActiveChatID,
+        list: listChats,
+        create: createChat,
+        load: loadChat,
+        delete: deleteChat,
       },
       chatSimulation,
       openChat: () => {
