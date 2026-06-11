@@ -5,8 +5,24 @@ import { CreateChatInput, StoredChat } from "../core/chatTypes";
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const MAX_GENERATED_TITLE_LENGTH = 80;
 const TITLE_GENERATION_SYSTEM_PROMPT =
-  "Erstelle einen kurzen, präzisen Chat-Titel auf Deutsch. " +
-  "Maximal 6 Wörter. Gib ausschließlich den Titel zurück, ohne Anführungszeichen, ohne Einleitung und ohne Punkt am Ende.";
+  "Erstelle einen knappen, natürlichen Chat-Titel auf der Sprache der ersten Nachricht des Nutzers.\n\n" +
+  "Leite den Titel aus der ersten Nutzernachricht ab. Erfasse das zentrale Anliegen oder Thema, nicht zwingend den Satzanfang oder einzelne Schlüsselwörter.\n\n" +
+  "Der Titel soll folgendermaßen wirken: kurz, präzise, thematisch, als Tab- oder Listenlabel geeignet.\n\n" +
+  "Regeln:\n\n" +
+  "* 2 bis 6 Wörter\n" +
+  "* Keine ganzen Sätze\n" +
+  "* Keine Frageform\n" +
+  "* Keine Einleitung\n" +
+  "* Keine Anführungszeichen\n" +
+  "* Kein Punkt am Ende\n" +
+  "* Keine Ich-Form\n" +
+  "* Keine Höflichkeits- oder Füllwörter wie bitte, gerade, kannst du, ich, mein\n" +
+  "* Keine Formulierungen wie „Hilfe bei“, „Frage zu“ oder „Anfrage über“, außer sie sind inhaltlich notwendig\n" +
+  "* Verwende möglichst konkrete Substantive oder kurze Nominalgruppen\n" +
+  "* Bei technischen Fragen nenne das konkrete Thema, Tool oder Problem\n" +
+  "* Bei Schreibaufgaben nenne Textart und Ziel, zum Beispiel „Bewerbung optimieren“ oder „E-Mail formulieren“\n" +
+  "* Bei Smalltalk abstrahiere sinnvoll, zum Beispiel „Begrüßung“, „Vorstellung“ oder „Namensfrage“\n\n" +
+  "Gib ausschließlich den Titel zurück.";
 
 type ChatRole = "user" | "assistant" | "system" | "error";
 
@@ -38,6 +54,7 @@ const hosts = new Set<HTMLElement>();
 const messages: AssistantChatMessage[] = [];
 const chatSummaries: StoredChat[] = [];
 const pendingSimulationPrompts: PendingSimulationPrompt[] = [];
+const pendingGeneratedTitleChatIDs = new Set<string>();
 
 let nextMessageID = 1;
 let activeChatID: string | null = null;
@@ -143,11 +160,19 @@ export async function sendChatPrompt(prompt: string) {
 
   const chat = await ensureActiveChat(content);
   const chatID = chat.chatID;
+  const shouldGenerateTitle = chat.shouldGenerateTitle && !simulationEnabled;
+  if (shouldGenerateTitle) {
+    pendingGeneratedTitleChatIDs.add(chatID);
+  }
   const userMessage = appendMessage("user", content);
-  await persistChatMessage(chatID, userMessage);
-
-  if (chat.shouldGenerateTitle && !simulationEnabled) {
-    scheduleGeneratedChatTitle(chatID, content);
+  try {
+    await persistChatMessage(chatID, userMessage);
+  } catch (error) {
+    if (shouldGenerateTitle) {
+      pendingGeneratedTitleChatIDs.delete(chatID);
+      renderAllHosts();
+    }
+    throw error;
   }
 
   if (simulationEnabled) {
@@ -161,6 +186,12 @@ export async function sendChatPrompt(prompt: string) {
   }
 
   requestRunning = true;
+  renderAllHosts();
+
+  if (shouldGenerateTitle) {
+    void tryGenerateChatTitle(chatID, content);
+  }
+
   activeAssistantResponse = {
     prompt: content,
     activity: deriveActivityMessage(content, "waiting"),
@@ -264,6 +295,7 @@ export async function deleteChat(chatID: string) {
   }
 
   await ChatRepository.deleteChat(chatID);
+  pendingGeneratedTitleChatIDs.delete(chatID);
   showAllChats = false;
   await refreshChatSummaries(false);
 
@@ -608,37 +640,77 @@ async function ensureActiveChat(
   };
 }
 
-function scheduleGeneratedChatTitle(chatID: string, firstPrompt: string) {
-  void generateChatTitle(chatID, firstPrompt).catch((error) => {
+async function tryGenerateChatTitle(chatID: string, firstPrompt: string) {
+  try {
+    await generateChatTitle(chatID, firstPrompt);
+  } catch (error) {
     Zotero.debug(`ZAIA: Chat-Titel konnte nicht generiert werden: ${error}`);
-  });
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+  } finally {
+    pendingGeneratedTitleChatIDs.delete(chatID);
+    renderAllHosts();
+  }
 }
 
 async function generateChatTitle(chatID: string, firstPrompt: string) {
-  const result = (await addon.api.ai.chat(
-    [
-      {
-        role: "system",
-        content: TITLE_GENERATION_SYSTEM_PROMPT,
-      },
-      {
-        role: "user",
-        content: firstPrompt,
-      },
-    ],
+  const content = await requestGeneratedTitleContent([
     {
-      providerId: "kisski",
-      model: addon.data.settings.model,
-      temperature: 0.2,
-      maxTokens: 24,
+      role: "system",
+      content: TITLE_GENERATION_SYSTEM_PROMPT,
     },
-  )) as { content?: unknown };
-  const title = normalizeGeneratedChatTitle(result?.content);
+    {
+      role: "user",
+      content: firstPrompt,
+    },
+  ]);
+  const title = normalizeGeneratedChatTitle(content);
 
   if (!title) return;
 
   await ChatRepository.updateChatTitle(chatID, title);
   await refreshChatSummaries(true);
+}
+
+async function requestGeneratedTitleContent(
+  requestMessages: Array<{ role: "system" | "user"; content: string }>,
+) {
+  const options = {
+    providerId: "kisski",
+    model: addon.data.settings.model,
+    temperature: 0.2,
+  };
+
+  if (typeof addon.api.ai.chatStream === "function") {
+    try {
+      let content = "";
+      for await (const event of addon.api.ai.chatStream(
+        requestMessages,
+        options,
+      ) as AsyncIterable<{ type?: unknown; content?: unknown }>) {
+        if (
+          event?.type === "content" &&
+          typeof event.content === "string" &&
+          event.content
+        ) {
+          content += event.content;
+        }
+        if (event?.type === "done") break;
+      }
+
+      if (content.trim()) return content;
+    } catch (error) {
+      if (!shouldFallbackToBufferedChat(error)) throw error;
+    }
+  }
+
+  const result = (await addon.api.ai.chat(requestMessages, options)) as {
+    content?: unknown;
+  };
+  if (typeof result?.content === "string" && result.content.trim()) {
+    return result.content;
+  }
+
+  throw new Error("ZAIA konnte keinen Chat-Titel generieren.");
 }
 
 function normalizeGeneratedChatTitle(content: unknown) {
@@ -750,7 +822,10 @@ function renderHost(host: HTMLElement) {
   if (activeChatTitle) {
     const title = getActiveChatTitle();
     activeChatTitle.textContent = title;
-    activeChatTitle.title = title;
+    activeChatTitle.classList.toggle(
+      "zai-active-chat-title-pending",
+      Boolean(activeChatID && pendingGeneratedTitleChatIDs.has(activeChatID)),
+    );
   }
   if (backButton) backButton.disabled = requestRunning;
   if (seeAll) {
@@ -876,7 +951,7 @@ function formatRelativeTime(value: string) {
     0,
     Math.floor((Date.now() - timestamp) / 60_000),
   );
-  if (elapsedMinutes < 1) return "<1 min";
+  if (elapsedMinutes < 1) return "jetzt";
   if (elapsedMinutes < 60) return `${elapsedMinutes} min`;
 
   const elapsedHours = Math.floor(elapsedMinutes / 60);

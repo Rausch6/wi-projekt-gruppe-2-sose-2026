@@ -92,12 +92,7 @@ export class ChatRepository {
     const createdAt = await getChatCreatedAt(db, chat.id, chat.updated_at);
 
     const messageRows = (await db.queryAsync(
-      `
-      SELECT id, chat_id, role, content, position, created_at
-      FROM messages
-      WHERE chat_id = ?
-      `,
-      [chatID],
+      "SELECT id, chat_id, role, content, position, created_at FROM messages",
     )) as MessageRow[] | undefined;
 
     return {
@@ -110,6 +105,7 @@ export class ChatRepository {
         zotero_item_key: null,
       }),
       messages: (messageRows ?? [])
+        .filter((row) => row.chat_id === chatID)
         .map(mapMessageRow)
         .sort(sortMessagesByPositionAsc),
     } satisfies StoredChatWithMessages;

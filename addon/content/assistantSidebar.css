@@ -190,6 +190,7 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   box-sizing: border-box;
   display: flex;
   gap: 8px;
+  margin-bottom: 12px;
   min-width: 0;
 }
 
@@ -229,6 +230,10 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.zai-active-chat-title-pending {
+  animation: zai-activity-pulse 1.4s ease-in-out infinite;
 }
 
 .zai-chat-list {
