@@ -185,8 +185,50 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   margin: 12px 0;
 }
 
-.zai-top-chat-active .zai-divider {
-  margin-bottom: 0;
+.zai-active-chat-bar {
+  align-items: center;
+  box-sizing: border-box;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.zai-chat-back-button {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 28px;
+  justify-content: center;
+  padding: 0;
+  width: 28px;
+}
+
+.zai-chat-back-button:hover,
+.zai-chat-back-button:focus-visible {
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.zai-chat-back-button:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+.zai-active-chat-title {
+  color: var(--text-primary, inherit);
+  flex: 1 1 auto;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .zai-chat-list {
@@ -194,9 +236,11 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   gap: 6px;
 }
 
+.zai-active-chat-bar[hidden],
 .zai-chat-list[hidden],
 .zai-see-all[hidden],
-.zai-welcome[hidden] {
+.zai-welcome[hidden],
+.zai-messages[hidden] {
   display: none !important;
 }
 
@@ -211,23 +255,45 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
 }
 
 .zai-chat-entry {
+  align-items: center;
   background: transparent;
   border: 1px solid transparent;
   box-sizing: border-box;
   color: inherit;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
   max-width: 100%;
   min-height: 30px;
   min-width: 0;
   overflow: hidden;
   padding: 6px 8px;
   text-align: left;
+}
+
+.zai-chat-entry-title {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.zai-chat-entry-time {
+  color: var(--text-secondary, #5f6b7a);
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 .zai-chat-entry:hover,
-.zai-chat-entry:focus-visible {
+.zai-chat-entry:focus-visible,
+.zai-chat-entry-active {
   background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.zai-chat-entry-active {
+  border-color: color-mix(in srgb, currentColor 18%, transparent);
+  font-weight: 600;
 }
 
 .zai-see-all {
