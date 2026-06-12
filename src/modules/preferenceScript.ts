@@ -58,7 +58,7 @@ function syncRuntimeSettings(window: Window) {
     getElement<HTMLInputElement>(window, "max-items")?.value ?? "20";
 
   addon.data.settings = {
-    provider: "kisski",
+    provider: addon.data.settings.provider,
     apiKey,
     baseUrl,
     model,

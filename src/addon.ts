@@ -88,8 +88,24 @@ class Addon {
     this.hooks = hooks;
     this.api = {
       ai: aiProviderManager,
-      configureAI: () =>
-        aiProviderManager.configureProvider("kisski", this.data.settings),
+      configureAI: () => {
+        const provider = this.data.settings.provider;
+        const providerConfig =
+          provider === "ollama"
+            ? {
+                baseUrl: this.data.settings.ollamaBaseUrl,
+                model: this.data.settings.ollamaModel,
+              }
+            : {
+                apiKey: this.data.settings.apiKey,
+                baseUrl: this.data.settings.baseUrl,
+                model: this.data.settings.model,
+              };
+
+        return aiProviderManager
+          .setActiveProvider(provider)
+          .configureProvider(provider, providerConfig);
+      },
       analyze: async (query, options = {}) => {
         this.data.runtime.isAnalyzing = true;
         delete this.data.runtime.lastError;

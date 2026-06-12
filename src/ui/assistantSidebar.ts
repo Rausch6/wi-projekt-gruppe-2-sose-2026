@@ -1,6 +1,7 @@
 import { config } from "../../package.json";
 import { bindAssistantChat } from "./assistantChatController";
 import { openPreferencesPane } from "../modules/preferences";
+import type { LLMProvider } from "../addon";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -143,7 +144,7 @@ function createSidebar(doc: Document) {
 function createButton(doc: Document, className: string, text?: string) {
   const button = createHtmlElement(doc, "button", className, text);
   button.setAttribute("type", "button");
-  return button;
+  return button as HTMLButtonElement;
 }
 
 function createProviderToggle(doc: Document) {
@@ -151,31 +152,46 @@ function createProviderToggle(doc: Document) {
   toggle.setAttribute("role", "group");
   toggle.setAttribute("aria-label", "LLM Anbieter auswählen");
 
-  const cloudButton = createButton(
-    doc,
-    "zai-provider-toggle-button zai-provider-toggle-button-active",
-    "Cloud",
-  );
-  cloudButton.setAttribute("aria-pressed", "true");
-  cloudButton.dataset.provider = "cloud";
+  const cloudButton = createButton(doc, "zai-provider-toggle-button", "Cloud");
+  cloudButton.dataset.provider = "kisski";
 
   const localButton = createButton(doc, "zai-provider-toggle-button", "Lokal");
-  localButton.setAttribute("aria-pressed", "false");
-  localButton.dataset.provider = "local";
+  localButton.dataset.provider = "ollama";
 
   const buttons = [cloudButton, localButton];
+  syncProviderToggleButtons(buttons, addon.data.settings.provider);
+
   for (const button of buttons) {
     button.addEventListener("click", () => {
-      for (const entry of buttons) {
-        const isActive = entry === button;
-        entry.classList.toggle("zai-provider-toggle-button-active", isActive);
-        entry.setAttribute("aria-pressed", String(isActive));
-      }
+      const provider = getToggleProvider(button);
+      addon.data.settings.provider = provider;
+      saveProviderPreference(provider);
+      addon.api.configureAI();
+      syncProviderToggleButtons(buttons, provider);
     });
   }
 
   toggle.append(cloudButton, localButton);
   return toggle;
+}
+
+function getToggleProvider(button: HTMLButtonElement): LLMProvider {
+  return button.dataset.provider === "ollama" ? "ollama" : "kisski";
+}
+
+function syncProviderToggleButtons(
+  buttons: HTMLButtonElement[],
+  provider: LLMProvider,
+) {
+  for (const button of buttons) {
+    const isActive = getToggleProvider(button) === provider;
+    button.classList.toggle("zai-provider-toggle-button-active", isActive);
+    button.setAttribute("aria-pressed", String(isActive));
+  }
+}
+
+function saveProviderPreference(provider: LLMProvider) {
+  Zotero.Prefs.set(`${addon.data.config.prefsPrefix}.provider`, provider, true);
 }
 
 function createHtmlElement<K extends keyof HTMLElementTagNameMap>(

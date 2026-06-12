@@ -60,7 +60,7 @@ export function bindAssistantChat(host: HTMLElement) {
   modelSelect?.addEventListener("change", () => {
     updateModelSelectDisplay(modelSelect);
     if (modelSelect.value) {
-      addon.api.ai.setModel(modelSelect.value, "kisski");
+      addon.api.ai.setModel(modelSelect.value, addon.data.settings.provider);
     }
   });
 }
@@ -154,8 +154,8 @@ async function requestStreamingAssistantResponse(
   let assistantMessage: AssistantChatMessage | null = null;
 
   for await (const event of addon.api.ai.chatStream(requestMessages, {
-    providerId: "kisski",
-    model: addon.data.settings.model,
+    providerId: addon.data.settings.provider,
+    model: getActiveModel(),
   }) as AsyncIterable<{ type?: unknown; content?: unknown }>) {
     if (!event || typeof event !== "object") continue;
 
@@ -184,8 +184,8 @@ async function requestBufferedAssistantResponse(
   requestMessages: Array<{ role: "user" | "assistant"; content: string }>,
 ) {
   const result = (await addon.api.ai.chat(requestMessages, {
-    providerId: "kisski",
-    model: addon.data.settings.model,
+    providerId: addon.data.settings.provider,
+    model: getActiveModel(),
   })) as { content?: unknown };
 
   if (typeof result?.content !== "string" || !result.content.trim()) {
@@ -194,6 +194,12 @@ async function requestBufferedAssistantResponse(
 
   const assistantMessage = appendAssistantDelta(result.content.trim());
   return finalizeActiveAssistantMessage() ?? assistantMessage ?? failNoAnswer();
+}
+
+function getActiveModel() {
+  return addon.data.settings.provider === "ollama"
+    ? addon.data.settings.ollamaModel
+    : addon.data.settings.model;
 }
 
 function createRequestMessages() {
