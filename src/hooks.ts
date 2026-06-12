@@ -8,6 +8,11 @@ import {
 import { getString, initLocale } from "./utils/locale";
 import { registerPreferencesPane } from "./modules/preferences";
 import { registerPrefsScripts } from "./modules/preferenceScript";
+import {
+  closeChatDatabase,
+  initializeChatDatabase,
+} from "./persistence/ChatDatabase";
+import { initializeChatPersistence } from "./ui/assistantChatController";
 import { unregisterAssistantSidebarController } from "./ui/assistantSidebarController";
 import { createZToolkit } from "./utils/ztoolkit";
 import type { LLMProvider } from "./addon";
@@ -50,6 +55,8 @@ async function onStartup() {
 
   initLocale();
   loadSettings();
+  await initializeChatDatabase();
+  await initializeChatPersistence();
 
   await registerPreferencesPane();
 
@@ -148,6 +155,9 @@ function onShutdown(): void {
   UIExampleFactory.unregisterTemplateItemPaneSections();
   ztoolkit.unregisterAll();
   addon.data.dialog?.window?.close();
+  void closeChatDatabase().catch((error) => {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+  });
   // Remove addon object
   addon.data.alive = false;
   // @ts-ignore - Plugin instance is not typed
