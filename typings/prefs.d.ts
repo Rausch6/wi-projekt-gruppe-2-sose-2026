@@ -10,6 +10,8 @@ declare namespace _ZoteroTypes {
       "apiKey": string;
       "baseUrl": string;
       "model": string;
+      "ollamaBaseUrl": string;
+      "ollamaModel": string;
       "maxItems": number;
     };
   }

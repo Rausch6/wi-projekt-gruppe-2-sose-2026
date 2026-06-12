@@ -45,6 +45,7 @@ function createSidebar(doc: Document) {
   headerActions.append(aboutButton, settingsButton);
   header.append(title, headerActions);
 
+  const providerToggle = createProviderToggle(doc);
   const divider = createHtmlElement(doc, "div", "zai-divider");
   divider.setAttribute("aria-hidden", "true");
 
@@ -59,7 +60,7 @@ function createSidebar(doc: Document) {
   });
 
   const seeAll = createButton(doc, "zai-see-all", "Alle ansehen");
-  top.append(header, divider, chatList, seeAll);
+  top.append(header, providerToggle, divider, chatList, seeAll);
 
   const main = createHtmlElement(doc, "main", "zai-main");
   const welcome = createHtmlElement(doc, "div", "zai-welcome");
@@ -143,6 +144,38 @@ function createButton(doc: Document, className: string, text?: string) {
   const button = createHtmlElement(doc, "button", className, text);
   button.setAttribute("type", "button");
   return button;
+}
+
+function createProviderToggle(doc: Document) {
+  const toggle = createHtmlElement(doc, "div", "zai-provider-toggle");
+  toggle.setAttribute("role", "group");
+  toggle.setAttribute("aria-label", "LLM Anbieter auswählen");
+
+  const cloudButton = createButton(
+    doc,
+    "zai-provider-toggle-button zai-provider-toggle-button-active",
+    "Cloud",
+  );
+  cloudButton.setAttribute("aria-pressed", "true");
+  cloudButton.dataset.provider = "cloud";
+
+  const localButton = createButton(doc, "zai-provider-toggle-button", "Lokal");
+  localButton.setAttribute("aria-pressed", "false");
+  localButton.dataset.provider = "local";
+
+  const buttons = [cloudButton, localButton];
+  for (const button of buttons) {
+    button.addEventListener("click", () => {
+      for (const entry of buttons) {
+        const isActive = entry === button;
+        entry.classList.toggle("zai-provider-toggle-button-active", isActive);
+        entry.setAttribute("aria-pressed", String(isActive));
+      }
+    });
+  }
+
+  toggle.append(cloudButton, localButton);
+  return toggle;
 }
 
 function createHtmlElement<K extends keyof HTMLElementTagNameMap>(
