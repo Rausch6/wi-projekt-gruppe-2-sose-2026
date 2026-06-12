@@ -1,6 +1,7 @@
 import { ChatRepository } from "../core/ChatRepository";
 import { ItemManager } from "../core/ItemManager";
 import { CreateChatInput, StoredChat } from "../core/chatTypes";
+import { renderMarkdownContent } from "./markdownRenderer";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const MAX_GENERATED_TITLE_LENGTH = 80;
@@ -895,7 +896,11 @@ function createMessageElement(
 
   const content = doc.createElementNS(HTML_NS, "div") as HTMLElement;
   content.className = "zai-message-content";
-  content.textContent = message.content;
+  if (message.role === "assistant") {
+    content.append(renderMarkdownContent(doc, message.content));
+  } else {
+    content.textContent = message.content;
+  }
 
   wrapper.append(label, content);
   return wrapper;
