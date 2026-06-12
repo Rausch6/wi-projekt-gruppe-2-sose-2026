@@ -6,3 +6,4 @@ pref("model", "deepseek-r1-distill-llama-70b");
 pref("ollamaBaseUrl", "http://localhost:11434");
 pref("ollamaModel", "qwen3:4b");
 pref("maxItems", 20);
+pref("autoDeleteOldChats", true);

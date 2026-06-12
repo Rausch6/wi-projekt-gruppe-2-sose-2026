@@ -15,6 +15,7 @@ const FIELD_NAMES = [
   "ollama-base-url",
   "ollama-model",
   "max-items",
+  "auto-delete-old-chats",
 ] as const;
 
 export async function registerPrefsScripts(window: Window) {
@@ -56,6 +57,9 @@ function syncRuntimeSettings(window: Window) {
     OLLAMA_DEFAULT_MODEL;
   const maxItemsValue =
     getElement<HTMLInputElement>(window, "max-items")?.value ?? "20";
+  const autoDeleteOldChats =
+    getElement<HTMLInputElement>(window, "auto-delete-old-chats")?.checked ??
+    true;
 
   addon.data.settings = {
     provider: addon.data.settings.provider,
@@ -65,6 +69,7 @@ function syncRuntimeSettings(window: Window) {
     ollamaBaseUrl,
     ollamaModel,
     maxItems: Number.parseInt(maxItemsValue, 10) || 20,
+    autoDeleteOldChats,
   };
   addon.api.configureAI();
 }
