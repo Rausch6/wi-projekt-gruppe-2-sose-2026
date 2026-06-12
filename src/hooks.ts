@@ -10,6 +10,7 @@ import { registerPreferencesPane } from "./modules/preferences";
 import { registerPrefsScripts } from "./modules/preferenceScript";
 import { unregisterAssistantSidebarController } from "./ui/assistantSidebarController";
 import { createZToolkit } from "./utils/ztoolkit";
+import type { LLMProvider } from "./addon";
 
 // Reads one setting from Zotero's preference storage for this plugin.
 // The prefix keeps our settings separate from Zotero's own settings.
@@ -29,11 +30,13 @@ function getNumberSetting(key: string, fallback: number) {
 
 function loadSettings() {
   addon.data.settings = {
-    provider: "kisski",
+    provider: getProviderSetting(),
     apiKey: getStringSetting("apiKey"),
     baseUrl: getStringSetting("baseUrl", "https://chat-ai.academiccloud.de/v1"),
     model: getStringSetting("model", "deepseek-r1-distill-llama-70b"),
     maxItems: getNumberSetting("maxItems", 20),
+    ollamaBaseUrl: getStringSetting("ollamaBaseUrl", "http://localhost:11434"),
+    ollamaModel: getStringSetting("ollamaModel", "qwen3:4b"),
   };
   addon.api.configureAI();
 }
@@ -67,6 +70,11 @@ async function onStartup() {
   await Promise.all(
     Zotero.getMainWindows().map((win) => onMainWindowLoad(win)),
   );
+}
+
+function getProviderSetting(): LLMProvider {
+  const value = getStringSetting("provider", "kisski");
+  return value === "ollama" ? "ollama" : "kisski";
 }
 
 async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {

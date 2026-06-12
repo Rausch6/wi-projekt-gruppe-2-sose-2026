@@ -15,8 +15,7 @@ import {
 import { openAssistantSidebar } from "./ui/assistantSidebarController";
 import { createZToolkit } from "./utils/ztoolkit";
 
-// Provider nur KISSKI.
-export type LLMProvider = "kisski";
+export type LLMProvider = "kisski" | "ollama";
 
 export type PluginSettings = {
   provider: LLMProvider;
@@ -24,6 +23,8 @@ export type PluginSettings = {
   baseUrl: string;
   model: string;
   maxItems: number;
+  ollamaBaseUrl: string;
+  ollamaModel: string;
 };
 
 class Addon {
@@ -76,6 +77,8 @@ class Addon {
         apiKey: "",
         baseUrl: KISSKI_DEFAULT_BASE_URL,
         model: KISSKI_DEFAULT_MODEL,
+        ollamaBaseUrl: "http://localhost:11434",
+        ollamaModel: "qwen3:4b",
         maxItems: 20,
       },
       runtime: {
