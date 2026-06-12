@@ -18,3 +18,9 @@ image[src$="LogoPlugin.png"] {
   font-size: 1rem;
   margin-block: 0;
 }
+
+.zaia-pref-checkbox {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+}

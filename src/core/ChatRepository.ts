@@ -14,6 +14,7 @@ type ChatRow = {
   zotero_item_key: string | null;
   created_at: string;
   updated_at: string;
+  is_favorite: number;
 };
 
 type MessageRow = {
@@ -36,6 +37,7 @@ export class ChatRepository {
       zoteroItemKey: input.zoteroItemKey ?? null,
       createdAt: now,
       updatedAt: now,
+      isFavorite: Boolean(input.isFavorite),
     } satisfies StoredChat;
 
     await db.queryAsync(
@@ -46,9 +48,10 @@ export class ChatRepository {
         zotero_library_id,
         zotero_item_key,
         created_at,
-        updated_at
+        updated_at,
+        is_favorite
       )
-      VALUES (?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
       `,
       [
         chat.id,
@@ -57,6 +60,7 @@ export class ChatRepository {
         chat.zoteroItemKey,
         chat.createdAt,
         chat.updatedAt,
+        chat.isFavorite ? 1 : 0,
       ],
     );
 
@@ -67,8 +71,10 @@ export class ChatRepository {
     const db = await getChatDatabase();
     const normalizedLimit = normalizeLimit(limit);
     const rows = (await db.queryAsync(
-      "SELECT id, title, updated_at FROM chats",
-    )) as Array<Pick<ChatRow, "id" | "title" | "updated_at">> | undefined;
+      "SELECT id, title, updated_at, is_favorite FROM chats",
+    )) as
+      | Array<Pick<ChatRow, "id" | "title" | "updated_at" | "is_favorite">>
+      | undefined;
 
     const chats = await Promise.all(
       (rows ?? []).map((row) => mapChatListRow(db, row)),
@@ -83,9 +89,11 @@ export class ChatRepository {
   static async getChatWithMessages(chatID: string) {
     const db = await getChatDatabase();
     const chatRows = (await db.queryAsync(
-      "SELECT id, title, updated_at FROM chats WHERE id = ?",
+      "SELECT id, title, updated_at, is_favorite FROM chats WHERE id = ?",
       [chatID],
-    )) as Array<Pick<ChatRow, "id" | "title" | "updated_at">> | undefined;
+    )) as
+      | Array<Pick<ChatRow, "id" | "title" | "updated_at" | "is_favorite">>
+      | undefined;
     const chat = chatRows?.[0];
 
     if (!chat) return null;
@@ -103,6 +111,7 @@ export class ChatRepository {
         updated_at: chat.updated_at,
         zotero_library_id: null,
         zotero_item_key: null,
+        is_favorite: chat.is_favorite,
       }),
       messages: (messageRows ?? [])
         .filter((row) => row.chat_id === chatID)
@@ -168,11 +177,48 @@ export class ChatRepository {
 
     await db.queryAsync("DELETE FROM chats WHERE id = ?", [chatID]);
   }
+
+  static async updateChatFavorite(chatID: string, isFavorite: boolean) {
+    const db = await getChatDatabase();
+
+    await db.queryAsync("UPDATE chats SET is_favorite = ? WHERE id = ?", [
+      isFavorite ? 1 : 0,
+      chatID,
+    ]);
+  }
+
+  static async deleteOldUnfavoriteChats(maxAgeDays: number, now = new Date()) {
+    const db = await getChatDatabase();
+    const cutoffTime = now.getTime() - maxAgeDays * 24 * 60 * 60 * 1000;
+    if (!Number.isFinite(cutoffTime)) return 0;
+
+    const rows = (await db.queryAsync(
+      "SELECT id, updated_at, is_favorite FROM chats",
+    )) as Array<Pick<ChatRow, "id" | "updated_at" | "is_favorite">> | undefined;
+    const chatIDs = (rows ?? [])
+      .filter((row) => {
+        return (
+          !isFavoriteValue(row.is_favorite) &&
+          isOlderThan(row.updated_at, cutoffTime)
+        );
+      })
+      .map((row) => row.id);
+
+    if (!chatIDs.length) return 0;
+
+    await db.executeTransaction(async () => {
+      for (const chatID of chatIDs) {
+        await db.queryAsync("DELETE FROM chats WHERE id = ?", [chatID]);
+      }
+    });
+
+    return chatIDs.length;
+  }
 }
 
 async function mapChatListRow(
   db: _ZoteroTypes.DB,
-  row: Pick<ChatRow, "id" | "title" | "updated_at">,
+  row: Pick<ChatRow, "id" | "title" | "updated_at" | "is_favorite">,
 ) {
   const createdAt = await getChatCreatedAt(db, row.id, row.updated_at);
 
@@ -183,6 +229,7 @@ async function mapChatListRow(
     updated_at: row.updated_at,
     zotero_library_id: null,
     zotero_item_key: null,
+    is_favorite: row.is_favorite,
   });
 }
 
@@ -194,6 +241,7 @@ function mapChatRow(row: ChatRow): StoredChat {
     zoteroItemKey: row.zotero_item_key,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    isFavorite: isFavoriteValue(row.is_favorite),
   };
 }
 
@@ -240,6 +288,15 @@ function sortMessagesByPositionAsc(a: StoredChatMessage, b: StoredChatMessage) {
   }
 
   return a.createdAt.localeCompare(b.createdAt);
+}
+
+function isOlderThan(value: string, cutoffTime: number) {
+  const updatedAt = Date.parse(value);
+  return Number.isFinite(updatedAt) && updatedAt < cutoffTime;
+}
+
+function isFavoriteValue(value: unknown) {
+  return value === true || value === 1 || value === "1";
 }
 
 function normalizeLimit(limit?: number) {

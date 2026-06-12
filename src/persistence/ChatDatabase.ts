@@ -2,7 +2,7 @@
 
 const DATABASE_DIR_NAME = "zaia";
 const DATABASE_FILE_NAME = "zaia-chats.sqlite";
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 let connection: _ZoteroTypes.DB | null = null;
 let initializationPromise: Promise<_ZoteroTypes.DB> | null = null;
@@ -68,7 +68,7 @@ async function ensureChatDatabaseDirectory() {
 }
 
 async function migrate(db: _ZoteroTypes.DB) {
-  const version = await getSchemaVersion(db);
+  let version = await getSchemaVersion(db);
 
   if (version < 1) {
     await db.executeTransaction(async () => {
@@ -107,6 +107,20 @@ async function migrate(db: _ZoteroTypes.DB) {
         CREATE INDEX IF NOT EXISTS idx_messages_chat_position
         ON messages(chat_id, position)
       `);
+      await db.queryAsync("PRAGMA user_version = 1");
+    });
+    version = 1;
+  }
+
+  if (version < 2) {
+    await db.executeTransaction(async () => {
+      if (!(await hasColumn(db, "chats", "is_favorite"))) {
+        await db.queryAsync(`
+          ALTER TABLE chats
+          ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0
+        `);
+      }
+
       await db.queryAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     });
   }
@@ -118,4 +132,12 @@ async function getSchemaVersion(db: _ZoteroTypes.DB) {
   const version = row?.user_version;
 
   return typeof version === "number" ? version : 0;
+}
+
+async function hasColumn(db: _ZoteroTypes.DB, table: string, column: string) {
+  const rows = (await db.queryAsync(`PRAGMA table_info(${table})`)) as
+    | Array<{ name?: unknown }>
+    | undefined;
+
+  return (rows ?? []).some((row) => row.name === column);
 }

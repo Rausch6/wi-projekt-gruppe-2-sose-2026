@@ -12,10 +12,13 @@ import {
   closeChatDatabase,
   initializeChatDatabase,
 } from "./persistence/ChatDatabase";
+import { ChatRepository } from "./core/ChatRepository";
 import { initializeChatPersistence } from "./ui/assistantChatController";
 import { unregisterAssistantSidebarController } from "./ui/assistantSidebarController";
 import { createZToolkit } from "./utils/ztoolkit";
 import type { LLMProvider } from "./addon";
+
+const OLD_CHAT_RETENTION_DAYS = 14;
 
 // Reads one setting from Zotero's preference storage for this plugin.
 // The prefix keeps our settings separate from Zotero's own settings.
@@ -33,6 +36,11 @@ function getNumberSetting(key: string, fallback: number) {
   return typeof value === "number" ? value : fallback;
 }
 
+function getBooleanSetting(key: string, fallback: boolean) {
+  const value = getPluginPref(key);
+  return typeof value === "boolean" ? value : fallback;
+}
+
 function loadSettings() {
   addon.data.settings = {
     provider: getProviderSetting(),
@@ -42,6 +50,7 @@ function loadSettings() {
     maxItems: getNumberSetting("maxItems", 20),
     ollamaBaseUrl: getStringSetting("ollamaBaseUrl", "http://localhost:11434"),
     ollamaModel: getStringSetting("ollamaModel", "qwen3:4b"),
+    autoDeleteOldChats: getBooleanSetting("autoDeleteOldChats", true),
   };
   addon.api.configureAI();
 }
@@ -56,6 +65,7 @@ async function onStartup() {
   initLocale();
   loadSettings();
   await initializeChatDatabase();
+  await cleanupOldChatsOnStartup();
   await initializeChatPersistence();
 
   await registerPreferencesPane();
@@ -77,6 +87,23 @@ async function onStartup() {
   await Promise.all(
     Zotero.getMainWindows().map((win) => onMainWindowLoad(win)),
   );
+}
+
+async function cleanupOldChatsOnStartup() {
+  if (!addon.data.settings.autoDeleteOldChats) return;
+
+  try {
+    const deletedCount = await ChatRepository.deleteOldUnfavoriteChats(
+      OLD_CHAT_RETENTION_DAYS,
+    );
+    if (deletedCount > 0) {
+      Zotero.debug(
+        `ZAIA: ${deletedCount} nicht-favorisierte alte Chats gelöscht.`,
+      );
+    }
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+  }
 }
 
 function getProviderSetting(): LLMProvider {

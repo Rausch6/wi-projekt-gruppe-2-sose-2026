@@ -14,6 +14,7 @@ declare namespace _ZoteroTypes {
       "ollamaBaseUrl": string;
       "ollamaModel": string;
       "maxItems": number;
+      "autoDeleteOldChats": boolean;
     };
   }
 }

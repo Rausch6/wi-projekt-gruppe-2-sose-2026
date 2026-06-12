@@ -75,6 +75,12 @@ export function bindAssistantChat(host: HTMLElement) {
   const backButton = host.querySelector<HTMLButtonElement>(
     ".zai-chat-back-button",
   );
+  const favoriteButton = host.querySelector<HTMLButtonElement>(
+    ".zai-chat-favorite-button",
+  );
+  const deleteButton = host.querySelector<HTMLButtonElement>(
+    ".zai-chat-delete-button",
+  );
   const modelSelect =
     host.querySelector<HTMLSelectElement>(".zai-model-select");
 
@@ -129,6 +135,27 @@ export function bindAssistantChat(host: HTMLElement) {
   });
   backButton?.addEventListener("click", () => {
     if (!requestRunning) returnToWelcome();
+  });
+  favoriteButton?.addEventListener("click", () => {
+    const chatID = activeChatID;
+    if (!chatID || requestRunning) return;
+
+    const nextFavorite = !getActiveChatSummary()?.isFavorite;
+    void setChatFavorite(chatID, nextFavorite).catch((error) => {
+      Zotero.logError(
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    });
+  });
+  deleteButton?.addEventListener("click", () => {
+    const chatID = activeChatID;
+    if (!chatID || requestRunning || !confirmDeleteActiveChat(host)) return;
+
+    void deleteChat(chatID).catch((error) => {
+      Zotero.logError(
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    });
   });
   textarea?.addEventListener("keydown", (event) => {
     const keyboardEvent = event as KeyboardEvent;
@@ -306,6 +333,18 @@ export async function deleteChat(chatID: string) {
     resetMessages();
   }
 
+  renderAllHosts();
+}
+
+export async function setChatFavorite(chatID: string, isFavorite: boolean) {
+  if (requestRunning) {
+    throw new Error(
+      "Während ZAIA antwortet kann kein Chat favorisiert werden.",
+    );
+  }
+
+  await ChatRepository.updateChatFavorite(chatID, isFavorite);
+  await refreshChatSummaries(false);
   renderAllHosts();
 }
 
@@ -809,6 +848,12 @@ function renderHost(host: HTMLElement) {
   const backButton = host.querySelector<HTMLButtonElement>(
     ".zai-chat-back-button",
   );
+  const favoriteButton = host.querySelector<HTMLButtonElement>(
+    ".zai-chat-favorite-button",
+  );
+  const deleteButton = host.querySelector<HTMLButtonElement>(
+    ".zai-chat-delete-button",
+  );
   const sendButton = host.querySelector<HTMLButtonElement>(".zai-send-button");
   const textarea = host.querySelector<HTMLTextAreaElement>(".zai-input");
   const status = host.querySelector<HTMLElement>(".zai-chat-status");
@@ -835,6 +880,20 @@ function renderHost(host: HTMLElement) {
     );
   }
   if (backButton) backButton.disabled = requestRunning;
+  const activeChatSummary = getActiveChatSummary();
+  const isActiveFavorite = Boolean(activeChatSummary?.isFavorite);
+  if (favoriteButton) {
+    const favoriteLabel = isActiveFavorite
+      ? "Favorit entfernen"
+      : "Chat favorisieren";
+    favoriteButton.disabled = requestRunning || !activeChatID;
+    favoriteButton.setAttribute("aria-label", favoriteLabel);
+    favoriteButton.setAttribute("aria-pressed", String(isActiveFavorite));
+    favoriteButton.setAttribute("title", favoriteLabel);
+  }
+  if (deleteButton) {
+    deleteButton.disabled = requestRunning || !activeChatID;
+  }
   if (seeAll) {
     seeAll.textContent = showAllChats ? "Weniger anzeigen" : "Alle ansehen";
   }
@@ -948,10 +1007,21 @@ function renderChatList(host: HTMLElement, chatList: HTMLElement) {
 }
 
 function getActiveChatTitle() {
-  if (!activeChatID) return "";
-
-  const chat = chatSummaries.find((entry) => entry.id === activeChatID);
+  const chat = getActiveChatSummary();
   return chat?.title || "Unbenannter Chat";
+}
+
+function getActiveChatSummary() {
+  if (!activeChatID) return null;
+
+  return chatSummaries.find((entry) => entry.id === activeChatID) ?? null;
+}
+
+function confirmDeleteActiveChat(host: HTMLElement) {
+  const win = host.ownerDocument?.defaultView;
+  if (typeof win?.confirm !== "function") return true;
+
+  return win.confirm(`Chat "${getActiveChatTitle()}" wirklich löschen?`);
 }
 
 function formatRelativeTime(value: string) {

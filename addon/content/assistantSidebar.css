@@ -266,6 +266,40 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   opacity: 0.5;
 }
 
+.zai-chat-action-button {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 28px;
+  justify-content: center;
+  padding: 0;
+  width: 28px;
+}
+
+.zai-chat-action-button:hover,
+.zai-chat-action-button:focus-visible {
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.zai-chat-action-button:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+.zai-chat-favorite-button[aria-pressed="true"] {
+  color: #dc2626;
+}
+
+.zai-chat-favorite-button[aria-pressed="true"] svg {
+  fill: currentColor;
+}
+
 .zai-active-chat-title {
   color: var(--text-primary, inherit);
   flex: 1 1 auto;
@@ -276,6 +310,13 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.zai-active-chat-actions {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
 }
 
 .zai-active-chat-title-pending {

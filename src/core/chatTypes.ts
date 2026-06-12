@@ -7,6 +7,7 @@ export type StoredChat = {
   zoteroItemKey: string | null;
   createdAt: string;
   updatedAt: string;
+  isFavorite: boolean;
 };
 
 export type StoredChatMessage = {
@@ -26,6 +27,7 @@ export type CreateChatInput = {
   title?: string;
   zoteroLibraryID?: number | null;
   zoteroItemKey?: string | null;
+  isFavorite?: boolean;
 };
 
 export type AppendChatMessageInput = {

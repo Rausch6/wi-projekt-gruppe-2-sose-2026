@@ -16,6 +16,7 @@ import {
   listChats,
   loadChat,
   sendChatPrompt,
+  setChatFavorite,
 } from "./ui/assistantChatController";
 import { openAssistantSidebar } from "./ui/assistantSidebarController";
 import { createZToolkit } from "./utils/ztoolkit";
@@ -30,6 +31,7 @@ export type PluginSettings = {
   maxItems: number;
   ollamaBaseUrl: string;
   ollamaModel: string;
+  autoDeleteOldChats: boolean;
 };
 
 class Addon {
@@ -70,6 +72,7 @@ class Addon {
       create: typeof createChat;
       load: typeof loadChat;
       delete: typeof deleteChat;
+      setFavorite: typeof setChatFavorite;
     };
     chatSimulation: typeof chatSimulation;
     openChat: () => boolean;
@@ -90,6 +93,7 @@ class Addon {
         ollamaBaseUrl: "http://localhost:11434",
         ollamaModel: "qwen3:4b",
         maxItems: 20,
+        autoDeleteOldChats: true,
       },
       runtime: {
         isAnalyzing: false,
@@ -139,6 +143,7 @@ class Addon {
         create: createChat,
         load: loadChat,
         delete: deleteChat,
+        setFavorite: setChatFavorite,
       },
       chatSimulation,
       openChat: () => {

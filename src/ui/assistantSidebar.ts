@@ -58,7 +58,28 @@ function createSidebar(doc: Document) {
     "div",
     "zai-active-chat-title",
   );
-  activeChatBar.append(backButton, activeChatTitle);
+  const activeChatActions = createHtmlElement(
+    doc,
+    "div",
+    "zai-active-chat-actions",
+  );
+  const favoriteButton = createButton(
+    doc,
+    "zai-chat-action-button zai-chat-favorite-button",
+  );
+  favoriteButton.setAttribute("aria-label", "Chat favorisieren");
+  favoriteButton.setAttribute("aria-pressed", "false");
+  favoriteButton.setAttribute("title", "Chat favorisieren");
+  favoriteButton.append(createHeartIcon(doc));
+  const deleteButton = createButton(
+    doc,
+    "zai-chat-action-button zai-chat-delete-button",
+  );
+  deleteButton.setAttribute("aria-label", "Chat löschen");
+  deleteButton.setAttribute("title", "Chat löschen");
+  deleteButton.append(createTrashIcon(doc));
+  activeChatActions.append(favoriteButton, deleteButton);
+  activeChatBar.append(backButton, activeChatTitle, activeChatActions);
 
   const divider = createHtmlElement(doc, "div", "zai-divider");
   divider.setAttribute("aria-hidden", "true");
@@ -289,6 +310,41 @@ function createBackIcon(doc: Document) {
   arrow.setAttribute("d", "m12 19-7-7 7-7");
 
   svg.append(line, arrow);
+  return svg;
+}
+
+function createHeartIcon(doc: Document) {
+  const svg = createIconSvg(doc, "18");
+
+  const heart = doc.createElementNS(SVG_NS, "path");
+  heart.setAttribute(
+    "d",
+    "M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78Z",
+  );
+
+  svg.append(heart);
+  return svg;
+}
+
+function createTrashIcon(doc: Document) {
+  const svg = createIconSvg(doc, "18");
+
+  const lid = doc.createElementNS(SVG_NS, "path");
+  lid.setAttribute("d", "M3 6h18");
+
+  const handle = doc.createElementNS(SVG_NS, "path");
+  handle.setAttribute("d", "M8 6V4h8v2");
+
+  const bin = doc.createElementNS(SVG_NS, "path");
+  bin.setAttribute("d", "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6");
+
+  const leftLine = doc.createElementNS(SVG_NS, "path");
+  leftLine.setAttribute("d", "M10 11v6");
+
+  const rightLine = doc.createElementNS(SVG_NS, "path");
+  rightLine.setAttribute("d", "M14 11v6");
+
+  svg.append(lid, handle, bin, leftLine, rightLine);
   return svg;
 }
 
