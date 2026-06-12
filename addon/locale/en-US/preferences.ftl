@@ -1,10 +1,15 @@
-pref-title = KISSKI AI
-pref-description = Connect the plugin to DeepSeek through the KISSKI/SAIA OpenAI-compatible API.
+pref-kisski-section-title = KISSKI Settings (Cloud LLM)
+pref-kisski-api-key = KISSKI API key
+pref-kisski-base-url = KISSKI API base URL
+pref-kisski-model = KISSKI model
 pref-api-key = KISSKI API key
 pref-base-url = API base URL
 pref-model = Model
 pref-max-items = Maximum items per analysis
 pref-load-models =
     .label = Load available models
+pref-ollama-section-title = Ollama Settings (Local LLM)
+pref-ollama-base-url = Ollama base URL
+pref-ollama-model = Ollama model
 pref-api-key-notice = The API key is stored in the local Zotero preferences. Never commit an API key to the repository.
 pref-help = { $name } Build { $version } { $time }

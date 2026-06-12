@@ -9,3 +9,12 @@ image[src$="LogoPlugin.png"] {
   vertical-align: middle;
   width: auto !important;
 }
+
+.zaia-pref-section {
+  margin-block: 1.25rem 0.5rem;
+}
+
+.zaia-pref-section h3 {
+  font-size: 1rem;
+  margin-block: 0;
+}

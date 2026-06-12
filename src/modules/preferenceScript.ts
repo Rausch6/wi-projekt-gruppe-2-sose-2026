@@ -3,8 +3,19 @@ import {
   KISSKI_DEFAULT_BASE_URL,
   KISSKI_DEFAULT_MODEL,
 } from "../ai/providers/KisskiProvider.js";
+import {
+  OLLAMA_DEFAULT_BASE_URL,
+  OLLAMA_DEFAULT_MODEL,
+} from "../ai/providers/OllamaProvider.js";
 
-const FIELD_NAMES = ["api-key", "base-url", "model", "max-items"] as const;
+const FIELD_NAMES = [
+  "api-key",
+  "base-url",
+  "model",
+  "ollama-base-url",
+  "ollama-model",
+  "max-items",
+] as const;
 
 export async function registerPrefsScripts(window: Window) {
   addon.data.prefs = {
@@ -37,14 +48,22 @@ function syncRuntimeSettings(window: Window) {
   const model =
     getElement<HTMLInputElement>(window, "model")?.value.trim() ||
     KISSKI_DEFAULT_MODEL;
+  const ollamaBaseUrl =
+    getElement<HTMLInputElement>(window, "ollama-base-url")?.value.trim() ||
+    OLLAMA_DEFAULT_BASE_URL;
+  const ollamaModel =
+    getElement<HTMLInputElement>(window, "ollama-model")?.value.trim() ||
+    OLLAMA_DEFAULT_MODEL;
   const maxItemsValue =
     getElement<HTMLInputElement>(window, "max-items")?.value ?? "20";
 
   addon.data.settings = {
-    provider: "kisski",
+    provider: addon.data.settings.provider,
     apiKey,
     baseUrl,
     model,
+    ollamaBaseUrl,
+    ollamaModel,
     maxItems: Number.parseInt(maxItemsValue, 10) || 20,
   };
   addon.api.configureAI();

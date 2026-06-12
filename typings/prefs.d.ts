@@ -7,9 +7,12 @@
 declare namespace _ZoteroTypes {
   interface Prefs {
     PluginPrefsMap: {
+      "provider": string;
       "apiKey": string;
       "baseUrl": string;
       "model": string;
+      "ollamaBaseUrl": string;
+      "ollamaModel": string;
       "maxItems": number;
     };
   }

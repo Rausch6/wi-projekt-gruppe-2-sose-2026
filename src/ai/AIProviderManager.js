@@ -1,10 +1,12 @@
 import { AIProviderConfigurationError } from "./AIProvider.js";
 import { KisskiProvider } from "./providers/KisskiProvider.js";
+import { OllamaProvider } from "./providers/OllamaProvider.js";
 
 export class AIProviderManager {
   constructor(options = {}) {
     this.providers = new Map();
     this.register(new KisskiProvider(options.kisski));
+    this.register(new OllamaProvider(options.ollama));
     this.activeProviderId = options.activeProvider ?? "kisski";
   }
 
