@@ -103,7 +103,7 @@ class Addon {
         apiKey: "",
         baseUrl: KISSKI_DEFAULT_BASE_URL,
         model: KISSKI_DEFAULT_MODEL,
-        sendPaperContextToKisski: false,
+        sendPaperContextToKisski: true,
         ollamaBaseUrl: "http://localhost:11434",
         ollamaModel: "qwen3:4b",
         maxItems: 20,

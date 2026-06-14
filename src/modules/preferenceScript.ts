@@ -52,7 +52,7 @@ function syncRuntimeSettings(window: Window) {
     KISSKI_DEFAULT_MODEL;
   const sendPaperContextToKisski =
     getElement<HTMLInputElement>(window, "send-paper-context-to-kisski")
-      ?.checked ?? false;
+      ?.checked ?? true;
   const ollamaBaseUrl =
     getElement<HTMLInputElement>(window, "ollama-base-url")?.value.trim() ||
     OLLAMA_DEFAULT_BASE_URL;

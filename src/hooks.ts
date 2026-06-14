@@ -49,7 +49,7 @@ function loadSettings() {
     model: getStringSetting("model", "deepseek-r1-distill-llama-70b"),
     sendPaperContextToKisski: getBooleanSetting(
       "sendPaperContextToKisski",
-      false,
+      true,
     ),
     maxItems: getNumberSetting("maxItems", 20),
     ollamaBaseUrl: getStringSetting("ollamaBaseUrl", "http://localhost:11434"),
