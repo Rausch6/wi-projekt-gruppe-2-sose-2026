@@ -16,8 +16,19 @@ export class ItemManager {
    */
 
   static getSelectedItems(): Zotero.Item[] {
-    const pane = Zotero.getActiveZoteroPane();
-    return pane ? (pane.getSelectedItems() as Zotero.Item[]) : [];
+    const panes = getCandidateZoteroPanes();
+    for (const pane of panes) {
+      try {
+        const items = pane.getSelectedItems() as Zotero.Item[];
+        if (items.length) return items;
+      } catch (error) {
+        Zotero.debug(
+          `ZAIA: Zotero-Auswahl konnte nicht gelesen werden: ${error}`,
+        );
+      }
+    }
+
+    return [];
   }
 
   /**
@@ -71,6 +82,18 @@ export class ItemManager {
     return item && item.isRegularItem() ? item : null;
   }
 
+  static async getSelectedRegularItem(
+    itemID?: number,
+  ): Promise<Zotero.Item | null> {
+    const item =
+      typeof itemID === "number"
+        ? await Zotero.Items.getAsync(itemID)
+        : this.getSelectedItems()[0];
+    if (!item) return null;
+
+    return this.resolveRegularItemAsync(item);
+  }
+
   private static resolveRegularItem(item: Zotero.Item) {
     if (item.isRegularItem()) return item;
     if (!item.isAttachment() || !item.parentID) return null;
@@ -78,4 +101,44 @@ export class ItemManager {
     const parent = Zotero.Items.get(item.parentID);
     return parent?.isRegularItem() ? parent : null;
   }
+
+  private static async resolveRegularItemAsync(item: Zotero.Item) {
+    if (item.isRegularItem()) return item;
+    if (!item.isAttachment() || !item.parentID) return null;
+
+    const parent = await Zotero.Items.getAsync(item.parentID);
+    return parent?.isRegularItem() ? parent : null;
+  }
+}
+
+function getCandidateZoteroPanes() {
+  const panes: _ZoteroTypes.ZoteroPane[] = [];
+  const addPane = (pane?: _ZoteroTypes.ZoteroPane | null) => {
+    if (pane && !panes.includes(pane)) panes.push(pane);
+  };
+
+  try {
+    addPane(Zotero.getActiveZoteroPane());
+  } catch {
+    // The developer window can temporarily have no active Zotero pane.
+  }
+
+  try {
+    const mainWindow = Zotero.getMainWindow() as
+      | (_ZoteroTypes.MainWindow & {
+          ZoteroPane?: _ZoteroTypes.ZoteroPane;
+        })
+      | null;
+    addPane(mainWindow?.ZoteroPane);
+  } catch {
+    // Continue with the panes known to Zotero.
+  }
+
+  try {
+    for (const pane of Zotero.getZoteroPanes()) addPane(pane);
+  } catch {
+    // Returning an empty list is handled by the caller.
+  }
+
+  return panes;
 }

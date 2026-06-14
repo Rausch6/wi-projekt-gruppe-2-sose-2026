@@ -491,10 +491,12 @@ async function createRequestMessages(prompt: string) {
 }
 
 async function createPaperContextMessage(prompt: string) {
-  if (
-    addon.data.settings.provider !== "kisski" ||
-    !addon.data.settings.sendPaperContextToKisski
-  ) {
+  const provider = addon.data.settings.provider;
+  const shouldIncludePaper =
+    provider === "ollama" ||
+    (provider === "kisski" && addon.data.settings.sendPaperContextToKisski);
+
+  if (!shouldIncludePaper) {
     return null;
   }
 
