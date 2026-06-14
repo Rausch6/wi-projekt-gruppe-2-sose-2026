@@ -1,5 +1,9 @@
 import { ChatRepository } from "../core/ChatRepository";
 import { ItemManager } from "../core/ItemManager";
+import {
+  PaperContextService,
+  type PaperReference,
+} from "../core/PaperContextService";
 import { CreateChatInput, StoredChat } from "../core/chatTypes";
 import { renderMarkdownContent } from "./markdownRenderer";
 
@@ -26,6 +30,10 @@ const TITLE_GENERATION_SYSTEM_PROMPT =
   "Gib ausschließlich den Titel zurück.";
 
 type ChatRole = "user" | "assistant" | "system" | "error";
+type RequestMessage = {
+  role: "system" | "user" | "assistant";
+  content: string;
+};
 
 export type AssistantChatMessage = {
   id: number;
@@ -231,7 +239,7 @@ export async function sendChatPrompt(prompt: string) {
 
   try {
     const assistantMessage = await requestAssistantResponse(
-      createRequestMessages(),
+      await createRequestMessages(content),
     );
 
     if (!assistantMessage.content.trim()) {
@@ -384,9 +392,7 @@ function invalidateChatSummaries() {
   chatSummaries.length = 0;
 }
 
-async function requestAssistantResponse(
-  requestMessages: Array<{ role: "user" | "assistant"; content: string }>,
-) {
+async function requestAssistantResponse(requestMessages: RequestMessage[]) {
   if (typeof addon.api.ai.chatStream === "function") {
     try {
       return await requestStreamingAssistantResponse(requestMessages);
@@ -405,7 +411,7 @@ async function requestAssistantResponse(
 }
 
 async function requestStreamingAssistantResponse(
-  requestMessages: Array<{ role: "user" | "assistant"; content: string }>,
+  requestMessages: RequestMessage[],
 ) {
   let assistantMessage: AssistantChatMessage | null = null;
 
@@ -437,7 +443,7 @@ async function requestStreamingAssistantResponse(
 }
 
 async function requestBufferedAssistantResponse(
-  requestMessages: Array<{ role: "user" | "assistant"; content: string }>,
+  requestMessages: RequestMessage[],
 ) {
   const result = (await addon.api.ai.chat(requestMessages, {
     providerId: addon.data.settings.provider,
@@ -458,11 +464,16 @@ function getActiveModel() {
     : addon.data.settings.model;
 }
 
-function createRequestMessages() {
-  const requestMessages: Array<{
-    role: "user" | "assistant";
-    content: string;
-  }> = [];
+async function createRequestMessages(prompt: string) {
+  const requestMessages: RequestMessage[] = [];
+  const paperContext = await createPaperContextMessage(prompt);
+
+  if (paperContext) {
+    requestMessages.push({
+      role: "system",
+      content: paperContext,
+    });
+  }
 
   for (const message of messages) {
     if (
@@ -477,6 +488,37 @@ function createRequestMessages() {
   }
 
   return requestMessages;
+}
+
+async function createPaperContextMessage(prompt: string) {
+  if (
+    addon.data.settings.provider !== "kisski" ||
+    !addon.data.settings.sendPaperContextToKisski
+  ) {
+    return null;
+  }
+
+  const reference = getActivePaperReference();
+  if (!reference) return null;
+
+  const context = await PaperContextService.buildContext(reference, prompt);
+  if (!context) {
+    throw new Error(
+      "Paper-Kontext ist aktiviert, aber Zotero konnte keinen Text aus dem verknüpften PDF laden. Prüfe, ob das PDF lokal verfügbar und per OCR durchsuchbar ist.",
+    );
+  }
+
+  return context.systemMessage;
+}
+
+function getActivePaperReference(): PaperReference | null {
+  const chat = getActiveChatSummary();
+  if (!chat?.zoteroLibraryID || !chat.zoteroItemKey) return null;
+
+  return {
+    libraryID: chat.zoteroLibraryID,
+    itemKey: chat.zoteroItemKey,
+  };
 }
 
 function appendAssistantDelta(delta: string) {
@@ -721,8 +763,8 @@ async function requestGeneratedTitleContent(
   requestMessages: Array<{ role: "system" | "user"; content: string }>,
 ) {
   const options = {
-    providerId: "kisski",
-    model: addon.data.settings.model,
+    providerId: addon.data.settings.provider,
+    model: getActiveModel(),
     temperature: 0.2,
   };
 

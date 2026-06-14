@@ -12,6 +12,7 @@ const FIELD_NAMES = [
   "api-key",
   "base-url",
   "model",
+  "send-paper-context-to-kisski",
   "ollama-base-url",
   "ollama-model",
   "max-items",
@@ -49,6 +50,9 @@ function syncRuntimeSettings(window: Window) {
   const model =
     getElement<HTMLInputElement>(window, "model")?.value.trim() ||
     KISSKI_DEFAULT_MODEL;
+  const sendPaperContextToKisski =
+    getElement<HTMLInputElement>(window, "send-paper-context-to-kisski")
+      ?.checked ?? false;
   const ollamaBaseUrl =
     getElement<HTMLInputElement>(window, "ollama-base-url")?.value.trim() ||
     OLLAMA_DEFAULT_BASE_URL;
@@ -66,6 +70,7 @@ function syncRuntimeSettings(window: Window) {
     apiKey,
     baseUrl,
     model,
+    sendPaperContextToKisski,
     ollamaBaseUrl,
     ollamaModel,
     maxItems: Number.parseInt(maxItemsValue, 10) || 20,

@@ -28,6 +28,7 @@ export type PluginSettings = {
   apiKey: string;
   baseUrl: string;
   model: string;
+  sendPaperContextToKisski: boolean;
   maxItems: number;
   ollamaBaseUrl: string;
   ollamaModel: string;
@@ -90,6 +91,7 @@ class Addon {
         apiKey: "",
         baseUrl: KISSKI_DEFAULT_BASE_URL,
         model: KISSKI_DEFAULT_MODEL,
+        sendPaperContextToKisski: false,
         ollamaBaseUrl: "http://localhost:11434",
         ollamaModel: "qwen3:4b",
         maxItems: 20,

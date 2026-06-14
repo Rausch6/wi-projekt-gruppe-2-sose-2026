@@ -11,6 +11,7 @@ declare namespace _ZoteroTypes {
       "apiKey": string;
       "baseUrl": string;
       "model": string;
+      "sendPaperContextToKisski": boolean;
       "ollamaBaseUrl": string;
       "ollamaModel": string;
       "maxItems": number;
