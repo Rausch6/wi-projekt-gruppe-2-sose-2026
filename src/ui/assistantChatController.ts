@@ -2,6 +2,7 @@ import { ChatRepository } from "../core/ChatRepository";
 import { ItemManager } from "../core/ItemManager";
 import { CreateChatInput, StoredChat } from "../core/chatTypes";
 import { renderMarkdownContent } from "./markdownRenderer";
+import type { LLMProvider } from "../addon";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const MAX_GENERATED_TITLE_LENGTH = 80;
@@ -51,19 +52,35 @@ type ActiveChatResolution = {
   shouldGenerateTitle: boolean;
 };
 
+type ModelOption = {
+  id: string;
+  name: string;
+  ownedBy?: string;
+};
+
+type ModelLoadState = {
+  status: "idle" | "loading" | "loaded" | "error";
+  message?: string;
+  requestID?: number;
+};
+
 const hosts = new Set<HTMLElement>();
 const messages: AssistantChatMessage[] = [];
 const chatSummaries: StoredChat[] = [];
 const pendingSimulationPrompts: PendingSimulationPrompt[] = [];
 const pendingGeneratedTitleChatIDs = new Set<string>();
 const modelDropdownDocuments = new WeakSet<Document>();
+const modelOptionsByProvider = new Map<LLMProvider, ModelOption[]>();
+const modelLoadStates = new Map<LLMProvider, ModelLoadState>();
 
 let nextMessageID = 1;
+let nextModelLoadRequestID = 1;
 let activeChatID: string | null = null;
 let showAllChats = false;
 let chatSummariesLoaded = false;
 let simulationEnabled = false;
 let requestRunning = false;
+let modelPickerExpanded = true;
 let activeAssistantResponse: ActiveAssistantResponse | null = null;
 
 export function bindAssistantChat(host: HTMLElement) {
@@ -87,9 +104,16 @@ export function bindAssistantChat(host: HTMLElement) {
   );
   const modelButton =
     host.querySelector<HTMLButtonElement>(".zai-model-select");
+  const modelPickerToggle = host.querySelector<HTMLButtonElement>(
+    ".zai-model-picker-toggle",
+  );
+  const providerButtons = Array.from(
+    host.querySelectorAll(".zai-provider-toggle-button[data-provider]"),
+  ) as HTMLButtonElement[];
 
-  syncModelDropdown(modelDropdown);
+  syncModelPicker(host);
   ensureModelDropdownOutsideHandler(host.ownerDocument);
+  void ensureModelOptionsLoaded(getActiveProvider());
   if (!activeChatID) invalidateChatSummaries();
   renderHost(host);
   void refreshChatSummaries(true).catch((error) => {
@@ -97,6 +121,7 @@ export function bindAssistantChat(host: HTMLElement) {
   });
 
   const sendCurrentPrompt = () => {
+    hosts.add(host);
     const prompt = textarea?.value.trim() ?? "";
     if (!prompt || requestRunning) return;
 
@@ -169,9 +194,21 @@ export function bindAssistantChat(host: HTMLElement) {
       sendCurrentPrompt();
     }
   });
+  modelPickerToggle?.addEventListener("click", () => {
+    hosts.add(host);
+    setModelPickerExpanded(!modelPickerExpanded);
+  });
+  for (const providerButton of providerButtons) {
+    providerButton.addEventListener("click", () => {
+      hosts.add(host);
+      setActiveProvider(getProviderButtonValue(providerButton));
+    });
+  }
   modelButton?.addEventListener("click", () => {
     if (!modelDropdown) return;
 
+    hosts.add(host);
+    void ensureModelOptionsLoaded(getActiveProvider());
     toggleModelDropdown(modelDropdown);
   });
   modelDropdown?.addEventListener("click", (event) => {
@@ -428,7 +465,7 @@ async function requestStreamingAssistantResponse(
   let assistantMessage: AssistantChatMessage | null = null;
 
   for await (const event of addon.api.ai.chatStream(requestMessages, {
-    providerId: addon.data.settings.provider,
+    providerId: getActiveProvider(),
     model: getActiveModel(),
   }) as AsyncIterable<{ type?: unknown; content?: unknown }>) {
     if (!event || typeof event !== "object") continue;
@@ -458,7 +495,7 @@ async function requestBufferedAssistantResponse(
   requestMessages: Array<{ role: "user" | "assistant"; content: string }>,
 ) {
   const result = (await addon.api.ai.chat(requestMessages, {
-    providerId: addon.data.settings.provider,
+    providerId: getActiveProvider(),
     model: getActiveModel(),
   })) as { content?: unknown };
 
@@ -470,8 +507,12 @@ async function requestBufferedAssistantResponse(
   return finalizeActiveAssistantMessage() ?? assistantMessage ?? failNoAnswer();
 }
 
-function getActiveModel() {
-  return addon.data.settings.provider === "ollama"
+function getActiveProvider(): LLMProvider {
+  return addon.data.settings.provider === "ollama" ? "ollama" : "kisski";
+}
+
+function getActiveModel(provider: LLMProvider = getActiveProvider()) {
+  return provider === "ollama"
     ? addon.data.settings.ollamaModel
     : addon.data.settings.model;
 }
@@ -1062,34 +1103,219 @@ function formatRelativeTime(value: string) {
   return `${Math.floor(elapsedDays / 7)} w`;
 }
 
-function syncModelDropdown(dropdown: HTMLElement | null) {
+function syncAllModelPickers() {
+  for (const host of [...hosts]) {
+    syncModelPicker(host);
+  }
+}
+
+function syncModelPicker(host: HTMLElement) {
+  const provider = getActiveProvider();
+  const picker = host.querySelector<HTMLElement>(".zai-model-picker");
+  if (picker) picker.dataset.provider = provider;
+  syncModelPickerDisclosure(host, provider);
+  syncProviderToggleButtons(host, provider);
+  syncModelDropdown(
+    host.querySelector<HTMLElement>(".zai-model-select-wrap"),
+    provider,
+  );
+}
+
+function syncModelPickerDisclosure(host: HTMLElement, provider: LLMProvider) {
+  const picker = host.querySelector<HTMLElement>(".zai-model-picker");
+  const toggle = host.querySelector<HTMLButtonElement>(
+    ".zai-model-picker-toggle",
+  );
+  const content = host.querySelector<HTMLElement>(".zai-model-picker-content");
+  const summary = host.querySelector<HTMLElement>(".zai-model-picker-summary");
+
+  picker?.classList.toggle("zai-model-picker-collapsed", !modelPickerExpanded);
+  toggle?.setAttribute("aria-expanded", String(modelPickerExpanded));
+  content?.toggleAttribute("hidden", !modelPickerExpanded);
+
+  if (summary) {
+    if (modelPickerExpanded) {
+      summary.textContent = "";
+      summary.title = "";
+      summary.hidden = true;
+      return;
+    }
+
+    const model = getActiveModel(provider).trim() || "Modell auswählen";
+    summary.textContent = `${getProviderLabel(provider)} · ${model}`;
+    summary.title = summary.textContent;
+    summary.hidden = false;
+  }
+}
+
+function setModelPickerExpanded(expanded: boolean) {
+  modelPickerExpanded = expanded;
+  if (!expanded) {
+    for (const host of [...hosts]) {
+      host
+        .querySelectorAll<HTMLElement>(".zai-model-select-wrap-open")
+        .forEach(closeModelDropdown);
+    }
+  }
+  syncAllModelPickers();
+}
+
+function syncProviderToggleButtons(host: HTMLElement, provider: LLMProvider) {
+  host
+    .querySelectorAll<HTMLButtonElement>(
+      ".zai-provider-toggle-button[data-provider]",
+    )
+    .forEach((button) => {
+      const isActive = getProviderButtonValue(button) === provider;
+      button.classList.toggle("zai-provider-toggle-button-active", isActive);
+      button.setAttribute("aria-pressed", String(isActive));
+    });
+}
+
+function getProviderButtonValue(button: HTMLButtonElement): LLMProvider {
+  return button.dataset.provider === "ollama" ? "ollama" : "kisski";
+}
+
+function setActiveProvider(provider: LLMProvider) {
+  const currentProvider = getActiveProvider();
+  if (provider !== currentProvider) {
+    addon.data.settings.provider = provider;
+    savePluginPreference("provider", provider);
+    addon.api.configureAI();
+  }
+
+  syncAllModelPickers();
+  void ensureModelOptionsLoaded(provider);
+}
+
+async function ensureModelOptionsLoaded(provider: LLMProvider, force = false) {
+  const state = modelLoadStates.get(provider);
+  if (!force) {
+    if (state?.status === "loading") return;
+    if (state?.status === "loaded" && modelOptionsByProvider.has(provider)) {
+      return;
+    }
+  }
+
+  const requestID = nextModelLoadRequestID++;
+  modelLoadStates.set(provider, { status: "loading", requestID });
+  syncAllModelPickers();
+
+  try {
+    if (provider === getActiveProvider()) {
+      addon.api.configureAI();
+    }
+    const models = normalizeModelOptions(
+      await addon.api.ai.listModels(provider),
+    );
+    if (modelLoadStates.get(provider)?.requestID !== requestID) return;
+
+    modelOptionsByProvider.set(provider, models);
+    modelLoadStates.set(provider, { status: "loaded" });
+  } catch (error) {
+    if (modelLoadStates.get(provider)?.requestID !== requestID) return;
+
+    const message = error instanceof Error ? error.message : String(error);
+    modelLoadStates.set(provider, { status: "error", message });
+  } finally {
+    syncAllModelPickers();
+  }
+}
+
+function normalizeModelOptions(models: unknown): ModelOption[] {
+  if (!Array.isArray(models)) return [];
+
+  const seen = new Set<string>();
+  const options: ModelOption[] = [];
+
+  for (const model of models) {
+    const record = model as {
+      id?: unknown;
+      name?: unknown;
+      ownedBy?: unknown;
+    };
+    const id = typeof record.id === "string" ? record.id.trim() : "";
+    if (!id || seen.has(id)) continue;
+
+    const name =
+      typeof record.name === "string" && record.name.trim()
+        ? record.name.trim()
+        : id;
+    const ownedBy =
+      typeof record.ownedBy === "string" && record.ownedBy.trim()
+        ? record.ownedBy.trim()
+        : "";
+    const option: ModelOption = { id, name };
+    if (ownedBy) option.ownedBy = ownedBy;
+
+    seen.add(id);
+    options.push(option);
+  }
+
+  return options;
+}
+
+function syncModelDropdown(
+  dropdown: HTMLElement | null,
+  provider: LLMProvider = getActiveProvider(),
+) {
   if (!dropdown) return;
 
-  const value = addon.data.settings.model.trim();
+  const value = getActiveModel(provider).trim();
   const options = dropdown.querySelector<HTMLElement>(
     ".zai-model-select-options",
   );
   if (!options) return;
 
-  const values = getModelDropdownValues(dropdown, value);
-  options.replaceChildren(
-    ...values.map((model) =>
-      createModelDropdownOption(dropdown.ownerDocument, model, model === value),
-    ),
+  dropdown.dataset.provider = provider;
+  const models = modelOptionsByProvider.get(provider) ?? [];
+  const values = getModelDropdownValues(models, value);
+  const optionNodes = values.map((model) =>
+    createModelDropdownOption(dropdown.ownerDocument, model, model === value),
   );
-  updateModelDropdownDisplay(dropdown, value);
-  closeModelDropdown(dropdown);
+  const stateNode = createModelDropdownState(
+    dropdown.ownerDocument,
+    provider,
+    models.length,
+  );
+
+  options.replaceChildren(...optionNodes, ...(stateNode ? [stateNode] : []));
+  updateModelDropdownDisplay(dropdown, value, provider);
 }
 
-function getModelDropdownValues(dropdown: HTMLElement, selectedValue: string) {
-  const values = [
-    selectedValue,
-    ...Array.from(
-      dropdown.querySelectorAll(".zai-model-select-option[data-model-value]"),
-    ).map((option) => (option as HTMLElement).dataset.modelValue?.trim() ?? ""),
-  ];
+function getModelDropdownValues(models: ModelOption[], selectedValue: string) {
+  const values = [selectedValue, ...models.map((model) => model.id.trim())];
 
   return [...new Set(values.filter(Boolean))];
+}
+
+function createModelDropdownState(
+  doc: Document,
+  provider: LLMProvider,
+  modelCount: number,
+) {
+  const state = modelLoadStates.get(provider);
+  let text = "";
+  let title = "";
+
+  if (state?.status === "loading") {
+    text = "Modelle werden geladen...";
+  } else if (state?.status === "error") {
+    text = modelCount
+      ? "Aktualisierung fehlgeschlagen"
+      : "Modelle konnten nicht geladen werden";
+    title = state.message ?? "";
+  } else if (state?.status === "loaded" && modelCount === 0) {
+    text = "Keine Modelle gefunden";
+  }
+
+  if (!text) return null;
+
+  const element = doc.createElementNS(HTML_NS, "div") as HTMLElement;
+  element.className = "zai-model-select-state";
+  element.textContent = text;
+  if (title) element.title = title;
+  return element;
 }
 
 function createModelDropdownOption(
@@ -1108,7 +1334,11 @@ function createModelDropdownOption(
   return option;
 }
 
-function updateModelDropdownDisplay(dropdown: HTMLElement, value: string) {
+function updateModelDropdownDisplay(
+  dropdown: HTMLElement,
+  value: string,
+  provider: LLMProvider,
+) {
   const displayValue = value || "Modell auswählen";
   const button = dropdown.querySelector<HTMLButtonElement>(".zai-model-select");
   const display = dropdown.querySelector<HTMLElement>(
@@ -1117,9 +1347,10 @@ function updateModelDropdownDisplay(dropdown: HTMLElement, value: string) {
   if (!button || !display) return;
 
   button.dataset.modelValue = value;
-  button.title = displayValue;
+  button.dataset.provider = provider;
+  button.title = `${getProviderLabel(provider)}: ${displayValue}`;
   display.textContent = displayValue;
-  display.title = displayValue;
+  display.title = button.title;
 
   dropdown
     .querySelectorAll<HTMLElement>(".zai-model-select-option")
@@ -1132,10 +1363,40 @@ function updateModelDropdownDisplay(dropdown: HTMLElement, value: string) {
 }
 
 function selectModelDropdownValue(dropdown: HTMLElement, value: string) {
-  updateModelDropdownDisplay(dropdown, value);
+  const provider = getDropdownProvider(dropdown);
+  setProviderModel(provider, value);
   closeModelDropdown(dropdown);
-  addon.data.settings.model = value;
-  addon.api.ai.setModel(value, addon.data.settings.provider);
+  syncAllModelPickers();
+}
+
+function getDropdownProvider(dropdown: HTMLElement): LLMProvider {
+  return dropdown.dataset.provider === "ollama" ? "ollama" : "kisski";
+}
+
+function setProviderModel(provider: LLMProvider, value: string) {
+  const model = value.trim();
+  if (!model) return;
+
+  if (provider === "ollama") {
+    addon.data.settings.ollamaModel = model;
+    savePluginPreference("ollamaModel", model);
+  } else {
+    addon.data.settings.model = model;
+    savePluginPreference("model", model);
+  }
+
+  addon.api.ai.setModel(model, provider);
+  if (provider === getActiveProvider()) {
+    addon.api.configureAI();
+  }
+}
+
+function getProviderLabel(provider: LLMProvider) {
+  return provider === "ollama" ? "Lokal" : "Cloud";
+}
+
+function savePluginPreference(key: string, value: string) {
+  Zotero.Prefs.set(`${addon.data.config.prefsPrefix}.${key}`, value, true);
 }
 
 function toggleModelDropdown(dropdown: HTMLElement) {

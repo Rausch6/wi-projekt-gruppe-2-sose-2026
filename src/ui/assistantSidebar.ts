@@ -58,7 +58,7 @@ function createSidebar(doc: Document, options: AssistantSidebarRenderOptions) {
   headerActions.append(settingsButton);
   header.append(title, headerActions);
 
-  const providerToggle = createProviderToggle(doc);
+  const modelPicker = createModelPicker(doc);
   const activeChatBar = createHtmlElement(doc, "div", "zai-active-chat-bar");
   activeChatBar.hidden = true;
   const backButton = createButton(doc, "zai-chat-back-button");
@@ -99,7 +99,7 @@ function createSidebar(doc: Document, options: AssistantSidebarRenderOptions) {
   const chatList = createHtmlElement(doc, "div", "zai-chat-list");
 
   const seeAll = createButton(doc, "zai-see-all", "Alle ansehen");
-  top.append(header, providerToggle, divider, activeChatBar, chatList, seeAll);
+  top.append(header, modelPicker, divider, activeChatBar, chatList, seeAll);
 
   const main = createHtmlElement(doc, "main", "zai-main");
   const welcome = createHtmlElement(doc, "div", "zai-welcome");
@@ -142,36 +142,13 @@ function createSidebar(doc: Document, options: AssistantSidebarRenderOptions) {
   textarea.placeholder = "Frag etwas zur Bibliothek...";
   textarea.rows = 3;
 
-  const composerFooter = createHtmlElement(doc, "div", "zai-composer-footer");
-  const modelWrap = createHtmlElement(doc, "div", "zai-model-select-wrap");
-  const modelSelect = createButton(doc, "zai-model-select");
-  modelSelect.setAttribute("aria-expanded", "false");
-  modelSelect.setAttribute("aria-haspopup", "listbox");
-  modelSelect.setAttribute("aria-label", "Modell auswählen");
-  const modelValue = createHtmlElement(
-    doc,
-    "span",
-    "zai-model-select-value",
-    "Cloud (GPT-4o)",
-  );
-  const modelOptions = createHtmlElement(
-    doc,
-    "div",
-    "zai-model-select-options",
-  );
-  modelOptions.hidden = true;
-  modelOptions.setAttribute("role", "listbox");
-  modelSelect.append(modelValue);
-  modelWrap.append(modelSelect, modelOptions);
-
   const chatStatus = createHtmlElement(doc, "span", "zai-chat-status", "");
   chatStatus.hidden = true;
   const sendButton = createButton(doc, "zai-send-button");
   sendButton.setAttribute("aria-label", "Nachricht senden");
   sendButton.append(createSendIcon(doc));
 
-  composerFooter.append(modelWrap, chatStatus, sendButton);
-  composer.append(textarea, composerFooter);
+  composer.append(textarea, chatStatus, sendButton);
   footer.append(actions, composer);
 
   sidebar.append(top, main, footer);
@@ -203,6 +180,23 @@ function createPopoutButton(doc: Document) {
   return popoutButton;
 }
 
+function createModelPicker(doc: Document) {
+  const picker = createHtmlElement(doc, "div", "zai-model-picker");
+  const toggle = createButton(doc, "zai-model-picker-toggle");
+  toggle.setAttribute("aria-expanded", "true");
+  toggle.setAttribute("aria-label", "Modellauswahl ein- oder ausklappen");
+  toggle.append(
+    createHtmlElement(doc, "span", "zai-model-picker-title", "Modellauswahl"),
+    createHtmlElement(doc, "span", "zai-model-picker-summary"),
+  );
+
+  const content = createHtmlElement(doc, "div", "zai-model-picker-content");
+  content.append(createProviderToggle(doc), createModelSelect(doc));
+
+  picker.append(toggle, content);
+  return picker;
+}
+
 function createProviderToggle(doc: Document) {
   const toggle = createHtmlElement(doc, "div", "zai-provider-toggle");
   toggle.setAttribute("role", "group");
@@ -217,18 +211,34 @@ function createProviderToggle(doc: Document) {
   const buttons = [cloudButton, localButton];
   syncProviderToggleButtons(buttons, addon.data.settings.provider);
 
-  for (const button of buttons) {
-    button.addEventListener("click", () => {
-      const provider = getToggleProvider(button);
-      addon.data.settings.provider = provider;
-      saveProviderPreference(provider);
-      addon.api.configureAI();
-      syncProviderToggleButtons(buttons, provider);
-    });
-  }
-
   toggle.append(cloudButton, localButton);
   return toggle;
+}
+
+function createModelSelect(doc: Document) {
+  const modelWrap = createHtmlElement(doc, "div", "zai-model-select-wrap");
+  const modelSelect = createButton(doc, "zai-model-select");
+  modelSelect.setAttribute("aria-expanded", "false");
+  modelSelect.setAttribute("aria-haspopup", "listbox");
+  modelSelect.setAttribute("aria-label", "Modell auswählen");
+
+  const modelValue = createHtmlElement(
+    doc,
+    "span",
+    "zai-model-select-value",
+    "Modell auswählen",
+  );
+  const modelOptions = createHtmlElement(
+    doc,
+    "div",
+    "zai-model-select-options",
+  );
+  modelOptions.hidden = true;
+  modelOptions.setAttribute("role", "listbox");
+
+  modelSelect.append(modelValue);
+  modelWrap.append(modelSelect, modelOptions);
+  return modelWrap;
 }
 
 function getToggleProvider(button: HTMLButtonElement): LLMProvider {
@@ -244,10 +254,6 @@ function syncProviderToggleButtons(
     button.classList.toggle("zai-provider-toggle-button-active", isActive);
     button.setAttribute("aria-pressed", String(isActive));
   }
-}
-
-function saveProviderPreference(provider: LLMProvider) {
-  Zotero.Prefs.set(`${addon.data.config.prefsPrefix}.provider`, provider, true);
 }
 
 function createHtmlElement<K extends keyof HTMLElementTagNameMap>(
