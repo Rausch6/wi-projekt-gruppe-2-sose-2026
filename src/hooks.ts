@@ -53,7 +53,7 @@ function loadSettings() {
     model: getStringSetting("model", "deepseek-r1-distill-llama-70b"),
     maxItems: getNumberSetting("maxItems", 20),
     ollamaBaseUrl: getStringSetting("ollamaBaseUrl", "http://localhost:11434"),
-    ollamaModel: getStringSetting("ollamaModel", "qwen3:4b"),
+    ollamaModel: getStringSetting("ollamaModel", "qwen2.5:3b"),
     autoDeleteOldChats: getBooleanSetting("autoDeleteOldChats", true),
   };
   addon.api.configureAI();

@@ -6,7 +6,7 @@ import {
 } from "../../utils/httpClient.js";
 
 export const OLLAMA_DEFAULT_BASE_URL = "http://localhost:11434";
-export const OLLAMA_DEFAULT_MODEL = "qwen3:4b";
+export const OLLAMA_DEFAULT_MODEL = "qwen2.5:3b";
 
 export class OllamaProvider extends AIProvider {
   constructor(options = {}) {
@@ -54,6 +54,43 @@ export class OllamaProvider extends AIProvider {
         name: model,
         ownedBy: "ollama",
       }));
+  }
+
+  async pullModel(model = this.model, options = {}) {
+    const url = `${this.baseUrl}/api/pull`;
+    const body = {
+      model,
+      stream: false,
+    };
+
+    try {
+      const response = await httpClient.post(url, body, {
+        timeout: options.timeout ?? 600_000,
+        mode: "local",
+      });
+      await assertHttpOk(url, response);
+
+      const payload = await response.json();
+      if (payload?.status && payload.status !== "success") {
+        throw new AIProviderResponseError(
+          this.id,
+          "Ollama model pull failed",
+          { details: payload },
+        );
+      }
+
+      return payload;
+    } catch (cause) {
+      if (cause instanceof AIProviderResponseError) throw cause;
+      if (cause instanceof HttpResponseError) {
+        throw new AIProviderResponseError(this.id, cause.message, {
+          status: cause.status,
+          details: cause.details,
+          cause,
+        });
+      }
+      throw cause;
+    }
   }
 
   async chat(messages, options = {}) {
