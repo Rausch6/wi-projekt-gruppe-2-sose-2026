@@ -91,7 +91,7 @@ class Addon {
         baseUrl: KISSKI_DEFAULT_BASE_URL,
         model: KISSKI_DEFAULT_MODEL,
         ollamaBaseUrl: "http://localhost:11434",
-        ollamaModel: "qwen3:4b",
+        ollamaModel: "qwen2.5:3b",
         maxItems: 20,
         autoDeleteOldChats: true,
       },
