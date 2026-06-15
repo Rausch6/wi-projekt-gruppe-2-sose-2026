@@ -1,5 +1,15 @@
 import { config } from "../../package.json";
 import { renderAssistantSidebar } from "./assistantSidebar";
+import {
+  closeAssistantPopoutWindow,
+  isAssistantPopoutWindowOpen,
+  openAssistantPopoutWindow,
+  syncAssistantPopoutButtons,
+} from "./assistantPopoutWindow";
+import {
+  ASSISTANT_POPOUT_REQUEST_EVENT,
+  ASSISTANT_POPOUT_STATE_EVENT,
+} from "./assistantPopoutEvents";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const SIDEBAR_ID = `${config.addonRef}-standalone-ai-sidebar`;
@@ -126,6 +136,10 @@ export function registerAssistantSidebarController(
   ) => {
     cancelPendingOpenFrames();
 
+    if (open && isAssistantPopoutWindowOpen(win)) {
+      closeAssistantPopoutWindow(win, { restoreSidebar: false });
+    }
+
     const updateNativePane = options.updateNativePane !== false;
     if (updateNativePane) {
       setNativeItemPaneCollapsed(win, !open);
@@ -154,10 +168,36 @@ export function registerAssistantSidebarController(
     }
   };
 
+  const openPopout = () => {
+    openAssistantPopoutWindow(win, {
+      onBeforeOpen: () => setOpen(false),
+      onClose: () => {
+        win.focus();
+        setOpen(true);
+        focusPopoutButton();
+      },
+    });
+  };
+  const syncPopoutState = (event?: Event) => {
+    const open =
+      event instanceof win.CustomEvent
+        ? Boolean((event as CustomEvent<{ open?: boolean }>).detail?.open)
+        : isAssistantPopoutWindowOpen(win);
+    syncAssistantPopoutButtons(win, open);
+  };
   const togglePanel = () => {
     const open = panel.hidden === true;
     setOpen(open);
     return open;
+  };
+  const focusPopoutButton = () => {
+    win.requestAnimationFrame(() => {
+      win.requestAnimationFrame(() => {
+        panel
+          .querySelector<HTMLElement>('[data-zai-popout-button="true"]')
+          ?.focus();
+      });
+    });
   };
   const closeOnSidenavActivate = (event: Event) => {
     if (isAssistantTriggerEvent(event)) {
@@ -175,6 +215,8 @@ export function registerAssistantSidebarController(
     closeOnSidenavActivate,
   );
 
+  win.addEventListener(ASSISTANT_POPOUT_REQUEST_EVENT, openPopout);
+  win.addEventListener(ASSISTANT_POPOUT_STATE_EVENT, syncPopoutState);
   win.addEventListener("resize", syncPanelPosition);
   observeNativeItemPane(win, paneObserver);
 
@@ -184,6 +226,9 @@ export function registerAssistantSidebarController(
   states.set(win, {
     cleanup: () => {
       cancelPendingOpenFrames();
+      closeAssistantPopoutWindow(win, { restoreSidebar: false });
+      win.removeEventListener(ASSISTANT_POPOUT_REQUEST_EVENT, openPopout);
+      win.removeEventListener(ASSISTANT_POPOUT_STATE_EVENT, syncPopoutState);
       win.removeEventListener("resize", syncPanelPosition);
       removeSidenavCloseListeners();
       paneObserver.disconnect();

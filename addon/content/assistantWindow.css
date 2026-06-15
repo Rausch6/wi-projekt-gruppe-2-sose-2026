@@ -1,0 +1,41 @@
+:root {
+  background: var(--material-sidepane, var(--material-background, #fff));
+  color: var(--text-primary, #1f2933);
+  font-size: 13px;
+  height: 100%;
+  min-height: 640px;
+  min-width: 420px;
+}
+
+body {
+  background: inherit;
+  color: inherit;
+  font: inherit;
+  height: 100%;
+  margin: 0;
+  min-height: 640px;
+  min-width: 420px;
+  overflow: hidden;
+}
+
+.zai-assistant-window-root {
+  box-sizing: border-box;
+  height: 100vh;
+  min-height: 640px;
+  min-width: 420px;
+  overflow: hidden;
+  width: 100vw;
+}
+
+.zai-assistant-popout {
+  background: var(--material-sidepane, var(--material-background, #fff));
+  color: var(--text-primary, #1f2933);
+}
+
+.zai-assistant-window-error {
+  box-sizing: border-box;
+  color: var(--text-primary);
+  font: inherit;
+  margin: 0;
+  padding: 18px;
+}

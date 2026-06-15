@@ -14,6 +14,10 @@ import {
 } from "./persistence/ChatDatabase";
 import { ChatRepository } from "./core/ChatRepository";
 import { initializeChatPersistence } from "./ui/assistantChatController";
+import {
+  handleAssistantPopoutWindowUnload,
+  initializeAssistantPopoutWindow,
+} from "./ui/assistantPopoutWindow";
 import { unregisterAssistantSidebarController } from "./ui/assistantSidebarController";
 import { createZToolkit } from "./utils/ztoolkit";
 import type { LLMProvider } from "./addon";
@@ -269,6 +273,24 @@ function onDialogEvents(type: string) {
   }
 }
 
+function onAssistantWindowLoad(data: { owner?: Window; window: Window }) {
+  if (!data.owner) return;
+
+  initializeAssistantPopoutWindow(
+    data.window,
+    data.owner as _ZoteroTypes.MainWindow,
+  );
+}
+
+function onAssistantWindowUnload(data: { owner?: Window; window: Window }) {
+  if (!data.owner) return;
+
+  handleAssistantPopoutWindowUnload(
+    data.window,
+    data.owner as _ZoteroTypes.MainWindow,
+  );
+}
+
 // Add your hooks here. For element click, etc.
 // Keep in mind hooks only do dispatch. Don't add code that does real jobs in hooks.
 // Otherwise the code would be hard to read and maintain.
@@ -282,4 +304,6 @@ export default {
   onPrefsEvent,
   onShortcuts,
   onDialogEvents,
+  onAssistantWindowLoad,
+  onAssistantWindowUnload,
 };
