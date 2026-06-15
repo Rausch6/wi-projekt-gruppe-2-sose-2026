@@ -1,0 +1,271 @@
+import {
+  AIProviderConfigurationError,
+  AIProviderResponseError,
+} from "./AIProvider.js";
+import {
+  assertHttpOk,
+  HttpResponseError,
+  httpClient,
+} from "../utils/httpClient.js";
+
+export const EMBEDDING_PROVIDER_ID = "huggingface-e5";
+export const EMBEDDING_DEFAULT_BASE_URL = "http://localhost:8080/v1";
+export const EMBEDDING_DEFAULT_MODEL = "intfloat/multilingual-e5-base";
+export const EMBEDDING_DEFAULT_TIMEOUT = 120_000;
+
+export class EmbeddingProvider {
+  constructor(options = {}) {
+    this.id = EMBEDDING_PROVIDER_ID;
+    this.name = "Hugging Face E5 Embeddings";
+    this.baseUrl = normalizeBaseUrl(
+      options.baseUrl ?? EMBEDDING_DEFAULT_BASE_URL,
+    );
+    this.model = requireText(
+      options.model ?? EMBEDDING_DEFAULT_MODEL,
+      "Embedding model",
+    );
+    this.timeout = options.timeout ?? EMBEDDING_DEFAULT_TIMEOUT;
+  }
+
+  configure(options = {}) {
+    if (options.baseUrl !== undefined) {
+      this.baseUrl = normalizeBaseUrl(options.baseUrl);
+    }
+    if (options.model !== undefined) {
+      this.model = requireText(options.model, "Embedding model");
+    }
+    if (options.timeout !== undefined) {
+      this.timeout = options.timeout;
+    }
+
+    return this.getConfig();
+  }
+
+  getConfig() {
+    return {
+      id: this.id,
+      name: this.name,
+      baseUrl: this.baseUrl,
+      model: this.model,
+      timeout: this.timeout,
+    };
+  }
+
+  async isAvailable() {
+    try {
+      await this.embedTexts(["ping"], { inputType: "query", timeout: 30_000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async embedTexts(texts, options = {}) {
+    const inputTexts = normalizeTexts(texts).map((text) =>
+      applyE5Prefix(text, options.inputType),
+    );
+    const baseUrl = options.baseUrl ?? this.baseUrl;
+    const timeout = options.timeout ?? this.timeout;
+
+    try {
+      return await requestOpenAIEmbeddings(baseUrl, inputTexts, {
+        model: options.model ?? this.model,
+        timeout,
+      });
+    } catch (cause) {
+      if (shouldTryNativeEmbed(cause)) {
+        try {
+          return await requestNativeEmbeddings(baseUrl, inputTexts, {
+            timeout,
+          });
+        } catch (fallbackCause) {
+          throw normalizeEmbeddingError(fallbackCause, this.id);
+        }
+      }
+      throw normalizeEmbeddingError(cause, this.id);
+    }
+  }
+}
+
+async function requestOpenAIEmbeddings(baseUrl, inputTexts, options) {
+  const url = createEmbeddingsUrl(baseUrl);
+  const response = await httpClient.post(
+    url,
+    {
+      model: options.model,
+      input: inputTexts,
+      encoding_format: "float",
+    },
+    {
+      timeout: options.timeout,
+      mode: "local",
+    },
+  );
+  await assertHttpOk(url, response);
+
+  const payload = await response.json();
+  return parseEmbeddings(payload, inputTexts.length);
+}
+
+async function requestNativeEmbeddings(baseUrl, inputTexts, options) {
+  const url = createNativeEmbedUrl(baseUrl);
+  const response = await httpClient.post(
+    url,
+    { inputs: inputTexts },
+    {
+      timeout: options.timeout,
+      mode: "local",
+    },
+  );
+  await assertHttpOk(url, response);
+
+  const payload = await response.json();
+  return parseEmbeddings(payload, inputTexts.length);
+}
+
+function shouldTryNativeEmbed(cause) {
+  return (
+    cause instanceof HttpResponseError &&
+    [400, 404, 405, 422].includes(cause.status)
+  );
+}
+
+function normalizeEmbeddingError(cause, providerId) {
+  if (cause instanceof AIProviderResponseError) return cause;
+  if (cause instanceof HttpResponseError) {
+    return new AIProviderResponseError(providerId, cause.message, {
+      status: cause.status,
+      details: cause.details,
+      cause,
+    });
+  }
+  return cause;
+}
+
+function normalizeTexts(texts) {
+  const normalized = Array.isArray(texts) ? texts : [texts];
+  if (!normalized.length) {
+    throw new AIProviderConfigurationError(
+      EMBEDDING_PROVIDER_ID,
+      "At least one text is required for embeddings",
+    );
+  }
+
+  return normalized.map((text, index) =>
+    requireText(text, `Embedding input ${index}`),
+  );
+}
+
+function applyE5Prefix(text, inputType) {
+  if (/^(query|passage):\s/i.test(text)) return text;
+  if (inputType === "passage") return `passage: ${text}`;
+  return `query: ${text}`;
+}
+
+function parseEmbeddings(payload, expectedCount) {
+  const vectors =
+    parseOpenAIEmbeddings(payload) ??
+    parseEmbeddingProperty(payload, expectedCount) ??
+    parseEmbeddingArray(payload, expectedCount);
+
+  if (!vectors || vectors.length !== expectedCount) {
+    throw new AIProviderResponseError(
+      EMBEDDING_PROVIDER_ID,
+      "Embedding service returned an invalid embedding response",
+      { details: payload },
+    );
+  }
+
+  return vectors.map((vector, index) =>
+    normalizeVector(vector, `Embedding ${index}`),
+  );
+}
+
+function parseOpenAIEmbeddings(payload) {
+  if (!Array.isArray(payload?.data)) return null;
+
+  return payload.data
+    .slice()
+    .sort((a, b) => {
+      const aIndex = typeof a?.index === "number" ? a.index : 0;
+      const bIndex = typeof b?.index === "number" ? b.index : 0;
+      return aIndex - bIndex;
+    })
+    .map((entry) => entry?.embedding);
+}
+
+function parseEmbeddingProperty(payload, expectedCount) {
+  if (Array.isArray(payload?.embeddings)) {
+    return parseEmbeddingArray(payload.embeddings, expectedCount);
+  }
+  if (Array.isArray(payload?.embedding)) {
+    return expectedCount === 1 ? [payload.embedding] : null;
+  }
+  return null;
+}
+
+function parseEmbeddingArray(payload, expectedCount) {
+  if (!Array.isArray(payload)) return null;
+  if (isNumberArray(payload)) {
+    return expectedCount === 1 ? [payload] : null;
+  }
+  if (payload.every(isNumberArray)) return payload;
+  return null;
+}
+
+function normalizeVector(vector, label) {
+  if (!isNumberArray(vector)) {
+    throw new AIProviderResponseError(
+      EMBEDDING_PROVIDER_ID,
+      `${label} is not a numeric vector`,
+      { details: vector },
+    );
+  }
+
+  return vector.map((value) => Number(value));
+}
+
+function isNumberArray(value) {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((entry) => typeof entry === "number" && Number.isFinite(entry))
+  );
+}
+
+function createEmbeddingsUrl(baseUrl) {
+  return baseUrl.endsWith("/embeddings") ? baseUrl : `${baseUrl}/embeddings`;
+}
+
+function createNativeEmbedUrl(baseUrl) {
+  const url = new URL(baseUrl);
+  let pathname = url.pathname.replace(/\/+$/, "");
+
+  if (pathname.endsWith("/v1/embeddings")) {
+    pathname = pathname.slice(0, -"/v1/embeddings".length);
+  } else if (pathname.endsWith("/embeddings")) {
+    pathname = pathname.slice(0, -"/embeddings".length);
+  } else if (pathname.endsWith("/v1")) {
+    pathname = pathname.slice(0, -"/v1".length);
+  }
+
+  url.pathname = `${pathname}/embed`.replace(/\/{2,}/g, "/");
+  url.search = "";
+  url.hash = "";
+  return url.toString().replace(/\/$/, "");
+}
+
+function requireText(value, label) {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new TypeError(`${label} must be a non-empty string`);
+  }
+  return value.trim();
+}
+
+function normalizeBaseUrl(baseUrl) {
+  return requireText(baseUrl, "Embedding base URL").replace(/\/+$/, "");
+}
+
+export const embeddingProvider = new EmbeddingProvider();
+
+export default EmbeddingProvider;

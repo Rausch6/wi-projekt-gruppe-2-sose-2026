@@ -1,10 +1,7 @@
 import { ItemManager } from "./ItemManager";
+import { EmbeddingSearchService } from "./EmbeddingSearchService";
 import { PdfExtractor } from "./PdfExtractor";
-import {
-  chunkPaperText,
-  selectRelevantChunks,
-  type TextChunk,
-} from "./TextChunker";
+import { chunkPaperText, type TextChunk } from "./TextChunker";
 
 export interface PaperReference {
   libraryID: number;
@@ -80,7 +77,11 @@ export class PaperContextService {
     const paper = await getCachedPaper(item);
     if (!paper) return null;
 
-    const chunks = selectRelevantChunks(paper.chunks, query);
+    const chunks = await EmbeddingSearchService.selectRelevantChunks(
+      paper.chunks,
+      query,
+      { cacheKey: paper.cacheKey },
+    );
     if (!chunks.length) return null;
 
     return {
@@ -92,6 +93,7 @@ export class PaperContextService {
 
   static clearCache() {
     paperCache.clear();
+    EmbeddingSearchService.clearCache();
   }
 }
 

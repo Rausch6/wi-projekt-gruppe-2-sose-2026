@@ -20,6 +20,27 @@ Zotero.log(result.content);
 Verfuegbare Modelle lassen sich in den Plugin-Einstellungen laden oder ueber
 `Zotero.AddonTemplate.api.ai.listModels("kisski")` abrufen.
 
+## Lokale Embeddings
+
+Fuer die Auswahl relevanter PDF-Auschnitte kann das Plugin semantische
+Embeddings verwenden. Standardmaessig ist das Modell
+`intfloat/multilingual-e5-base` mit einem lokalen OpenAI-kompatiblen Endpoint
+unter `http://localhost:8080/v1/embeddings` konfiguriert.
+
+Ein passender Endpoint kann z.B. mit Hugging Face Text Embeddings Inference
+gestartet werden:
+
+```bash
+docker run --pull always -p 8080:80 ghcr.io/huggingface/text-embeddings-inference:cpu-1.9 --model-id intfloat/multilingual-e5-base
+```
+
+Auf ARM64/Apple-Silicon-Systemen ist stattdessen der Image-Tag `cpu-arm64-1.9`
+passend.
+
+Im Plugin unter Einstellungen kann der Embedding-Service getestet werden. Falls
+der Endpoint nicht erreichbar ist, verwendet ZAIA automatisch die bisherige
+Keyword-basierte Chunk-Auswahl.
+
 ## Getting started
 
 To make it easy for you to get started with GitLab, here's a list of recommended next steps.

@@ -12,6 +12,9 @@ declare namespace _ZoteroTypes {
       "baseUrl": string;
       "model": string;
       "sendPaperContextToKisski": boolean;
+      "embeddingSearchEnabled": boolean;
+      "embeddingBaseUrl": string;
+      "embeddingModel": string;
       "ollamaBaseUrl": string;
       "ollamaModel": string;
       "maxItems": number;
