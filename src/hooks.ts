@@ -51,6 +51,10 @@ function loadSettings() {
     apiKey: getStringSetting("apiKey"),
     baseUrl: getStringSetting("baseUrl", "https://chat-ai.academiccloud.de/v1"),
     model: getStringSetting("model", "deepseek-r1-distill-llama-70b"),
+    sendPaperContextToKisski: getBooleanSetting(
+      "sendPaperContextToKisski",
+      true,
+    ),
     maxItems: getNumberSetting("maxItems", 20),
     ollamaBaseUrl: getStringSetting("ollamaBaseUrl", "http://localhost:11434"),
     ollamaModel: getStringSetting("ollamaModel", "qwen2.5:3b"),

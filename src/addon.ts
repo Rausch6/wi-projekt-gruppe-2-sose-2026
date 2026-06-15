@@ -5,6 +5,11 @@ import {
   KISSKI_DEFAULT_BASE_URL,
   KISSKI_DEFAULT_MODEL,
 } from "./ai/providers/KisskiProvider.js";
+import {
+  PaperContextService,
+  type ChunkedPaper,
+} from "./core/PaperContextService";
+import { ItemManager } from "./core/ItemManager";
 import hooks from "./hooks";
 import {
   chatSimulation,
@@ -22,12 +27,14 @@ import { openAssistantSidebar } from "./ui/assistantSidebarController";
 import { createZToolkit } from "./utils/ztoolkit";
 
 export type LLMProvider = "kisski" | "ollama";
+let lastPaperChunkReport = "";
 
 export type PluginSettings = {
   provider: LLMProvider;
   apiKey: string;
   baseUrl: string;
   model: string;
+  sendPaperContextToKisski: boolean;
   maxItems: number;
   ollamaBaseUrl: string;
   ollamaModel: string;
@@ -75,6 +82,12 @@ class Addon {
       setFavorite: typeof setChatFavorite;
     };
     chatSimulation: typeof chatSimulation;
+    paperDebug: {
+      logSelectedChunks: (itemID?: number) => Promise<string>;
+      showSelectedChunks: (itemID?: number) => Promise<string>;
+      getLastReport: () => string;
+      getSelectedItemIDs: () => number[];
+    };
     openChat: () => boolean;
   };
 
@@ -90,6 +103,7 @@ class Addon {
         apiKey: "",
         baseUrl: KISSKI_DEFAULT_BASE_URL,
         model: KISSKI_DEFAULT_MODEL,
+        sendPaperContextToKisski: true,
         ollamaBaseUrl: "http://localhost:11434",
         ollamaModel: "qwen2.5:3b",
         maxItems: 20,
@@ -146,6 +160,13 @@ class Addon {
         setFavorite: setChatFavorite,
       },
       chatSimulation,
+      paperDebug: {
+        logSelectedChunks: logSelectedPaperChunks,
+        showSelectedChunks: showSelectedPaperChunks,
+        getLastReport: () => lastPaperChunkReport,
+        getSelectedItemIDs: () =>
+          ItemManager.getSelectedItems().map((item) => item.id),
+      },
       openChat: () => {
         const win = Zotero.getMainWindow();
         if (!win) return false;
@@ -155,6 +176,70 @@ class Addon {
       },
     };
   }
+}
+
+async function logSelectedPaperChunks(itemID?: number) {
+  const paper = await PaperContextService.getSelectedPaperChunks(itemID);
+  if (!paper) {
+    throw new Error(
+      "Zotero konnte keinen Text aus dem ausgewählten PDF laden. Prüfe, ob es lokal verfügbar und per OCR durchsuchbar ist.",
+    );
+  }
+
+  const report = formatPaperChunks(paper);
+  lastPaperChunkReport = report;
+  logToZoteroConsole(report);
+  return report;
+}
+
+async function showSelectedPaperChunks(itemID?: number) {
+  const report = await logSelectedPaperChunks(itemID);
+  Zotero.Utilities.Internal.copyTextToClipboard(report);
+
+  const chunkCount = report.match(/^\[C\d+\]/gm)?.length ?? 0;
+  const message = [
+    `Paper erfolgreich in ${chunkCount} Chunks umgewandelt.`,
+    "Der vollständige Bericht wurde in die Zwischenablage kopiert",
+    "und in die Zotero-Debugausgabe geschrieben.",
+  ].join("\n");
+  Zotero.getMainWindow()?.alert(message);
+  return message;
+}
+
+function formatPaperChunks(paper: ChunkedPaper) {
+  const header = [
+    "[ZAIA Paper Chunks]",
+    `Titel: ${paper.title}`,
+    `Autorenschaft: ${paper.creators}`,
+    paper.year ? `Jahr: ${paper.year}` : "",
+    `Attachment-ID: ${paper.attachmentID}`,
+    `Chunks: ${paper.chunks.length}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const chunks = paper.chunks.map((chunk) => {
+    const pages = formatChunkPages(chunk.pageStart, chunk.pageEnd);
+    return `[${chunk.id}] ${pages}, ca. ${chunk.estimatedTokens} Tokens\n${chunk.text}`;
+  });
+
+  return [header, ...chunks].join("\n\n");
+}
+
+function formatChunkPages(pageStart: number | null, pageEnd: number | null) {
+  if (pageStart === null) return "Seite unbekannt";
+  if (pageStart === pageEnd) return `Seite ${pageStart}`;
+  return `Seiten ${pageStart}-${pageEnd}`;
+}
+
+function logToZoteroConsole(message: string) {
+  Zotero.debug(message);
+  (
+    Zotero as unknown as {
+      log?: (value: string) => void;
+    }
+  ).log?.(message);
+  globalThis.console?.log(message);
 }
 
 export default Addon;

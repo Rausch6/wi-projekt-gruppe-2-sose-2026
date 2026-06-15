@@ -14,10 +14,7 @@ export default defineConfig({
     "https://github.com/{{owner}}/{{repo}}/releases/download/v{{version}}/{{xpiName}}.xpi",
 
   build: {
-    assets: [
-      "addon/**/*.*",
-      "node_modules/pdfjs-dist/build/pdf.worker.js" 
-    ],
+    assets: ["addon/**/*.*"],
     define: {
       ...pkg.config,
       author: pkg.author,

@@ -71,9 +71,19 @@ export class ChatRepository {
     const db = await getChatDatabase();
     const normalizedLimit = normalizeLimit(limit);
     const rows = (await db.queryAsync(
-      "SELECT id, title, updated_at, is_favorite FROM chats",
+      "SELECT id, title, zotero_library_id, zotero_item_key, updated_at, is_favorite FROM chats",
     )) as
-      | Array<Pick<ChatRow, "id" | "title" | "updated_at" | "is_favorite">>
+      | Array<
+          Pick<
+            ChatRow,
+            | "id"
+            | "title"
+            | "zotero_library_id"
+            | "zotero_item_key"
+            | "updated_at"
+            | "is_favorite"
+          >
+        >
       | undefined;
 
     const chats = await Promise.all(
@@ -89,10 +99,20 @@ export class ChatRepository {
   static async getChatWithMessages(chatID: string) {
     const db = await getChatDatabase();
     const chatRows = (await db.queryAsync(
-      "SELECT id, title, updated_at, is_favorite FROM chats WHERE id = ?",
+      "SELECT id, title, zotero_library_id, zotero_item_key, updated_at, is_favorite FROM chats WHERE id = ?",
       [chatID],
     )) as
-      | Array<Pick<ChatRow, "id" | "title" | "updated_at" | "is_favorite">>
+      | Array<
+          Pick<
+            ChatRow,
+            | "id"
+            | "title"
+            | "zotero_library_id"
+            | "zotero_item_key"
+            | "updated_at"
+            | "is_favorite"
+          >
+        >
       | undefined;
     const chat = chatRows?.[0];
 
@@ -109,8 +129,8 @@ export class ChatRepository {
         title: chat.title,
         created_at: createdAt,
         updated_at: chat.updated_at,
-        zotero_library_id: null,
-        zotero_item_key: null,
+        zotero_library_id: chat.zotero_library_id,
+        zotero_item_key: chat.zotero_item_key,
         is_favorite: chat.is_favorite,
       }),
       messages: (messageRows ?? [])
@@ -218,7 +238,15 @@ export class ChatRepository {
 
 async function mapChatListRow(
   db: _ZoteroTypes.DB,
-  row: Pick<ChatRow, "id" | "title" | "updated_at" | "is_favorite">,
+  row: Pick<
+    ChatRow,
+    | "id"
+    | "title"
+    | "zotero_library_id"
+    | "zotero_item_key"
+    | "updated_at"
+    | "is_favorite"
+  >,
 ) {
   const createdAt = await getChatCreatedAt(db, row.id, row.updated_at);
 
@@ -227,8 +255,8 @@ async function mapChatListRow(
     title: row.title,
     created_at: createdAt,
     updated_at: row.updated_at,
-    zotero_library_id: null,
-    zotero_item_key: null,
+    zotero_library_id: row.zotero_library_id,
+    zotero_item_key: row.zotero_item_key,
     is_favorite: row.is_favorite,
   });
 }

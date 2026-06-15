@@ -3,6 +3,7 @@ pref("provider", "kisski");
 pref("apiKey", "");
 pref("baseUrl", "https://chat-ai.academiccloud.de/v1");
 pref("model", "deepseek-r1-distill-llama-70b");
+pref("sendPaperContextToKisski", true);
 pref("ollamaBaseUrl", "http://localhost:11434");
 pref("ollamaModel", "qwen2.5:3b");
 pref("maxItems", 20);

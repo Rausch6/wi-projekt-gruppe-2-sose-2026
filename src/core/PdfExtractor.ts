@@ -1,117 +1,151 @@
 /// <reference types="zotero-types" />
 
-import * as pdfjsLib from 'pdfjs-dist';
-
-// Konfiguriere den Worker für pdf.js; notwendig für den reibungslosen Ablauf in Browser-Umgebungen
-// In einer Zotero Plugin-Umgebung kann es nötig sein, den Pfad zum Worker anzupassen. 
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'chrome://addontemplate/content/scripts/pdf.worker.js';
-
 export interface PageTextChunk {
-    page: number;
-    text: string;
+  page: number | null;
+  text: string;
 }
 
+export interface ExtractedPaperDocument {
+  item: Zotero.Item;
+  attachment: Zotero.Item;
+  title: string;
+  creators: string;
+  year: string;
+  pages: PageTextChunk[];
+}
+
+/**
+ * Reads PDF text through Zotero's own full-text index.
+ *
+ * Zotero already extracts and caches attachment text in `.zotero-ft-cache`.
+ * Reusing that cache avoids shipping a second, incompatible PDF.js runtime.
+ */
 export class PdfExtractor {
-    
-    /**
-     * Sucht das erste PDF-Attachment eines Zotero-Items und gibt den absoluten lokalen Dateipfad zurück.
-     * @param parentItem Das übergeordnete Zotero-Item; normalerweise ein Paper, an das das PDF angehängt ist.
-     * @returns Den absoluten Pfad als String oder null, falls kein PDF existiert oder lokal nicht verfügbar ist.
-     */
-    static async getPdfFilePath(parentItem: Zotero.Item): Promise<string | null> {
-    const attachmentIDs = parentItem.getAttachments();
-    
-    let pdfAttachment: Zotero.Item | null = null; 
+  static async getPdfAttachment(
+    parentItem: Zotero.Item,
+  ): Promise<Zotero.Item | null> {
+    const regularItem = await resolveRegularItem(parentItem);
+    if (!regularItem) return null;
 
-    // Suche nach dem echten PDF-Dokument
-    for (const id of attachmentIDs) {
-        const attachment = Zotero.Items.get(id) as Zotero.Item;
-
-        if (!attachment) continue;
-
-        // Prüfen, ob es ein Attachment ist UND der Zotero-interne Typ PDF ist
-        if (attachment.isAttachment() && attachment.attachmentContentType === 'application/pdf') {
-            pdfAttachment = attachment;
-            break; 
-        }
+    for (const attachmentID of regularItem.getAttachments()) {
+      const attachment = await Zotero.Items.getAsync(attachmentID);
+      if (
+        attachment?.isAttachment() &&
+        attachment.attachmentContentType === "application/pdf"
+      ) {
+        return attachment;
+      }
     }
 
-    if (!pdfAttachment) {
-        Zotero.debug("KI-Plugin: Kein PDF an dieses Item angehängt.");
-        return null;
-    }
+    Zotero.debug("ZAIA: Kein PDF an dieses Item angehängt.");
+    return null;
+  }
 
-    // Ermittle den echten Dateipfad auf der Festplatte des Nutzers
-    const filePath = await pdfAttachment.getFilePathAsync();
-    
-    if (!filePath) {
-        Zotero.debug("KI-Plugin: Kein gültiger Dateipfad gefunden.");
-        return null;
-    }
+  static async getPdfFilePath(parentItem: Zotero.Item): Promise<string | null> {
+    const attachment = await this.getPdfAttachment(parentItem);
+    if (!attachment) return null;
 
-    // Prüfen, ob die Datei wirklich existiert
-    const fileExists = await IOUtils.exists(filePath);
-    if (!filePath || !fileExists) {
-        Zotero.debug("KI-Plugin: Die Datei existiert nicht lokal auf der Festplatte.");
-        return null;
+    const filePath = await attachment.getFilePathAsync();
+    if (!filePath || !(await IOUtils.exists(filePath))) {
+      Zotero.debug("ZAIA: Das PDF ist nicht lokal verfügbar.");
+      return null;
     }
 
     return filePath;
+  }
+
+  static async extractDocument(
+    parentItem: Zotero.Item,
+  ): Promise<ExtractedPaperDocument | null> {
+    const item = await resolveRegularItem(parentItem);
+    if (!item) return null;
+
+    const attachment = await this.getPdfAttachment(item);
+    if (!attachment) return null;
+
+    const text = await readZoteroFullText(attachment);
+    if (!text.trim()) {
+      Zotero.debug(
+        "ZAIA: Zotero konnte keinen Text aus dem PDF extrahieren. " +
+          "Möglicherweise ist OCR erforderlich.",
+      );
+      return null;
+    }
+
+    return {
+      item,
+      attachment,
+      title: item.getField("title") || "Ohne Titel",
+      creators: item.getField("firstCreator") || "Unbekannte Autorenschaft",
+      year: item.getField("year") || "",
+      pages: splitIntoPages(text),
+    };
+  }
+
+  static async getStructuredText(
+    parentItem: Zotero.Item,
+  ): Promise<PageTextChunk[] | null> {
+    return (await this.extractDocument(parentItem))?.pages ?? null;
+  }
+
+  static async extractText(parentItem: Zotero.Item): Promise<string | null> {
+    const pages = await this.getStructuredText(parentItem);
+    if (!pages?.length) return null;
+
+    return pages.map((page) => page.text).join("\n\n");
+  }
 }
 
-    /**
-     * Liest die PDF-Datei von der Festplatte und extrahiert den Text strukturiert 
-     * über die pdf.js Bibliothek.
-     * @param parentItem Das übergeordnete Zotero-Item
-     * @returns Ein Array von PageTextChunk Objekten oder null bei Fehlern.
-     */
-    static async getStructuredText(parentItem: Zotero.Item): Promise<PageTextChunk[] | null> {
-        const filePath = await this.getPdfFilePath(parentItem);
-        if (!filePath) return null;
+async function readZoteroFullText(attachment: Zotero.Item) {
+  let text = await readFullTextCache(attachment);
+  if (text) return text;
 
-        try {
-            // Datei als ArrayBuffer (Uint8Array) laden. IOUtils ist in neueren Mozilla-Umgebungen verfügbar.
-            // @ts-ignore - IOUtils ist global im Zotero-Kontext verfügbar, TypeScript kennt es aber evtl. nicht ohne Zotero-Typings.
-            const uint8Array = await IOUtils.read(filePath);
-            
-            // Dokument mit pdf.js laden
-            const loadingTask = pdfjsLib.getDocument({ data: uint8Array });
-            const pdfDocument = await loadingTask.promise;
-            
-            // Durch alle Seiten iterieren und Text extrahieren
-            let allTextChunks: PageTextChunk[] = [];
-            
-            for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
-                const page = await pdfDocument.getPage(pageNum);
-                const textContent = await page.getTextContent();
-                
-                // Text-Items der Seite zusammenfügen
-                // textContent.items enthält unterschiedliche Typen, wir gehen von TextItem mit Eigenschaft 'str' aus
-                const pageText = textContent.items.map((item: any) => 'str' in item ? item.str : '').join(' ');
-                
-                allTextChunks.push({
-                    page: pageNum,
-                    text: pageText.trim()
-                });
-            }
-            
-            return allTextChunks;
-        } catch (error) {
-            Zotero.debug(`KI-Plugin: Fehler beim strukturierten Auslesen mit pdf.js: ${error}`);
-            return null;
-        }
-    }
+  try {
+    await Zotero.Fulltext.indexItems(attachment.id, {
+      complete: true,
+      ignoreErrors: false,
+    });
+    text = await readFullTextCache(attachment);
+  } catch (error) {
+    Zotero.debug(`ZAIA: Zotero-Volltextindexierung fehlgeschlagen: ${error}`);
+  }
 
-    /**
-     * Fallback-Methode: Gibt den gesamten Text aller Seiten als einen einzigen String zurück.
-     * Nützlich,wenn Nutzer nur den Gesamttext ohne Seitenstruktur benötigt oder wenn die strukturierte Extraktion fehlschlägt.
-     */
-    static async extractText(parentItem: Zotero.Item): Promise<string | null> {
-        const chunks = await this.getStructuredText(parentItem);
-        if (!chunks || chunks.length === 0) return null;
-        
-        // Fügt alle Chunks mit doppelten Zeilenumbrüchen als einen String zusammen
-        return chunks.map(chunk => chunk.text).join('\n\n');
-    }
+  return text ?? "";
+}
+
+async function readFullTextCache(attachment: Zotero.Item) {
+  const cacheFile = Zotero.Fulltext.getItemCacheFile(attachment);
+  if (!cacheFile?.path || !(await IOUtils.exists(cacheFile.path))) {
+    return null;
+  }
+
+  try {
+    const contents = await Zotero.File.getContentsAsync(
+      cacheFile.path,
+      "utf-8",
+    );
+    return typeof contents === "string" ? contents : null;
+  } catch (error) {
+    Zotero.debug(`ZAIA: Volltextcache konnte nicht gelesen werden: ${error}`);
+    return null;
+  }
+}
+
+async function resolveRegularItem(item: Zotero.Item) {
+  if (item.isRegularItem()) return item;
+  if (!item.isAttachment() || !item.parentID) return null;
+
+  const parent = await Zotero.Items.getAsync(item.parentID);
+  return parent?.isRegularItem() ? parent : null;
+}
+
+function splitIntoPages(text: string): PageTextChunk[] {
+  const rawPages = text.includes("\f") ? text.split(/\f+/) : [text];
+
+  return rawPages
+    .map((pageText, index) => ({
+      page: rawPages.length > 1 ? index + 1 : null,
+      text: pageText.trim(),
+    }))
+    .filter((page) => page.text);
 }
