@@ -56,6 +56,7 @@ const messages: AssistantChatMessage[] = [];
 const chatSummaries: StoredChat[] = [];
 const pendingSimulationPrompts: PendingSimulationPrompt[] = [];
 const pendingGeneratedTitleChatIDs = new Set<string>();
+const modelDropdownDocuments = new WeakSet<Document>();
 
 let nextMessageID = 1;
 let activeChatID: string | null = null;
@@ -81,10 +82,14 @@ export function bindAssistantChat(host: HTMLElement) {
   const deleteButton = host.querySelector<HTMLButtonElement>(
     ".zai-chat-delete-button",
   );
-  const modelSelect =
-    host.querySelector<HTMLSelectElement>(".zai-model-select");
+  const modelDropdown = host.querySelector<HTMLElement>(
+    ".zai-model-select-wrap",
+  );
+  const modelButton =
+    host.querySelector<HTMLButtonElement>(".zai-model-select");
 
-  syncModelSelect(modelSelect);
+  syncModelDropdown(modelDropdown);
+  ensureModelDropdownOutsideHandler(host.ownerDocument);
   if (!activeChatID) invalidateChatSummaries();
   renderHost(host);
   void refreshChatSummaries(true).catch((error) => {
@@ -164,11 +169,24 @@ export function bindAssistantChat(host: HTMLElement) {
       sendCurrentPrompt();
     }
   });
-  modelSelect?.addEventListener("change", () => {
-    updateModelSelectDisplay(modelSelect);
-    if (modelSelect.value) {
-      addon.api.ai.setModel(modelSelect.value, addon.data.settings.provider);
-    }
+  modelButton?.addEventListener("click", () => {
+    if (!modelDropdown) return;
+
+    toggleModelDropdown(modelDropdown);
+  });
+  modelDropdown?.addEventListener("click", (event) => {
+    const optionButton = (
+      event.target as Element | null
+    )?.closest<HTMLButtonElement>(".zai-model-select-option[data-model-value]");
+    if (!optionButton || !modelDropdown.contains(optionButton)) return;
+
+    const model = optionButton.dataset.modelValue;
+    if (!model) return;
+
+    selectModelDropdownValue(modelDropdown, model);
+  });
+  modelDropdown?.addEventListener("keydown", (event) => {
+    handleModelDropdownKeydown(event as KeyboardEvent, modelDropdown);
   });
 }
 
@@ -1044,31 +1062,204 @@ function formatRelativeTime(value: string) {
   return `${Math.floor(elapsedDays / 7)} w`;
 }
 
-function syncModelSelect(select: HTMLSelectElement | null) {
-  if (!select) return;
+function syncModelDropdown(dropdown: HTMLElement | null) {
+  if (!dropdown) return;
 
-  const option = select.ownerDocument!.createElementNS(
-    "http://www.w3.org/1999/xhtml",
-    "option",
-  ) as HTMLOptionElement;
-  option.value = addon.data.settings.model;
-  option.textContent = addon.data.settings.model;
-  option.selected = true;
-  select.replaceChildren(option);
-  updateModelSelectDisplay(select);
+  const value = addon.data.settings.model.trim();
+  const options = dropdown.querySelector<HTMLElement>(
+    ".zai-model-select-options",
+  );
+  if (!options) return;
+
+  const values = getModelDropdownValues(dropdown, value);
+  options.replaceChildren(
+    ...values.map((model) =>
+      createModelDropdownOption(dropdown.ownerDocument, model, model === value),
+    ),
+  );
+  updateModelDropdownDisplay(dropdown, value);
+  closeModelDropdown(dropdown);
 }
 
-function updateModelSelectDisplay(select: HTMLSelectElement | null) {
-  if (!select) return;
+function getModelDropdownValues(dropdown: HTMLElement, selectedValue: string) {
+  const values = [
+    selectedValue,
+    ...Array.from(
+      dropdown.querySelectorAll(".zai-model-select-option[data-model-value]"),
+    ).map((option) => (option as HTMLElement).dataset.modelValue?.trim() ?? ""),
+  ];
 
-  const value = select.selectedOptions[0]?.textContent || select.value;
-  const display = select.parentElement?.querySelector<HTMLElement>(
+  return [...new Set(values.filter(Boolean))];
+}
+
+function createModelDropdownOption(
+  doc: Document,
+  value: string,
+  selected: boolean,
+) {
+  const option = doc.createElementNS(HTML_NS, "button") as HTMLButtonElement;
+  option.className = "zai-model-select-option";
+  option.dataset.modelValue = value;
+  option.textContent = value;
+  option.title = value;
+  option.type = "button";
+  option.setAttribute("role", "option");
+  option.setAttribute("aria-selected", String(selected));
+  return option;
+}
+
+function updateModelDropdownDisplay(dropdown: HTMLElement, value: string) {
+  const displayValue = value || "Modell auswählen";
+  const button = dropdown.querySelector<HTMLButtonElement>(".zai-model-select");
+  const display = dropdown.querySelector<HTMLElement>(
     ".zai-model-select-value",
   );
-  if (!display) return;
+  if (!button || !display) return;
 
-  display.textContent = value;
-  display.title = value;
+  button.dataset.modelValue = value;
+  button.title = displayValue;
+  display.textContent = displayValue;
+  display.title = displayValue;
+
+  dropdown
+    .querySelectorAll<HTMLElement>(".zai-model-select-option")
+    .forEach((option) => {
+      option.setAttribute(
+        "aria-selected",
+        String(option.dataset.modelValue === value),
+      );
+    });
+}
+
+function selectModelDropdownValue(dropdown: HTMLElement, value: string) {
+  updateModelDropdownDisplay(dropdown, value);
+  closeModelDropdown(dropdown);
+  addon.data.settings.model = value;
+  addon.api.ai.setModel(value, addon.data.settings.provider);
+}
+
+function toggleModelDropdown(dropdown: HTMLElement) {
+  const open = !dropdown.classList.contains("zai-model-select-wrap-open");
+  if (open) {
+    openModelDropdown(dropdown);
+  } else {
+    closeModelDropdown(dropdown);
+  }
+}
+
+function openModelDropdown(dropdown: HTMLElement) {
+  closeOtherModelDropdowns(dropdown);
+  const button = dropdown.querySelector<HTMLButtonElement>(".zai-model-select");
+  const options = dropdown.querySelector<HTMLElement>(
+    ".zai-model-select-options",
+  );
+  if (!button || !options) return;
+
+  dropdown.classList.add("zai-model-select-wrap-open");
+  button.setAttribute("aria-expanded", "true");
+  options.hidden = false;
+}
+
+function closeModelDropdown(dropdown: HTMLElement) {
+  const button = dropdown.querySelector<HTMLButtonElement>(".zai-model-select");
+  const options = dropdown.querySelector<HTMLElement>(
+    ".zai-model-select-options",
+  );
+
+  dropdown.classList.remove("zai-model-select-wrap-open");
+  button?.setAttribute("aria-expanded", "false");
+  if (options) {
+    options.hidden = true;
+  }
+}
+
+function closeOtherModelDropdowns(dropdown: HTMLElement) {
+  dropdown.ownerDocument
+    .querySelectorAll<HTMLElement>(".zai-model-select-wrap-open")
+    .forEach((openDropdown) => {
+      if (openDropdown !== dropdown) {
+        closeModelDropdown(openDropdown);
+      }
+    });
+}
+
+function ensureModelDropdownOutsideHandler(doc: Document) {
+  if (modelDropdownDocuments.has(doc)) return;
+
+  modelDropdownDocuments.add(doc);
+  doc.addEventListener("click", (event) => {
+    const target = event.target as Node | null;
+    doc
+      .querySelectorAll<HTMLElement>(".zai-model-select-wrap-open")
+      .forEach((dropdown) => {
+        if (!target || !dropdown.contains(target)) {
+          closeModelDropdown(dropdown);
+        }
+      });
+  });
+}
+
+function handleModelDropdownKeydown(
+  event: KeyboardEvent,
+  dropdown: HTMLElement,
+) {
+  const optionButtons = getModelDropdownOptionButtons(dropdown);
+  const activeOption = (event.target as Element | null)?.closest(
+    ".zai-model-select-option",
+  );
+  const activeIndex = activeOption
+    ? optionButtons.indexOf(activeOption as HTMLButtonElement)
+    : -1;
+
+  if (event.key === "Escape") {
+    closeModelDropdown(dropdown);
+    dropdown.querySelector<HTMLButtonElement>(".zai-model-select")?.focus();
+    event.preventDefault();
+    return;
+  }
+
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    if (!dropdown.classList.contains("zai-model-select-wrap-open")) {
+      openModelDropdown(dropdown);
+    }
+
+    const nextIndex =
+      event.key === "ArrowDown"
+        ? Math.min(activeIndex + 1, optionButtons.length - 1)
+        : Math.max(activeIndex - 1, 0);
+    optionButtons[nextIndex]?.focus();
+    event.preventDefault();
+    return;
+  }
+
+  if (event.key === "Home" || event.key === "End") {
+    if (!dropdown.classList.contains("zai-model-select-wrap-open")) {
+      openModelDropdown(dropdown);
+    }
+
+    const nextIndex = event.key === "Home" ? 0 : optionButtons.length - 1;
+    optionButtons[nextIndex]?.focus();
+    event.preventDefault();
+    return;
+  }
+
+  if (
+    activeOption &&
+    (event.key === "Enter" || event.key === " " || event.key === "Spacebar")
+  ) {
+    const value = (activeOption as HTMLElement).dataset.modelValue;
+    if (value) {
+      selectModelDropdownValue(dropdown, value);
+      dropdown.querySelector<HTMLButtonElement>(".zai-model-select")?.focus();
+    }
+    event.preventDefault();
+  }
+}
+
+function getModelDropdownOptionButtons(dropdown: HTMLElement) {
+  return Array.from(
+    dropdown.querySelectorAll(".zai-model-select-option"),
+  ) as unknown as HTMLButtonElement[];
 }
 
 function logSimulationPrompt(message: AssistantChatMessage) {

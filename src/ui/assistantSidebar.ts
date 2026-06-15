@@ -1,12 +1,20 @@
 import { config } from "../../package.json";
 import { bindAssistantChat } from "./assistantChatController";
 import { openPreferencesPane } from "../modules/preferences";
+import { ASSISTANT_POPOUT_REQUEST_EVENT } from "./assistantPopoutEvents";
 import type { LLMProvider } from "../addon";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-export function renderAssistantSidebar(host: HTMLElement) {
+type AssistantSidebarRenderOptions = {
+  showPopoutButton?: boolean;
+};
+
+export function renderAssistantSidebar(
+  host: HTMLElement,
+  options: AssistantSidebarRenderOptions = {},
+) {
   const doc = host.ownerDocument;
   if (!doc) {
     return;
@@ -14,11 +22,11 @@ export function renderAssistantSidebar(host: HTMLElement) {
 
   host.classList.remove("makeItRed");
   host.classList.add("zotero-ai-assistant-host");
-  host.replaceChildren(createSidebar(doc));
+  host.replaceChildren(createSidebar(doc, options));
   bindAssistantChat(host);
 }
 
-function createSidebar(doc: Document) {
+function createSidebar(doc: Document, options: AssistantSidebarRenderOptions) {
   const sidebar = createHtmlElement(doc, "section", "zai-sidebar");
   sidebar.setAttribute("aria-label", "Zotero AI Assistent");
 
@@ -43,7 +51,11 @@ function createSidebar(doc: Document) {
     openPreferencesPane();
   });
   settingsButton.append(createGearIcon(doc));
-  headerActions.append(aboutButton, settingsButton);
+  headerActions.append(aboutButton);
+  if (options.showPopoutButton !== false) {
+    headerActions.append(createPopoutButton(doc));
+  }
+  headerActions.append(settingsButton);
   header.append(title, headerActions);
 
   const providerToggle = createProviderToggle(doc);
@@ -131,27 +143,26 @@ function createSidebar(doc: Document) {
   textarea.rows = 3;
 
   const composerFooter = createHtmlElement(doc, "div", "zai-composer-footer");
-  const modelWrap = createHtmlElement(doc, "label", "zai-model-select-wrap");
-  const modelSelect = createHtmlElement(
-    doc,
-    "select",
-    "zai-model-select",
-  ) as HTMLSelectElement;
+  const modelWrap = createHtmlElement(doc, "div", "zai-model-select-wrap");
+  const modelSelect = createButton(doc, "zai-model-select");
+  modelSelect.setAttribute("aria-expanded", "false");
+  modelSelect.setAttribute("aria-haspopup", "listbox");
+  modelSelect.setAttribute("aria-label", "Modell auswählen");
   const modelValue = createHtmlElement(
     doc,
     "span",
     "zai-model-select-value",
     "Cloud (GPT-4o)",
   );
-  modelSelect.setAttribute("aria-label", "Modell auswählen");
-  ["Cloud (GPT-4o)", "Lokal (Ollama)", "Cloud (Claude 3.5)"].forEach(
-    (label) => {
-      const option = createHtmlElement(doc, "option", undefined, label);
-      option.setAttribute("value", label);
-      modelSelect.append(option);
-    },
+  const modelOptions = createHtmlElement(
+    doc,
+    "div",
+    "zai-model-select-options",
   );
-  modelWrap.append(modelValue, modelSelect);
+  modelOptions.hidden = true;
+  modelOptions.setAttribute("role", "listbox");
+  modelSelect.append(modelValue);
+  modelWrap.append(modelSelect, modelOptions);
 
   const chatStatus = createHtmlElement(doc, "span", "zai-chat-status", "");
   chatStatus.hidden = true;
@@ -171,6 +182,25 @@ function createButton(doc: Document, className: string, text?: string) {
   const button = createHtmlElement(doc, "button", className, text);
   button.setAttribute("type", "button");
   return button as HTMLButtonElement;
+}
+
+function createPopoutButton(doc: Document) {
+  const popoutButton = createButton(
+    doc,
+    "zai-header-icon-button zai-header-popout-button",
+  );
+  popoutButton.dataset.zaiPopoutButton = "true";
+  popoutButton.setAttribute("aria-label", "ZAIA in eigenem Fenster öffnen");
+  popoutButton.setAttribute("aria-pressed", "false");
+  popoutButton.setAttribute("title", "ZAIA in eigenem Fenster öffnen");
+  popoutButton.addEventListener("click", () => {
+    const view = doc.defaultView;
+    if (!view) return;
+
+    view.dispatchEvent(new view.CustomEvent(ASSISTANT_POPOUT_REQUEST_EVENT));
+  });
+  popoutButton.append(createPopoutIcon(doc));
+  return popoutButton;
 }
 
 function createProviderToggle(doc: Document) {
@@ -297,6 +327,22 @@ function createGearIcon(doc: Document) {
   );
 
   svg.append(circle, gear);
+  return svg;
+}
+
+function createPopoutIcon(doc: Document) {
+  const svg = createIconSvg(doc, "18");
+
+  const windowShape = doc.createElementNS(SVG_NS, "path");
+  windowShape.setAttribute("d", "M5 5h14a2 2 0 0 1 2 2v12H3V7a2 2 0 0 1 2-2Z");
+
+  const sidebar = doc.createElementNS(SVG_NS, "path");
+  sidebar.setAttribute("d", "M8 5v14");
+
+  const arrow = doc.createElementNS(SVG_NS, "path");
+  arrow.setAttribute("d", "M13 9h4v4m0-4-6 6");
+
+  svg.append(windowShape, sidebar, arrow);
   return svg;
 }
 
