@@ -2,9 +2,9 @@ import { ItemManager } from "./ItemManager";
 import { PdfExtractor } from "./PdfExtractor";
 import {
   chunkPaperText,
-  selectRelevantChunks,
   type TextChunk,
 } from "./TextChunker";
+import { vectorStore, type ChunkDocument } from "./OramaService";
 
 export interface PaperReference {
   libraryID: number;
@@ -80,14 +80,87 @@ export class PaperContextService {
     const paper = await getCachedPaper(item);
     if (!paper) return null;
 
-    const chunks = selectRelevantChunks(paper.chunks, query);
-    if (!chunks.length) return null;
+    // TODO: TEAMPARTNER AUFGABE
+    // Hier muss der Text der Frage ("query") durch das Embedding-Modell
+    // in einen Vektor umgewandelt werden.
+    const dummyQueryVector = new Array(768).fill(0.1); 
+
+    const itemIdStr = item.id.toString();
+    
+    // Wir suchen in Orama direkt mit einem Filter auf die Item-ID
+    const searchResults = await vectorStore.searchSimilar(dummyQueryVector, 5, {
+      zoteroItemId: itemIdStr
+    });
+    
+    const relevantHits = searchResults
+      .map((hit) => hit.document as unknown as ChunkDocument);
+
+    if (!relevantHits.length) return null;
+
+    // Mappe die Orama-Dokumente zurück in das TextChunk Format
+    const chunks: TextChunk[] = relevantHits.map((doc, index) => {
+      // Orama-ID ist z.B. "doc_123_C1", wir wollen das "C1" für die Zitierung
+      const originalChunkId = doc.id.split("_").pop() || `C${index}`;
+      return {
+        id: originalChunkId,
+        text: doc.content,
+        pageStart: doc.pageNumber || null,
+        pageEnd: doc.pageNumber || null,
+        estimatedTokens: 0, 
+      };
+    });
 
     return {
       attachmentID: paper.attachmentID,
       chunks,
       systemMessage: formatPaperContext(paper, chunks),
     };
+  }
+
+  /**
+   * Sucht global über die gesamte Vektordatenbank (Bibliotheksübergreifend).
+   * Wird genutzt, wenn der Nutzer KEIN spezifisches Paper im Zotero-Chat ausgewählt hat
+   * oder eine bibliotheksweite Suchanfrage stellt.
+   */
+  static async buildGlobalContext(query: string): Promise<string | null> {
+    // TODO: TEAMPARTNER AUFGABE
+    const dummyQueryVector = new Array(768).fill(0.1); 
+
+    // Wir holen die 5 besten Treffer aus ALLEN Papers in Orama
+    const searchResults = await vectorStore.searchSimilar(dummyQueryVector, 5);
+    
+    if (!searchResults.length) return null;
+
+    const relevantHits = searchResults.map(hit => hit.document as unknown as ChunkDocument);
+
+    const excerptsArray = await Promise.all(
+      relevantHits.map(async (doc) => {
+        const itemID = parseInt(doc.zoteroItemId, 10);
+        const item = await ItemManager.getSelectedRegularItem(itemID);
+        const pageLabel = doc.pageNumber ? `, Seite ${doc.pageNumber}` : "";
+        
+        let citationKey = `Zotero-ID: ${doc.zoteroItemId}`;
+        if (item) {
+          const itemData = ItemManager.extractItemData(item);
+          const authorLabel = itemData.firstCreator || "Unbekannt";
+          const yearLabel = itemData.year ? ` ${itemData.year}` : "";
+          citationKey = `${authorLabel}${yearLabel}`;
+        }
+
+        return `[${citationKey}${pageLabel}]\n${doc.content}`;
+      })
+    );
+
+    const excerpts = excerptsArray.join("\n\n");
+
+    return [
+      "Du erhältst Auszüge aus verschiedenen wissenschaftlichen Papern der Bibliothek.",
+      "Beantworte die Nutzerfrage vorrangig anhand dieser Auszüge.",
+      "Verweise bei inhaltlichen Aussagen mit den [Autor Jahr, Seite X] Markierungen auf das jeweilige Dokument.",
+      "",
+      "Relevante Auszüge aus der Bibliothek:",
+      excerpts,
+    ].join("\n");
   }
 
   static clearCache() {

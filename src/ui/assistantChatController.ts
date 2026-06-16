@@ -560,7 +560,10 @@ async function createPaperContextMessage(prompt: string) {
   }
 
   const reference = getActivePaperReference();
-  if (!reference) return null;
+  if (!reference) {
+    const globalContext = await PaperContextService.buildGlobalContext(prompt);
+    return globalContext;
+  }
 
   const context = await PaperContextService.buildContext(reference, prompt);
   if (!context) {

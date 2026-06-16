@@ -114,42 +114,6 @@ export function chunkPaperText(
   return chunks;
 }
 
-export function selectRelevantChunks(
-  chunks: TextChunk[],
-  query: string,
-  options: SelectChunkOptions = {},
-) {
-  const maxChunks = options.maxChunks ?? 6;
-  const maxTokens = options.maxTokens ?? 4_500;
-  const queryTerms = extractTerms(query);
-
-  const ranked = chunks
-    .map((chunk, index) => ({
-      chunk,
-      index,
-      score: scoreChunk(chunk, queryTerms, index),
-    }))
-    .sort((a, b) => b.score - a.score || a.index - b.index);
-
-  const selected: Array<{ chunk: TextChunk; index: number }> = [];
-  let usedTokens = 0;
-
-  for (const candidate of ranked) {
-    if (selected.length >= maxChunks) break;
-    if (
-      selected.length &&
-      usedTokens + candidate.chunk.estimatedTokens > maxTokens
-    ) {
-      continue;
-    }
-
-    selected.push(candidate);
-    usedTokens += candidate.chunk.estimatedTokens;
-  }
-
-  return selected.sort((a, b) => a.index - b.index).map(({ chunk }) => chunk);
-}
-
 export function estimateTokens(text: string) {
   const words = text.trim().match(/\S+/g)?.length ?? 0;
   return Math.max(1, Math.ceil(words / WORDS_PER_TOKEN));

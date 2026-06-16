@@ -82,6 +82,11 @@ export class AIProviderManager {
     const { providerId, ...providerOptions } = options;
     return this.getProvider(providerId).complete(prompt, providerOptions);
   }
+
+  embed(text, options = {}) {
+    const { providerId, ...providerOptions } = options;
+    return this.getProvider(providerId).embed(text, providerOptions);
+  }
 }
 
 export const aiProviderManager = new AIProviderManager();

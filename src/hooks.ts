@@ -21,6 +21,8 @@ import {
 import { unregisterAssistantSidebarController } from "./ui/assistantSidebarController";
 import { createZToolkit } from "./utils/ztoolkit";
 import type { LLMProvider } from "./addon";
+import { vectorStore } from "./core/OramaService";
+import { backgroundIndexer } from "./core/BackgroundIndexer";
 
 const OLD_CHAT_RETENTION_DAYS = 14;
 
@@ -72,6 +74,11 @@ async function onStartup() {
 
   initLocale();
   loadSettings();
+  
+  // Orama DB initialisieren & Background Indexer starten
+  await vectorStore.initialize();
+  backgroundIndexer.initialize();
+
   await initializeChatDatabase();
   await cleanupOldChatsOnStartup();
   await initializeChatPersistence();

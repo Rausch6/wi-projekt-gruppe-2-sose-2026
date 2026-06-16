@@ -1,0 +1,173 @@
+import { create, insertMultiple, search, removeMultiple, Orama } from '@orama/orama';
+import { persist, restore } from '@orama/plugin-data-persistence';
+
+declare const Zotero: any;
+declare const IOUtils: any; // für Zotero 7, um Dateien zu lesen/schreiben 
+declare const OS: any;      // für Zotero 6, um Dateien zu lesen/schreiben 
+
+// WICHTIG: Die Vektorgröße muss exakt der Größe des Embedding-Modells entsprechen!
+const VECTOR_SIZE = 768; 
+
+const mySchema = {
+    id: 'string',
+    zoteroItemId: 'string',
+    content: 'string',
+    pageNumber: 'number',
+    embedding: `vector[768]`, // Hier die Vektorgröße hart reinkodieren
+} as const;
+
+export type ChunkDocument = {
+    id: string;
+    zoteroItemId: string;
+    content: string;
+    pageNumber: number;
+    embedding: number[]; 
+};
+
+type VectorDB = Orama<typeof mySchema>;
+
+export class OramaService {
+    private db!: VectorDB;
+    private isInitialized = false;
+
+    /**
+     * Startet die Orama-Datenbank und lädt ggf. einen gespeicherten Index von der Festplatte.
+     */
+    async initialize() {
+        if (this.isInitialized) return;
+
+        // 1. Schema definieren
+        this.db = (await create({
+            schema: mySchema,
+        })) as VectorDB;
+
+        // Persistenz laden falls vorhanden
+        await this.loadIndex();
+        
+        this.isInitialized = true;
+        Zotero.debug("[OramaService]: Database initialized.");
+    }
+
+    /**
+     * Fügt eine Liste von Text-Chunks inklusive Embeddings in Orama ein.
+     */
+    async addChunks(chunks: ChunkDocument[]) {
+        this.checkInit();
+        
+        await insertMultiple(this.db, chunks as any);
+        
+        // Speichern des aktuellen Stands auf der Festplatte
+        await this.saveIndex();
+    }
+
+    /**
+     * Führt eine Vektorsuche in Orama durch.
+     */
+    async searchSimilar(queryVector: number[], limit: number = 5, whereFilter?: any) {
+        this.checkInit();
+
+        const searchParams: any = {
+            mode: 'vector',
+            vector: {
+                value: queryVector,
+                property: 'embedding',
+            },
+            limit: limit,
+        };
+
+        if (whereFilter) {
+            searchParams.where = whereFilter;
+        }
+
+        const results = await search(this.db, searchParams);
+
+        return results.hits;
+    }
+
+    /**
+     * Löscht alle Chunks, die zu einer bestimmten Zotero-ID gehören.
+     * Wichtig, wenn der Nutzer ein PDF aus Zotero löscht.
+     */
+    async deleteByZoteroItemId(zoteroItemId: string) {
+        this.checkInit();
+
+        // wir suchen erst alle passenden Chunks per Exact-Match und löschen sie dann.
+        const results = await search(this.db, {
+            where: {
+                zoteroItemId: zoteroItemId
+            },
+            limit: 10000, // hohes Limit, um alle zu finden
+        });
+
+        if (results.hits.length > 0) {
+            const idsToRemove = results.hits.map(hit => hit.id);
+            await removeMultiple(this.db, idsToRemove);
+            
+            // Nach dem Löschen Index aktualisieren
+            await this.saveIndex();
+            Zotero.debug(`[OramaService]: Deleted ${idsToRemove.length} chunks for item ${zoteroItemId}`);
+        }
+    }
+
+    // --- INTERNE HILFSMETHODEN ---
+
+    private checkInit() {
+        if (!this.isInitialized) throw new Error("OramaService ist nicht initialisiert! Bitte rufe initialize() auf.");
+    }
+
+    private get dbFilePath() {
+        // Zotero Data Directory + Dateiname
+        return Zotero.getZoteroDirectory().path + '/orama_vector_index.json';
+    }
+
+    private async saveIndex() {
+        try {
+            // Generiert einen JSON string des Index via @orama/plugin-data-persistence
+            const indexData = await persist(this.db, 'json');
+            
+            // Zotero 7 nutzt IOUtils, Zotero 6 nutzt OS.File
+            if (typeof IOUtils !== 'undefined') {
+                await IOUtils.writeUTF8(this.dbFilePath, indexData as string, { tmpPath: this.dbFilePath + '.tmp' });
+            } else if (typeof OS !== 'undefined' && OS.File) {
+                const encoder = new TextEncoder();
+                const array = encoder.encode(indexData as string);
+                await OS.File.writeAtomic(this.dbFilePath, array, { tmpPath: this.dbFilePath + '.tmp' });
+            } else {
+                Zotero.debug("[OramaService] Konnte Index nicht speichern: Keine File API gefunden.");
+            }
+        } catch (e) {
+            Zotero.debug(`[OramaService] Fehler beim Speichern des Index: ${e}`);
+        }
+    }
+
+    private async loadIndex() {
+        try {
+            let indexData: string | null = null;
+
+            if (typeof IOUtils !== 'undefined') {
+                const exists = await IOUtils.exists(this.dbFilePath);
+                if (exists) {
+                    indexData = await IOUtils.readUTF8(this.dbFilePath);
+                }
+            } else if (typeof OS !== 'undefined' && OS.File) {
+                const exists = await OS.File.exists(this.dbFilePath);
+                if (exists) {
+                    const array = await OS.File.read(this.dbFilePath);
+                    const decoder = new TextDecoder();
+                    indexData = decoder.decode(array);
+                }
+            }
+
+            if (indexData) {
+                // Stellt die Datenbank aus dem JSON wieder her
+                this.db = await restore('json', indexData);
+                Zotero.debug("[OramaService] Index erfolgreich von Festplatte geladen.");
+            }
+        } catch (e) {
+            Zotero.debug(`[OramaService] Kein existierender Index gefunden oder Fehler beim Laden: ${e}`);
+        }
+    }
+}
+
+// Als Singleton exportieren
+export const vectorStore = new OramaService();
