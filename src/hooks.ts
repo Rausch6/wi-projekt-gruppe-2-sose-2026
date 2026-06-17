@@ -75,9 +75,13 @@ async function onStartup() {
   initLocale();
   loadSettings();
   
-  // Orama DB initialisieren & Background Indexer starten
   await vectorStore.initialize();
   backgroundIndexer.initialize();
+
+  backgroundIndexer.indexAllLibraryItems().catch((err) => {
+    Zotero.debug(`[BackgroundIndexer] Erst-Indexierung fehlgeschlagen: ${err}`);
+  });
+
 
   await initializeChatDatabase();
   await cleanupOldChatsOnStartup();

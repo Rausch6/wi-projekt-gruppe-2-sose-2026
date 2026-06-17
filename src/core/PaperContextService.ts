@@ -2,9 +2,11 @@ import { ItemManager } from "./ItemManager";
 import { PdfExtractor } from "./PdfExtractor";
 import {
   chunkPaperText,
+  selectRelevantChunks,
   type TextChunk,
 } from "./TextChunker";
 import { vectorStore, type ChunkDocument } from "./OramaService";
+import { embeddingProvider } from "../ai/EmbeddingProvider.js";
 
 export interface PaperReference {
   libraryID: number;
@@ -80,41 +82,54 @@ export class PaperContextService {
     const paper = await getCachedPaper(item);
     if (!paper) return null;
 
-    // TODO: TEAMPARTNER AUFGABE
-    // Hier muss der Text der Frage ("query") durch das Embedding-Modell
-    // in einen Vektor umgewandelt werden.
-    const dummyQueryVector = new Array(768).fill(0.1); 
+    try {
 
-    const itemIdStr = item.id.toString();
-    
-    // Wir suchen in Orama direkt mit einem Filter auf die Item-ID
-    const searchResults = await vectorStore.searchSimilar(dummyQueryVector, 5, {
-      zoteroItemId: itemIdStr
-    });
-    
-    const relevantHits = searchResults
-      .map((hit) => hit.document as unknown as ChunkDocument);
+      const [queryVector] = await embeddingProvider.embedTexts([query], {
+        inputType: "query",
+      });
 
-    if (!relevantHits.length) return null;
+      const itemIdStr = item.id.toString();
 
-    // Mappe die Orama-Dokumente zurück in das TextChunk Format
-    const chunks: TextChunk[] = relevantHits.map((doc, index) => {
-      // Orama-ID ist z.B. "doc_123_C1", wir wollen das "C1" für die Zitierung
-      const originalChunkId = doc.id.split("_").pop() || `C${index}`;
+      const searchResults = await vectorStore.searchSimilar(queryVector, 5, {
+        zoteroItemId: itemIdStr,
+      });
+
+      const relevantHits = searchResults.map(
+        (hit) => hit.document as unknown as ChunkDocument,
+      );
+
+      if (!relevantHits.length) return null;
+
+      const chunks: TextChunk[] = relevantHits.map((doc, index) => {
+        const originalChunkId = doc.id.split("_").pop() || `C${index}`;
+        return {
+          id: originalChunkId,
+          text: doc.content,
+          pageStart: doc.pageNumber || null,
+          pageEnd: doc.pageNumber || null,
+          estimatedTokens: 0,
+        };
+      });
+
       return {
-        id: originalChunkId,
-        text: doc.content,
-        pageStart: doc.pageNumber || null,
-        pageEnd: doc.pageNumber || null,
-        estimatedTokens: 0, 
+        attachmentID: paper.attachmentID,
+        chunks,
+        systemMessage: formatPaperContext(paper, chunks),
       };
-    });
+    } catch (error) {
+      Zotero.debug(
+        `[PaperContextService] Embedding-Suche fehlgeschlagen, Keyword-Fallback aktiv: ${error}`,
+      );
 
-    return {
-      attachmentID: paper.attachmentID,
-      chunks,
-      systemMessage: formatPaperContext(paper, chunks),
-    };
+      const chunks = selectRelevantChunks(paper.chunks, query);
+      if (!chunks.length) return null;
+
+      return {
+        attachmentID: paper.attachmentID,
+        chunks,
+        systemMessage: formatPaperContext(paper, chunks),
+      };
+    }
   }
 
   /**
@@ -123,13 +138,20 @@ export class PaperContextService {
    * oder eine bibliotheksweite Suchanfrage stellt.
    */
   static async buildGlobalContext(query: string): Promise<string | null> {
-    // TODO: TEAMPARTNER AUFGABE
-    const dummyQueryVector = new Array(768).fill(0.1); 
+    let searchResults: Awaited<ReturnType<typeof vectorStore.searchSimilar>>;
 
-    // Wir holen die 5 besten Treffer aus ALLEN Papers in Orama
-    const searchResults = await vectorStore.searchSimilar(dummyQueryVector, 5);
-    
-    if (!searchResults.length) return null;
+    try {
+      const [queryVector] = await embeddingProvider.embedTexts([query], {
+        inputType: "query",
+      });
+
+      searchResults = await vectorStore.searchSimilar(queryVector, 5);
+    } catch (error) {
+      Zotero.debug(
+        `[PaperContextService] Globale Embedding-Suche fehlgeschlagen: ${error}`,
+      );
+      return null;
+    }
 
     const relevantHits = searchResults.map(hit => hit.document as unknown as ChunkDocument);
 
