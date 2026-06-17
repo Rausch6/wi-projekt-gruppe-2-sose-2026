@@ -10,6 +10,7 @@ import {
   type ChunkedPaper,
 } from "./core/PaperContextService";
 import { ItemManager } from "./core/ItemManager";
+import { LibraryScopeManager } from "./core/LibraryScopeManager";
 import hooks from "./hooks";
 import {
   chatSimulation,
@@ -87,6 +88,11 @@ class Addon {
       showSelectedChunks: (itemID?: number) => Promise<string>;
       getLastReport: () => string;
       getSelectedItemIDs: () => number[];
+    };
+    libraryScopes: {
+      list: typeof LibraryScopeManager.listLibraryScopes;
+      getSelected: typeof LibraryScopeManager.getSelectedLibraryScope;
+      listRagCandidates: typeof LibraryScopeManager.listRagItemCandidates;
     };
     openChat: () => boolean;
   };
@@ -166,6 +172,11 @@ class Addon {
         getLastReport: () => lastPaperChunkReport,
         getSelectedItemIDs: () =>
           ItemManager.getSelectedItems().map((item) => item.id),
+      },
+      libraryScopes: {
+        list: LibraryScopeManager.listLibraryScopes,
+        getSelected: LibraryScopeManager.getSelectedLibraryScope,
+        listRagCandidates: LibraryScopeManager.listRagItemCandidates,
       },
       openChat: () => {
         const win = Zotero.getMainWindow();
