@@ -7,6 +7,7 @@ import {
 import { CreateChatInput, StoredChat } from "../core/chatTypes";
 import { renderMarkdownContent } from "./markdownRenderer";
 import type { LLMProvider } from "../addon";
+import { KISSKI_MODEL_OPTIONS } from "../ai/providers/KisskiProvider.js";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const MAX_GENERATED_TITLE_LENGTH = 80;
@@ -78,7 +79,9 @@ const chatSummaries: StoredChat[] = [];
 const pendingSimulationPrompts: PendingSimulationPrompt[] = [];
 const pendingGeneratedTitleChatIDs = new Set<string>();
 const modelDropdownDocuments = new WeakSet<Document>();
-const modelOptionsByProvider = new Map<LLMProvider, ModelOption[]>();
+const modelOptionsByProvider = new Map<LLMProvider, ModelOption[]>([
+  ["kisski", normalizeModelOptions(KISSKI_MODEL_OPTIONS)],
+]);
 const modelLoadStates = new Map<LLMProvider, ModelLoadState>();
 
 let nextMessageID = 1;
@@ -1260,6 +1263,12 @@ async function ensureModelOptionsLoaded(provider: LLMProvider, force = false) {
     if (modelLoadStates.get(provider)?.requestID !== requestID) return;
 
     const message = error instanceof Error ? error.message : String(error);
+    if (provider === "kisski" && !modelOptionsByProvider.has(provider)) {
+      modelOptionsByProvider.set(
+        provider,
+        normalizeModelOptions(KISSKI_MODEL_OPTIONS),
+      );
+    }
     modelLoadStates.set(provider, { status: "error", message });
   } finally {
     syncAllModelPickers();

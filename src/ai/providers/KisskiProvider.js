@@ -8,6 +8,38 @@ import {
 
 export const KISSKI_DEFAULT_BASE_URL = "https://chat-ai.academiccloud.de/v1";
 export const KISSKI_DEFAULT_MODEL = "deepseek-r1-distill-llama-70b";
+export const KISSKI_MODEL_OPTIONS = [
+  {
+    id: "deepseek-r1-distill-llama-70b",
+    name: "DeepSeek R1 Distill Llama 70B",
+    ownedBy: "kisski",
+  },
+  {
+    id: "deepseek-r1-distill-qwen-32b",
+    name: "DeepSeek R1 Distill Qwen 32B",
+    ownedBy: "kisski",
+  },
+  {
+    id: "deepseek-r1-distill-qwen-14b",
+    name: "DeepSeek R1 Distill Qwen 14B",
+    ownedBy: "kisski",
+  },
+  {
+    id: "deepseek-r1-distill-llama-8b",
+    name: "DeepSeek R1 Distill Llama 8B",
+    ownedBy: "kisski",
+  },
+  {
+    id: "deepseek-r1-distill-qwen-7b",
+    name: "DeepSeek R1 Distill Qwen 7B",
+    ownedBy: "kisski",
+  },
+  {
+    id: "deepseek-r1-distill-qwen-1.5b",
+    name: "DeepSeek R1 Distill Qwen 1.5B",
+    ownedBy: "kisski",
+  },
+];
 
 export class KisskiProvider extends AIProvider {
   constructor(options = {}) {
@@ -55,7 +87,8 @@ export class KisskiProvider extends AIProvider {
     await assertHttpOk(url, response);
 
     const payload = await response.json();
-    if (!Array.isArray(payload?.data)) {
+    const models = normalizeModelList(payload);
+    if (!models.length) {
       throw new AIProviderResponseError(
         this.id,
         "KISSKI returned an invalid model list",
@@ -63,13 +96,7 @@ export class KisskiProvider extends AIProvider {
       );
     }
 
-    return payload.data
-      .filter((model) => typeof model?.id === "string")
-      .map((model) => ({
-        id: model.id,
-        name: model.id,
-        ownedBy: model.owned_by ?? "kisski",
-      }));
+    return models;
   }
 
   async chat(messages, options = {}) {
@@ -224,6 +251,46 @@ export class KisskiProvider extends AIProvider {
       tool_choice: options.toolChoice,
     });
   }
+}
+
+function normalizeModelList(payload) {
+  const entries = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.data)
+      ? payload.data
+      : Array.isArray(payload?.models)
+        ? payload.models
+        : [];
+
+  return entries
+    .map((model) => {
+      const id =
+        typeof model === "string"
+          ? model
+          : typeof model?.id === "string"
+            ? model.id
+            : typeof model?.model === "string"
+              ? model.model
+              : typeof model?.name === "string"
+                ? model.name
+                : "";
+      if (!id.trim()) return null;
+
+      return {
+        id: id.trim(),
+        name:
+          typeof model?.name === "string" && model.name.trim()
+            ? model.name.trim()
+            : id.trim(),
+        ownedBy:
+          typeof model?.owned_by === "string"
+            ? model.owned_by
+            : typeof model?.ownedBy === "string"
+              ? model.ownedBy
+              : "kisski",
+      };
+    })
+    .filter(Boolean);
 }
 
 async function* parseChatCompletionSse(textStream, providerId) {
