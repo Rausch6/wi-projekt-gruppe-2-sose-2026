@@ -181,9 +181,13 @@ function createPopoutButton(doc: Document) {
 }
 
 function createModelPicker(doc: Document) {
-  const picker = createHtmlElement(doc, "div", "zai-model-picker");
+  const picker = createHtmlElement(
+    doc,
+    "div",
+    "zai-model-picker zai-model-picker-collapsed",
+  );
   const toggle = createButton(doc, "zai-model-picker-toggle");
-  toggle.setAttribute("aria-expanded", "true");
+  toggle.setAttribute("aria-expanded", "false");
   toggle.setAttribute("aria-label", "Modellauswahl ein- oder ausklappen");
   toggle.append(
     createHtmlElement(doc, "span", "zai-model-picker-title", "Modellauswahl"),
@@ -191,6 +195,7 @@ function createModelPicker(doc: Document) {
   );
 
   const content = createHtmlElement(doc, "div", "zai-model-picker-content");
+  content.hidden = true;
   content.append(createProviderToggle(doc), createModelSelect(doc));
 
   picker.append(toggle, content);

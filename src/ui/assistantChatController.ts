@@ -88,7 +88,7 @@ let showAllChats = false;
 let chatSummariesLoaded = false;
 let simulationEnabled = false;
 let requestRunning = false;
-let modelPickerExpanded = true;
+let modelPickerExpanded = false;
 let activeAssistantResponse: ActiveAssistantResponse | null = null;
 
 export function bindAssistantChat(host: HTMLElement) {
