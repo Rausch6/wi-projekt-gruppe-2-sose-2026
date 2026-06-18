@@ -23,19 +23,19 @@ Verfuegbare Modelle lassen sich in den Plugin-Einstellungen laden oder ueber
 ## Lokale Embeddings
 
 Fuer die Auswahl relevanter PDF-Auschnitte kann das Plugin semantische
-Embeddings verwenden. Standardmaessig ist das Modell
-`intfloat/multilingual-e5-base` mit einem lokalen OpenAI-kompatiblen Endpoint
-unter `http://localhost:8080/v1/embeddings` konfiguriert.
+Embeddings verwenden. Standardmaessig ist das Ollama-Modell
+`qwen3-embedding:latest` unter `http://localhost:11434/api/embed`
+konfiguriert.
 
-Ein passender Endpoint kann z.B. mit Hugging Face Text Embeddings Inference
-gestartet werden:
+Das Modell kann lokal mit Ollama installiert und getestet werden:
 
 ```bash
-docker run --pull always -p 8080:80 ghcr.io/huggingface/text-embeddings-inference:cpu-1.9 --model-id intfloat/multilingual-e5-base
+ollama pull qwen3-embedding:latest
+curl http://localhost:11434/api/embed -d '{
+  "model": "qwen3-embedding:latest",
+  "input": "Warum ist der Himmel blau?"
+}'
 ```
-
-Auf ARM64/Apple-Silicon-Systemen ist stattdessen der Image-Tag `cpu-arm64-1.9`
-passend.
 
 Im Plugin unter Einstellungen kann der Embedding-Service getestet werden. Falls
 der Endpoint nicht erreichbar ist, verwendet ZAIA automatisch die bisherige

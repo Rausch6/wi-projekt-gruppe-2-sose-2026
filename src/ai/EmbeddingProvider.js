@@ -8,15 +8,15 @@ import {
   httpClient,
 } from "../utils/httpClient.js";
 
-export const EMBEDDING_PROVIDER_ID = "huggingface-e5";
-export const EMBEDDING_DEFAULT_BASE_URL = "http://localhost:8080/v1";
-export const EMBEDDING_DEFAULT_MODEL = "intfloat/multilingual-e5-base";
+export const EMBEDDING_PROVIDER_ID = "local-embeddings";
+export const EMBEDDING_DEFAULT_BASE_URL = "http://localhost:11434";
+export const EMBEDDING_DEFAULT_MODEL = "qwen3-embedding:latest";
 export const EMBEDDING_DEFAULT_TIMEOUT = 120_000;
 
 export class EmbeddingProvider {
   constructor(options = {}) {
     this.id = EMBEDDING_PROVIDER_ID;
-    this.name = "Hugging Face E5 Embeddings";
+    this.name = "Local Embeddings";
     this.baseUrl = normalizeBaseUrl(
       options.baseUrl ?? EMBEDDING_DEFAULT_BASE_URL,
     );
@@ -61,15 +61,27 @@ export class EmbeddingProvider {
   }
 
   async embedTexts(texts, options = {}) {
-    const inputTexts = normalizeTexts(texts).map((text) =>
-      applyE5Prefix(text, options.inputType),
-    );
     const baseUrl = options.baseUrl ?? this.baseUrl;
+    const model = options.model ?? this.model;
     const timeout = options.timeout ?? this.timeout;
+    const inputTexts = normalizeTexts(texts).map((text) =>
+      applyEmbeddingPrefix(text, options.inputType, model),
+    );
+
+    if (shouldUseOllamaEndpoint(baseUrl, model)) {
+      try {
+        return await requestOllamaEmbeddings(baseUrl, inputTexts, {
+          model,
+          timeout,
+        });
+      } catch (cause) {
+        throw normalizeEmbeddingError(cause, this.id);
+      }
+    }
 
     try {
       return await requestOpenAIEmbeddings(baseUrl, inputTexts, {
-        model: options.model ?? this.model,
+        model,
         timeout,
       });
     } catch (cause) {
@@ -123,6 +135,25 @@ async function requestNativeEmbeddings(baseUrl, inputTexts, options) {
   return parseEmbeddings(payload, inputTexts.length);
 }
 
+async function requestOllamaEmbeddings(baseUrl, inputTexts, options) {
+  const url = createOllamaEmbedUrl(baseUrl);
+  const response = await httpClient.post(
+    url,
+    {
+      model: options.model,
+      input: inputTexts,
+    },
+    {
+      timeout: options.timeout,
+      mode: "local",
+    },
+  );
+  await assertHttpOk(url, response);
+
+  const payload = await response.json();
+  return parseEmbeddings(payload, inputTexts.length);
+}
+
 function shouldTryNativeEmbed(cause) {
   return (
     cause instanceof HttpResponseError &&
@@ -156,10 +187,15 @@ function normalizeTexts(texts) {
   );
 }
 
-function applyE5Prefix(text, inputType) {
+function applyEmbeddingPrefix(text, inputType, model) {
+  if (!usesE5PromptFormat(model)) return text;
   if (/^(query|passage):\s/i.test(text)) return text;
   if (inputType === "passage") return `passage: ${text}`;
   return `query: ${text}`;
+}
+
+function usesE5PromptFormat(model) {
+  return /(^|[/_-])e5([_-]|$)/i.test(model);
 }
 
 function parseEmbeddings(payload, expectedCount) {
@@ -253,6 +289,19 @@ function createNativeEmbedUrl(baseUrl) {
   url.search = "";
   url.hash = "";
   return url.toString().replace(/\/$/, "");
+}
+
+function createOllamaEmbedUrl(baseUrl) {
+  if (baseUrl.endsWith("/api/embed")) return baseUrl;
+  if (baseUrl.endsWith("/api")) return `${baseUrl}/embed`;
+  return `${baseUrl}/api/embed`;
+}
+
+function shouldUseOllamaEndpoint(baseUrl, model) {
+  return (
+    /(^|\/)qwen3-embedding(?::|$)/i.test(model) ||
+    /:11434(?:\/|$)/.test(baseUrl)
+  );
 }
 
 function requireText(value, label) {
