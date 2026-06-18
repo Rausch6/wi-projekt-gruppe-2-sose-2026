@@ -1,5 +1,9 @@
 import { config } from "../../package.json";
 import {
+  EMBEDDING_DEFAULT_BASE_URL,
+  EMBEDDING_DEFAULT_MODEL,
+} from "../ai/EmbeddingProvider.js";
+import {
   KISSKI_DEFAULT_BASE_URL,
   KISSKI_DEFAULT_MODEL,
 } from "../ai/providers/KisskiProvider.js";
@@ -13,6 +17,9 @@ const FIELD_NAMES = [
   "base-url",
   "model",
   "send-paper-context-to-kisski",
+  "embedding-search-enabled",
+  "embedding-base-url",
+  "embedding-model",
   "ollama-base-url",
   "ollama-model",
   "max-items",
@@ -46,6 +53,13 @@ function bindPreferenceEvents(window: Window) {
     void loadModels(window);
   });
 
+  getElement(window, "test-embedding-service")?.addEventListener(
+    "command",
+    () => {
+      void testEmbeddingService(window);
+    },
+  );
+
   getElement(window, "copy-ollama-install-command")?.addEventListener(
     "command",
     () => {
@@ -72,6 +86,15 @@ function syncRuntimeSettings(window: Window) {
   const sendPaperContextToKisski =
     getElement<HTMLInputElement>(window, "send-paper-context-to-kisski")
       ?.checked ?? true;
+  const embeddingSearchEnabled =
+    getElement<HTMLInputElement>(window, "embedding-search-enabled")?.checked ??
+    true;
+  const embeddingBaseUrl =
+    getElement<HTMLInputElement>(window, "embedding-base-url")?.value.trim() ||
+    EMBEDDING_DEFAULT_BASE_URL;
+  const embeddingModel =
+    getElement<HTMLInputElement>(window, "embedding-model")?.value.trim() ||
+    EMBEDDING_DEFAULT_MODEL;
   const ollamaBaseUrl =
     getElement<HTMLInputElement>(window, "ollama-base-url")?.value.trim() ||
     OLLAMA_DEFAULT_BASE_URL;
@@ -90,12 +113,16 @@ function syncRuntimeSettings(window: Window) {
     baseUrl,
     model,
     sendPaperContextToKisski,
+    embeddingSearchEnabled,
+    embeddingBaseUrl,
+    embeddingModel,
     ollamaBaseUrl,
     ollamaModel,
     maxItems: Number.parseInt(maxItemsValue, 10) || 20,
     autoDeleteOldChats,
   };
   addon.api.configureAI();
+  addon.api.configureEmbeddings();
 }
 
 export function getOllamaInstallCommand(window: Window) {
@@ -141,6 +168,31 @@ async function downloadOllamaModel(window: Window) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     setStatus(status, `Download failed: ${message}`);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function testEmbeddingService(window: Window) {
+  const status = getElement<HTMLElement>(window, "embedding-service-status");
+  const button = getElement<HTMLButtonElement>(
+    window,
+    "test-embedding-service",
+  );
+
+  syncRuntimeSettings(window);
+  setStatus(status, "Testing embedding service...");
+  if (button) button.disabled = true;
+
+  try {
+    const [embedding] = await addon.api.embeddings.embedTexts(
+      ["semantic paper search"],
+      { inputType: "query", timeout: 30_000 },
+    );
+    setStatus(status, `Embedding service ready (${embedding.length} dims).`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    setStatus(status, `Embedding test failed: ${message}`);
   } finally {
     if (button) button.disabled = false;
   }

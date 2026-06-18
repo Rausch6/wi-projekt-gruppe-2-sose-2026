@@ -2,6 +2,11 @@ import { config } from "../package.json";
 import { ColumnOptions, DialogHelper } from "zotero-plugin-toolkit";
 import { aiProviderManager } from "./ai/AIProviderManager.js";
 import {
+  EMBEDDING_DEFAULT_BASE_URL,
+  EMBEDDING_DEFAULT_MODEL,
+  embeddingProvider,
+} from "./ai/EmbeddingProvider.js";
+import {
   KISSKI_DEFAULT_BASE_URL,
   KISSKI_DEFAULT_MODEL,
 } from "./ai/providers/KisskiProvider.js";
@@ -9,6 +14,7 @@ import {
   PaperContextService,
   type ChunkedPaper,
 } from "./core/PaperContextService";
+import { EmbeddingSearchService } from "./core/EmbeddingSearchService";
 import { ItemManager } from "./core/ItemManager";
 import { LibraryScopeManager } from "./core/LibraryScopeManager";
 import hooks from "./hooks";
@@ -36,6 +42,9 @@ export type PluginSettings = {
   baseUrl: string;
   model: string;
   sendPaperContextToKisski: boolean;
+  embeddingSearchEnabled: boolean;
+  embeddingBaseUrl: string;
+  embeddingModel: string;
   maxItems: number;
   ollamaBaseUrl: string;
   ollamaModel: string;
@@ -67,6 +76,10 @@ class Addon {
   public api: {
     ai: typeof aiProviderManager;
     configureAI: () => ReturnType<typeof aiProviderManager.configureProvider>;
+    embeddings: typeof embeddingProvider;
+    configureEmbeddings: () => ReturnType<
+      typeof EmbeddingSearchService.configure
+    >;
     analyze: (
       query: string,
       options?: Record<string, unknown>,
@@ -110,6 +123,9 @@ class Addon {
         baseUrl: KISSKI_DEFAULT_BASE_URL,
         model: KISSKI_DEFAULT_MODEL,
         sendPaperContextToKisski: true,
+        embeddingSearchEnabled: true,
+        embeddingBaseUrl: EMBEDDING_DEFAULT_BASE_URL,
+        embeddingModel: EMBEDDING_DEFAULT_MODEL,
         ollamaBaseUrl: "http://localhost:11434",
         ollamaModel: "qwen2.5:3b",
         maxItems: 20,
@@ -122,6 +138,7 @@ class Addon {
     this.hooks = hooks;
     this.api = {
       ai: aiProviderManager,
+      embeddings: embeddingProvider,
       configureAI: () => {
         const provider = this.data.settings.provider;
         const providerConfig =
@@ -140,6 +157,12 @@ class Addon {
           .setActiveProvider(provider)
           .configureProvider(provider, providerConfig);
       },
+      configureEmbeddings: () =>
+        EmbeddingSearchService.configure({
+          enabled: this.data.settings.embeddingSearchEnabled,
+          baseUrl: this.data.settings.embeddingBaseUrl,
+          model: this.data.settings.embeddingModel,
+        }),
       analyze: async (query, options = {}) => {
         this.data.runtime.isAnalyzing = true;
         delete this.data.runtime.lastError;
@@ -234,7 +257,17 @@ function formatPaperChunks(paper: ChunkedPaper) {
     return `[${chunk.id}] ${pages}, ca. ${chunk.estimatedTokens} Tokens\n${chunk.text}`;
   });
 
-  return [header, ...chunks].join("\n\n");
+  const embeddingStatus = EmbeddingSearchService.getLastStatus();
+  const searchStatus = [
+    "[ZAIA Retrieval]",
+    `Modus: ${embeddingStatus.mode}`,
+    `Status: ${embeddingStatus.message}`,
+    embeddingStatus.error ? `Fehler: ${embeddingStatus.error}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return [header, searchStatus, ...chunks].join("\n\n");
 }
 
 function formatChunkPages(pageStart: number | null, pageEnd: number | null) {
