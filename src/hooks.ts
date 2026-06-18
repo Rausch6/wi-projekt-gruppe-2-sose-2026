@@ -192,22 +192,30 @@ async function onMainWindowUnload(win: Window): Promise<void> {
   addon.data.dialog?.window?.close();
 }
 
-function onShutdown(): void {
-  Zotero.getMainWindows().forEach((win) => {
-    UIExampleFactory.unregisterAssistantToolbarButton(win);
-    unregisterAssistantSidebarController(win);
-  });
-  UIExampleFactory.unregisterAssistantSidenavButton();
-  UIExampleFactory.unregisterTemplateItemPaneSections();
-  ztoolkit.unregisterAll();
-  addon.data.dialog?.window?.close();
-  void closeChatDatabase().catch((error) => {
-    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
-  });
-  // Remove addon object
+async function onShutdown(): Promise<void> {
   addon.data.alive = false;
-  // @ts-ignore - Plugin instance is not typed
-  delete Zotero[addon.data.config.addonInstance];
+
+  try {
+    Zotero.getMainWindows().forEach((win) => {
+      UIExampleFactory.unregisterAssistantToolbarButton(win);
+      unregisterAssistantSidebarController(win);
+    });
+    UIExampleFactory.unregisterAssistantSidenavButton();
+    UIExampleFactory.unregisterTemplateItemPaneSections();
+    ztoolkit.unregisterAll();
+    addon.data.dialog?.window?.close();
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+  }
+
+  try {
+    await closeChatDatabase();
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+  } finally {
+    // @ts-ignore - Plugin instance is not typed
+    delete Zotero[addon.data.config.addonInstance];
+  }
 }
 
 /**
