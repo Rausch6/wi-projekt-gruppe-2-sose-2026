@@ -3,6 +3,7 @@ import { bindAssistantChat } from "./assistantChatController";
 import { openPreferencesPane } from "../modules/preferences";
 import { ASSISTANT_POPOUT_REQUEST_EVENT } from "./assistantPopoutEvents";
 import type { LLMProvider } from "../addon";
+import { getString } from "../utils/locale";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -123,9 +124,10 @@ function createSidebar(doc: Document, options: AssistantSidebarRenderOptions) {
     "Dein Zotero AI Assistent für Fragen, Zusammenfassungen und Recherche in deiner Bibliothek.",
   );
   welcome.append(welcomeLogo, welcomeTitle, welcomeText);
+  const providerSetup = createProviderSetup(doc);
   const messages = createHtmlElement(doc, "div", "zai-messages");
   messages.setAttribute("aria-live", "polite");
-  main.append(welcome, messages);
+  main.append(welcome, providerSetup, messages);
 
   const footer = createHtmlElement(doc, "footer", "zai-footer");
   const actions = createHtmlElement(doc, "div", "zai-actions");
@@ -244,6 +246,178 @@ function createModelSelect(doc: Document) {
   modelSelect.append(modelValue);
   modelWrap.append(modelSelect, modelOptions);
   return modelWrap;
+}
+
+function createProviderSetup(doc: Document) {
+  const setup = createHtmlElement(doc, "section", "zai-provider-setup");
+  setup.hidden = true;
+  setup.setAttribute("aria-live", "polite");
+
+  setup.append(createCloudSetup(doc), createLocalSetup(doc));
+  return setup;
+}
+
+function createCloudSetup(doc: Document) {
+  const panel = createProviderSetupPanel(
+    doc,
+    "kisski",
+    getString("sidebar-cloud-setup-title"),
+    getString("sidebar-cloud-setup-description"),
+  );
+
+  panel.append(
+    createInstructionList(doc, [
+      getString("sidebar-cloud-setup-step-settings"),
+      getString("sidebar-cloud-setup-step-save"),
+      getString("sidebar-cloud-setup-step-check"),
+    ]),
+    createProviderSetupActions(doc, "kisski", [
+      {
+        action: "open-preferences",
+        label: getString("sidebar-open-preferences"),
+        handler: () => openPreferencesPane(),
+      },
+      {
+        action: "check-provider",
+        label: getString("sidebar-check-provider"),
+      },
+    ]),
+    createProviderSetupStatus(doc, "kisski"),
+  );
+
+  return panel;
+}
+
+function createLocalSetup(doc: Document) {
+  const panel = createProviderSetupPanel(
+    doc,
+    "ollama",
+    getString("sidebar-local-setup-title"),
+    getString("sidebar-local-setup-description"),
+  );
+
+  panel.append(
+    createInstructionList(doc, [
+      createLocalInstallStep(doc),
+      getString("sidebar-local-setup-step-start"),
+      createLocalModelStep(doc),
+    ]),
+    createProviderSetupActions(doc, "ollama", [
+      {
+        action: "check-provider",
+        label: getString("sidebar-check-provider"),
+      },
+    ]),
+    createProviderSetupStatus(doc, "ollama"),
+  );
+
+  return panel;
+}
+
+function createProviderSetupPanel(
+  doc: Document,
+  provider: LLMProvider,
+  title: string,
+  description: string,
+) {
+  const panel = createHtmlElement(doc, "div", "zai-provider-setup-panel");
+  panel.hidden = true;
+  panel.dataset.provider = provider;
+
+  panel.append(
+    createHtmlElement(doc, "h2", "zai-provider-setup-title", title),
+    createHtmlElement(doc, "p", "zai-provider-setup-description", description),
+  );
+  return panel;
+}
+
+function createInstructionList(doc: Document, items: Array<string | Node>) {
+  const list = createHtmlElement(doc, "ol", "zai-provider-setup-list");
+  list.append(
+    ...items.map((item) => {
+      const listItem = createHtmlElement(
+        doc,
+        "li",
+        "zai-provider-setup-list-item",
+      );
+      if (typeof item === "string") {
+        listItem.textContent = item;
+      } else {
+        listItem.append(item);
+      }
+      return listItem;
+    }),
+  );
+  return list;
+}
+
+function createLocalInstallStep(doc: Document) {
+  const fragment = doc.createDocumentFragment();
+  const link = createHtmlElement(
+    doc,
+    "a",
+    "zai-provider-setup-link",
+    getString("sidebar-local-setup-step-install-link"),
+  ) as HTMLAnchorElement;
+
+  link.href = "https://ollama.com/download";
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.addEventListener("click", (event) => {
+    event.preventDefault();
+    Zotero.launchURL(link.href);
+  });
+
+  fragment.append(
+    getString("sidebar-local-setup-step-install-prefix"),
+    " ",
+    link,
+    getString("sidebar-local-setup-step-install-suffix"),
+  );
+  return fragment;
+}
+
+function createLocalModelStep(doc: Document) {
+  const fragment = doc.createDocumentFragment();
+  const button = createButton(
+    doc,
+    "zai-provider-setup-button zai-provider-setup-inline-button",
+    getString("sidebar-pull-ollama-model"),
+  );
+  button.dataset.provider = "ollama";
+  button.dataset.action = "pull-ollama-model";
+
+  fragment.append(getString("sidebar-local-setup-step-model"), " ", button);
+  return fragment;
+}
+
+function createProviderSetupActions(
+  doc: Document,
+  provider: LLMProvider,
+  actions: Array<{
+    action: string;
+    label: string;
+    handler?: () => void;
+  }>,
+) {
+  const row = createHtmlElement(doc, "div", "zai-provider-setup-actions");
+  row.append(
+    ...actions.map(({ action, label, handler }) => {
+      const button = createButton(doc, "zai-provider-setup-button", label);
+      button.dataset.provider = provider;
+      button.dataset.action = action;
+      if (handler) button.addEventListener("click", handler);
+      return button;
+    }),
+  );
+  return row;
+}
+
+function createProviderSetupStatus(doc: Document, provider: LLMProvider) {
+  const status = createHtmlElement(doc, "p", "zai-provider-setup-status");
+  status.dataset.provider = provider;
+  status.hidden = true;
+  return status;
 }
 
 function getToggleProvider(button: HTMLButtonElement): LLMProvider {

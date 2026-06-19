@@ -19,11 +19,6 @@ const FIELD_NAMES = [
   "auto-delete-old-chats",
 ] as const;
 
-const OLLAMA_INSTALL_COMMANDS = {
-  unix: "curl -fsSL https://ollama.com/install.sh | sh",
-  windows: "irm https://ollama.com/install.ps1 | iex",
-} as const;
-
 export async function registerPrefsScripts(window: Window) {
   addon.data.prefs = {
     window,
@@ -45,20 +40,6 @@ function bindPreferenceEvents(window: Window) {
   getElement(window, "load-models")?.addEventListener("command", () => {
     void loadModels(window);
   });
-
-  getElement(window, "copy-ollama-install-command")?.addEventListener(
-    "command",
-    () => {
-      void copyOllamaInstallCommand(window);
-    },
-  );
-
-  getElement(window, "download-ollama-model")?.addEventListener(
-    "command",
-    () => {
-      void downloadOllamaModel(window);
-    },
-  );
 }
 
 function syncRuntimeSettings(window: Window) {
@@ -96,54 +77,6 @@ function syncRuntimeSettings(window: Window) {
     autoDeleteOldChats,
   };
   addon.api.configureAI();
-}
-
-export function getOllamaInstallCommand(window: Window) {
-  const platform = window.navigator.platform.toLowerCase();
-  const userAgent = window.navigator.userAgent.toLowerCase();
-  const isWindows = platform.includes("win") || userAgent.includes("windows");
-
-  return isWindows
-    ? OLLAMA_INSTALL_COMMANDS.windows
-    : OLLAMA_INSTALL_COMMANDS.unix;
-}
-
-async function copyOllamaInstallCommand(window: Window) {
-  const status = getElement<HTMLElement>(window, "ollama-setup-status");
-  const command = getOllamaInstallCommand(window);
-
-  try {
-    await window.navigator.clipboard.writeText(command);
-    setStatus(status, "Ollama install command copied.");
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    setStatus(status, `Copy failed: ${message}`);
-  }
-}
-
-async function downloadOllamaModel(window: Window) {
-  const status = getElement<HTMLElement>(window, "ollama-setup-status");
-  const button = getElement<HTMLButtonElement>(window, "download-ollama-model");
-
-  syncRuntimeSettings(window);
-  const model = addon.data.settings.ollamaModel || OLLAMA_DEFAULT_MODEL;
-  setStatus(status, `Downloading ${model}...`);
-  if (button) button.disabled = true;
-
-  try {
-    const provider = addon.api.ai.getProvider("ollama");
-    if (typeof provider.pullModel !== "function") {
-      throw new Error("Ollama provider does not support model downloads.");
-    }
-
-    await provider.pullModel(model);
-    setStatus(status, `${model} is ready.`);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    setStatus(status, `Download failed: ${message}`);
-  } finally {
-    if (button) button.disabled = false;
-  }
 }
 
 async function loadModels(window: Window) {

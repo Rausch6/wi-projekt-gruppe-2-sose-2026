@@ -2,6 +2,11 @@ import { config } from "../package.json";
 import { ColumnOptions, DialogHelper } from "zotero-plugin-toolkit";
 import { aiProviderManager } from "./ai/AIProviderManager.js";
 import {
+  createProviderConnectionResult,
+  type ProviderConnectionResult,
+  type ProviderConnectionState,
+} from "./ai/providerConnectionStatus";
+import {
   KISSKI_DEFAULT_BASE_URL,
   KISSKI_DEFAULT_MODEL,
 } from "./ai/providers/KisskiProvider.js";
@@ -52,6 +57,7 @@ class Addon {
     runtime: {
       isAnalyzing: boolean;
       lastError?: string;
+      providerConnections: ProviderConnectionState;
     };
     locale?: {
       current: any;
@@ -67,6 +73,9 @@ class Addon {
   public api: {
     ai: typeof aiProviderManager;
     configureAI: () => ReturnType<typeof aiProviderManager.configureProvider>;
+    checkProviderConnection: (
+      provider?: LLMProvider,
+    ) => Promise<ProviderConnectionResult>;
     analyze: (
       query: string,
       options?: Record<string, unknown>,
@@ -117,6 +126,7 @@ class Addon {
       },
       runtime: {
         isAnalyzing: false,
+        providerConnections: {},
       },
     };
     this.hooks = hooks;
@@ -140,6 +150,8 @@ class Addon {
           .setActiveProvider(provider)
           .configureProvider(provider, providerConfig);
       },
+      checkProviderConnection: (provider = this.data.settings.provider) =>
+        this.checkProviderConnection(provider),
       analyze: async (query, options = {}) => {
         this.data.runtime.isAnalyzing = true;
         delete this.data.runtime.lastError;
@@ -187,6 +199,162 @@ class Addon {
       },
     };
   }
+
+  private configureProvider(provider: LLMProvider) {
+    const providerConfig =
+      provider === "ollama"
+        ? {
+            baseUrl: this.data.settings.ollamaBaseUrl,
+            model: this.data.settings.ollamaModel,
+          }
+        : {
+            apiKey: this.data.settings.apiKey,
+            baseUrl: this.data.settings.baseUrl,
+            model: this.data.settings.model,
+          };
+
+    return aiProviderManager.configureProvider(provider, providerConfig);
+  }
+
+  private async checkProviderConnection(
+    provider: LLMProvider,
+  ): Promise<ProviderConnectionResult> {
+    const missingConfig = this.getMissingProviderConfigResult(provider);
+    if (missingConfig) {
+      this.data.runtime.providerConnections[provider] = missingConfig;
+      return missingConfig;
+    }
+
+    this.configureProvider(provider);
+
+    try {
+      const models = await aiProviderManager.listModels(provider);
+      const configuredModel = this.getConfiguredProviderModel(provider);
+      const hasConfiguredModel = hasModel(models, configuredModel);
+
+      if (!hasConfiguredModel) {
+        const result = createProviderConnectionResult(
+          provider,
+          "missing-model",
+          {
+            issue:
+              provider === "ollama"
+                ? "model-not-installed"
+                : "model-not-available",
+            model: configuredModel,
+            baseUrl: this.getConfiguredProviderBaseUrl(provider),
+            message:
+              provider === "ollama"
+                ? `Ollama is reachable, but ${configuredModel} is not installed.`
+                : `Cloud LLM is reachable, but ${configuredModel} is not available.`,
+          },
+        );
+        this.data.runtime.providerConnections[provider] = result;
+        return result;
+      }
+
+      const result = createProviderConnectionResult(provider, "ready", {
+        model: configuredModel,
+        baseUrl: this.getConfiguredProviderBaseUrl(provider),
+        message:
+          provider === "ollama"
+            ? "Ollama connection is ready."
+            : "Cloud LLM connection is ready.",
+      });
+      this.data.runtime.providerConnections[provider] = result;
+      return result;
+    } catch (error) {
+      const result = createProviderConnectionResult(
+        provider,
+        getConnectionFailureStatus(error),
+        {
+          issue: getConnectionFailureIssue(error),
+          model: this.getConfiguredProviderModel(provider),
+          baseUrl: this.getConfiguredProviderBaseUrl(provider),
+          error: getErrorMessage(error),
+          message:
+            provider === "ollama"
+              ? "No communication with Ollama."
+              : "No communication with the cloud LLM.",
+        },
+      );
+      this.data.runtime.providerConnections[provider] = result;
+      return result;
+    }
+  }
+
+  private getMissingProviderConfigResult(provider: LLMProvider) {
+    const baseUrl = this.getConfiguredProviderBaseUrl(provider);
+    const model = this.getConfiguredProviderModel(provider);
+
+    if (!baseUrl) {
+      return createProviderConnectionResult(provider, "missing-config", {
+        issue: "base-url-missing",
+        message: "Base URL is missing.",
+      });
+    }
+
+    if (!model) {
+      return createProviderConnectionResult(provider, "missing-config", {
+        issue: "model-missing",
+        baseUrl,
+        message: "Model is missing.",
+      });
+    }
+
+    if (provider === "kisski" && !this.data.settings.apiKey.trim()) {
+      return createProviderConnectionResult(provider, "missing-config", {
+        issue: "api-key-missing",
+        model,
+        baseUrl,
+        message: "API key is missing.",
+      });
+    }
+
+    return null;
+  }
+
+  private getConfiguredProviderBaseUrl(provider: LLMProvider) {
+    return provider === "ollama"
+      ? this.data.settings.ollamaBaseUrl.trim()
+      : this.data.settings.baseUrl.trim();
+  }
+
+  private getConfiguredProviderModel(provider: LLMProvider) {
+    return provider === "ollama"
+      ? this.data.settings.ollamaModel.trim()
+      : this.data.settings.model.trim();
+  }
+}
+
+function hasModel(models: unknown, configuredModel: string) {
+  if (!Array.isArray(models)) return false;
+  return models.some((model) => {
+    const record = model as { id?: unknown; name?: unknown; model?: unknown };
+    return [record.id, record.name, record.model].some(
+      (value) => typeof value === "string" && value.trim() === configuredModel,
+    );
+  });
+}
+
+function getConnectionFailureStatus(error: unknown) {
+  const name = getErrorName(error);
+  return name === "AIProviderResponseError" ? "error" : "unreachable";
+}
+
+function getConnectionFailureIssue(error: unknown) {
+  const name = getErrorName(error);
+  return name === "AIProviderResponseError"
+    ? "invalid-response"
+    : "provider-unreachable";
+}
+
+function getErrorName(error: unknown) {
+  return error instanceof Error ? error.name : "";
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function logSelectedPaperChunks(itemID?: number) {
