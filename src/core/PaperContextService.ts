@@ -1,10 +1,7 @@
 import { ItemManager } from "./ItemManager";
+import { EmbeddingSearchService } from "./EmbeddingSearchService";
 import { PdfExtractor } from "./PdfExtractor";
-import {
-  chunkPaperText,
-  selectRelevantChunks,
-  type TextChunk,
-} from "./TextChunker";
+import {chunkPaperText,selectRelevantChunks,type TextChunk,} from "./TextChunker";
 import { vectorStore, type ChunkDocument } from "./OramaService";
 import { embeddingProvider } from "../ai/EmbeddingProvider.js";
 
@@ -82,8 +79,14 @@ export class PaperContextService {
     const paper = await getCachedPaper(item);
     if (!paper) return null;
 
+    const initialchunks = await EmbeddingSearchService.selectRelevantChunks(
+      paper.chunks,
+      query,
+      { cacheKey: paper.cacheKey },
+    );
+    if (!initialchunks.length) return null;
+    
     try {
-
       const [queryVector] = await embeddingProvider.embedTexts([query], {
         inputType: "query",
       });
@@ -144,7 +147,7 @@ export class PaperContextService {
       const [queryVector] = await embeddingProvider.embedTexts([query], {
         inputType: "query",
       });
-
+    
       searchResults = await vectorStore.searchSimilar(queryVector, 5);
     } catch (error) {
       Zotero.debug(
@@ -187,6 +190,7 @@ export class PaperContextService {
 
   static clearCache() {
     paperCache.clear();
+    EmbeddingSearchService.clearCache();
   }
 }
 

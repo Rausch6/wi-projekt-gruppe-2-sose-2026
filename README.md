@@ -20,6 +20,27 @@ Zotero.log(result.content);
 Verfuegbare Modelle lassen sich in den Plugin-Einstellungen laden oder ueber
 `Zotero.AddonTemplate.api.ai.listModels("kisski")` abrufen.
 
+## Lokale Embeddings
+
+Fuer die Auswahl relevanter PDF-Auschnitte kann das Plugin semantische
+Embeddings verwenden. Standardmaessig ist das Ollama-Modell
+`qwen3-embedding:latest` unter `http://localhost:11434/api/embed`
+konfiguriert.
+
+Das Modell kann lokal mit Ollama installiert und getestet werden:
+
+```bash
+ollama pull qwen3-embedding:latest
+curl http://localhost:11434/api/embed -d '{
+  "model": "qwen3-embedding:latest",
+  "input": "Warum ist der Himmel blau?"
+}'
+```
+
+Im Plugin unter Einstellungen kann der Embedding-Service getestet werden. Falls
+der Endpoint nicht erreichbar ist, verwendet ZAIA automatisch die bisherige
+Keyword-basierte Chunk-Auswahl.
+
 ## Getting started
 
 To make it easy for you to get started with GitLab, here's a list of recommended next steps.
