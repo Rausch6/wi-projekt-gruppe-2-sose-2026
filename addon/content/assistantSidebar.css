@@ -693,7 +693,9 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
 }
 
 .zai-provider-setup-inline-button {
+  display: block;
   margin-top: 6px;
+  width: fit-content;
 }
 
 .zai-provider-setup-button[data-action="open-preferences"] {

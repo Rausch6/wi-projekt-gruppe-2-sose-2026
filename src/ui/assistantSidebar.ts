@@ -332,19 +332,11 @@ function createLocalSetup(doc: Document) {
 
   panel.append(
     createInstructionList(doc, [
-      createLocalInstallStep(doc),
-      getString("sidebar-local-setup-step-start"),
+      createLocalInstallStep(doc, createLocalSetupButton(doc)),
+      createLocalStartStep(doc),
       createLocalModelStep(doc),
     ]),
     createProviderSetupActions(doc, "ollama", [
-      {
-        action: "launch-ollama-setup",
-        label: getString("sidebar-launch-ollama-setup"),
-      },
-      {
-        action: "start-ollama",
-        label: getString("sidebar-start-ollama"),
-      },
       {
         action: "check-provider",
         label: getString("sidebar-check-provider"),
@@ -393,7 +385,7 @@ function createInstructionList(doc: Document, items: Array<string | Node>) {
   return list;
 }
 
-function createLocalInstallStep(doc: Document) {
+function createLocalInstallStep(doc: Document, button: HTMLButtonElement) {
   const fragment = doc.createDocumentFragment();
   const link = createHtmlElement(
     doc,
@@ -416,6 +408,33 @@ function createLocalInstallStep(doc: Document) {
     link,
     getString("sidebar-local-setup-step-install-suffix"),
   );
+  appendInlineSetupButton(fragment, button);
+  return fragment;
+}
+
+function createLocalSetupButton(doc: Document) {
+  const button = createButton(
+    doc,
+    "zai-provider-setup-button zai-provider-setup-inline-button",
+    getString("sidebar-launch-ollama-setup"),
+  );
+  button.dataset.provider = "ollama";
+  button.dataset.action = "launch-ollama-setup";
+  return button;
+}
+
+function createLocalStartStep(doc: Document) {
+  const fragment = doc.createDocumentFragment();
+  const button = createButton(
+    doc,
+    "zai-provider-setup-button zai-provider-setup-inline-button",
+    getString("sidebar-start-ollama"),
+  );
+  button.dataset.provider = "ollama";
+  button.dataset.action = "start-ollama";
+
+  fragment.append(getString("sidebar-local-setup-step-start"));
+  appendInlineSetupButton(fragment, button);
   return fragment;
 }
 
@@ -429,8 +448,16 @@ function createLocalModelStep(doc: Document) {
   button.dataset.provider = "ollama";
   button.dataset.action = "pull-ollama-model";
 
-  fragment.append(getString("sidebar-local-setup-step-model"), " ", button);
+  fragment.append(getString("sidebar-local-setup-step-model"));
+  appendInlineSetupButton(fragment, button);
   return fragment;
+}
+
+function appendInlineSetupButton(
+  fragment: DocumentFragment,
+  button: HTMLButtonElement,
+) {
+  fragment.append(" ", button);
 }
 
 function createProviderSetupActions(
