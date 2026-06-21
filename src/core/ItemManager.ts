@@ -10,6 +10,7 @@ export interface ItemData {
 }
 
 export class ItemManager {
+  
   /**
    * Holt alle aktuell ausgewählten Items im Zotero-Hauptfenster.
    * @returns Array von Zotero Item-Objekten

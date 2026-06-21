@@ -95,7 +95,7 @@ export class PaperContextService {
 
       const searchResults = await vectorStore.searchSimilar(queryVector, 5, {
         zoteroItemId: itemIdStr,
-      });
+      }, query);
 
       const relevantHits = searchResults.map(
         (hit) => hit.document as unknown as ChunkDocument,
@@ -148,7 +148,7 @@ export class PaperContextService {
         inputType: "query",
       });
     
-      searchResults = await vectorStore.searchSimilar(queryVector, 5);
+      searchResults = await vectorStore.searchSimilar(queryVector, 5, undefined, query);
     } catch (error) {
       Zotero.debug(
         `[PaperContextService] Globale Embedding-Suche fehlgeschlagen: ${error}`,

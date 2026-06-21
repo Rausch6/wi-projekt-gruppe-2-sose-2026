@@ -24,7 +24,7 @@ type TextUnit = {
   tokens: number;
 };
 
-const DEFAULT_TARGET_TOKENS = 350;
+const DEFAULT_TARGET_TOKENS = 512;
 const DEFAULT_OVERLAP_TOKENS = 100;
 const WORDS_PER_TOKEN = 0.75;
 const STOP_WORDS = new Set([

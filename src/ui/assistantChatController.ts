@@ -1232,6 +1232,7 @@ function setActiveProvider(provider: LLMProvider) {
     addon.data.settings.provider = provider;
     savePluginPreference("provider", provider);
     addon.api.configureAI();
+    addon.api.configureEmbeddings();
   }
 
   syncAllModelPickers();
@@ -1254,6 +1255,7 @@ async function ensureModelOptionsLoaded(provider: LLMProvider, force = false) {
   try {
     if (provider === getActiveProvider()) {
       addon.api.configureAI();
+      addon.api.configureEmbeddings();
     }
     const models = normalizeModelOptions(
       await addon.api.ai.listModels(provider),
@@ -1457,6 +1459,7 @@ function setProviderModel(provider: LLMProvider, value: string) {
   addon.api.ai.setModel(model, provider);
   if (provider === getActiveProvider()) {
     addon.api.configureAI();
+    addon.api.configureEmbeddings();
   }
 }
 

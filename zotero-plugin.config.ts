@@ -35,6 +35,7 @@ export default defineConfig({
         bundle: true,
         target: "firefox140",
         outfile: `.scaffold/build/addon/content/scripts/${pkg.config.addonRef}.js`,
+        external: ["stream", "fs", "path", "os", "crypto", "http", "https", "zlib"],
       },
     ],
   },

@@ -5,14 +5,14 @@ declare const Zotero: any;
 declare const IOUtils: any;  
 declare const OS: any;     
 
-const VECTOR_SIZE = 768; 
+const VECTOR_SIZE = 4096; 
 
 const mySchema = {
     id: 'string',
     zoteroItemId: 'string',
     content: 'string',
     pageNumber: 'number',
-    embedding: `vector[768]`, 
+    embedding: `vector[${VECTOR_SIZE}]`, 
 } as const;
 
 export type ChunkDocument = {
@@ -59,17 +59,21 @@ export class OramaService {
     /**
      * Führt eine Vektorsuche in Orama durch.
      */
-    async searchSimilar(queryVector: number[], limit: number = 5, whereFilter?: any) {
+    async searchSimilar(queryVector: number[], limit: number = 5, whereFilter?: any, term?: string) {
         this.checkInit();
 
         const searchParams: any = {
-            mode: 'vector',
+            mode: term ? 'hybrid' : 'vector',
             vector: {
                 value: queryVector,
                 property: 'embedding',
             },
             limit: limit,
         };
+
+        if (term) {
+            searchParams.term = term;
+        }
 
         if (whereFilter) {
             searchParams.where = whereFilter;
@@ -88,10 +92,11 @@ export class OramaService {
         this.checkInit();
 
         const results = await search(this.db, {
+            term: '',
             where: {
                 zoteroItemId: zoteroItemId
             },
-            limit: 10000, 
+            limit: 10000,
         });
 
         if (results.hits.length > 0) {
@@ -110,6 +115,7 @@ export class OramaService {
     async isItemIndexed(zoteroItemId: string): Promise<boolean> {
         this.checkInit();
         const results = await search(this.db, {
+            term: '',
             where: { zoteroItemId },
             limit: 1,
         });
