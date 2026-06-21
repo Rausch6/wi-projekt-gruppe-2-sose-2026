@@ -10,6 +10,7 @@ import type { LLMProvider } from "../addon";
 import { KISSKI_MODEL_OPTIONS } from "../ai/providers/KisskiProvider.js";
 import {
   createCheckingProviderConnectionResult,
+  createProviderConnectionResult,
   type ProviderConnectionResult,
 } from "../ai/providerConnectionStatus";
 import { getString } from "../utils/locale";
@@ -101,6 +102,7 @@ let requestRunning = false;
 let modelPickerExpanded = false;
 let activeAssistantResponse: ActiveAssistantResponse | null = null;
 let ollamaModelPullRunning = false;
+let ollamaSetupLaunchRunning = false;
 
 export function bindAssistantChat(host: HTMLElement) {
   hosts.add(host);
@@ -137,6 +139,11 @@ export function bindAssistantChat(host: HTMLElement) {
   const ollamaModelPullButtons = Array.from(
     host.querySelectorAll(
       '.zai-provider-setup-button[data-action="pull-ollama-model"]',
+    ),
+  ) as HTMLButtonElement[];
+  const ollamaSetupLaunchButtons = Array.from(
+    host.querySelectorAll(
+      '.zai-provider-setup-button[data-action="launch-ollama-setup"]',
     ),
   ) as HTMLButtonElement[];
 
@@ -247,6 +254,12 @@ export function bindAssistantChat(host: HTMLElement) {
     ollamaModelPullButton.addEventListener("click", () => {
       hosts.add(host);
       void pullOllamaModel();
+    });
+  }
+  for (const ollamaSetupLaunchButton of ollamaSetupLaunchButtons) {
+    ollamaSetupLaunchButton.addEventListener("click", () => {
+      hosts.add(host);
+      void launchOllamaSetup();
     });
   }
   modelButton?.addEventListener("click", () => {
@@ -1152,6 +1165,18 @@ function syncProviderSetup(
     });
 
   setup
+    .querySelectorAll<HTMLButtonElement>(
+      '.zai-provider-setup-button[data-action="launch-ollama-setup"]',
+    )
+    .forEach((button) => {
+      const isActiveProvider = provider === "ollama";
+      button.disabled = !isActiveProvider || ollamaSetupLaunchRunning;
+      button.textContent = ollamaSetupLaunchRunning
+        ? getString("sidebar-launching-ollama-setup")
+        : getString("sidebar-launch-ollama-setup");
+    });
+
+  setup
     .querySelectorAll<HTMLElement>(".zai-provider-setup-status[data-provider]")
     .forEach((status) => {
       const isActiveProvider = status.dataset.provider === provider;
@@ -1168,6 +1193,9 @@ function getProviderConnectionStatusText(
   provider: LLMProvider,
   connection: ProviderConnectionResult | undefined,
 ) {
+  if (provider === "ollama" && ollamaSetupLaunchRunning) {
+    return getString("sidebar-launching-ollama-setup");
+  }
   if (provider === "ollama" && ollamaModelPullRunning) {
     return getString("sidebar-pulling-ollama-model");
   }
@@ -1498,6 +1526,32 @@ async function pullOllamaModel() {
     }
   } finally {
     ollamaModelPullRunning = false;
+    renderAllHosts();
+  }
+}
+
+async function launchOllamaSetup() {
+  if (ollamaSetupLaunchRunning) return;
+
+  ollamaSetupLaunchRunning = true;
+  renderAllHosts();
+
+  try {
+    await addon.api.launchOllamaSetup();
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+    const currentConnection = addon.data.runtime.providerConnections.ollama;
+    addon.data.runtime.providerConnections.ollama = {
+      ...(currentConnection ??
+        createProviderConnectionResult("ollama", "error")),
+      status: "error",
+      ok: false,
+      issue: "unknown-error",
+      error: error instanceof Error ? error.message : String(error),
+      message: getString("sidebar-launch-ollama-setup-failed"),
+    };
+  } finally {
+    ollamaSetupLaunchRunning = false;
     renderAllHosts();
   }
 }

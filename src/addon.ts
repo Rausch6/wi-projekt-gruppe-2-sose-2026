@@ -35,6 +35,15 @@ import { createZToolkit } from "./utils/ztoolkit";
 export type LLMProvider = "kisski" | "ollama";
 let lastPaperChunkReport = "";
 
+type OllamaSetupPlatform = "windows" | "macos";
+
+const OLLAMA_SETUP_TEMP_DIR = "zaia-ollama-setup";
+const OLLAMA_WINDOWS_SETUP_FILES = [
+  "setup-ollama-windows.cmd",
+  "setup-ollama-windows.ps1",
+];
+const OLLAMA_MACOS_SETUP_FILE = "setup-ollama-macos.command";
+
 export type PluginSettings = {
   provider: LLMProvider;
   apiKey: string;
@@ -76,6 +85,7 @@ class Addon {
     checkProviderConnection: (
       provider?: LLMProvider,
     ) => Promise<ProviderConnectionResult>;
+    launchOllamaSetup: typeof launchOllamaSetup;
     analyze: (
       query: string,
       options?: Record<string, unknown>,
@@ -152,6 +162,7 @@ class Addon {
       },
       checkProviderConnection: (provider = this.data.settings.provider) =>
         this.checkProviderConnection(provider),
+      launchOllamaSetup,
       analyze: async (query, options = {}) => {
         this.data.runtime.isAnalyzing = true;
         delete this.data.runtime.lastError;
@@ -355,6 +366,61 @@ function getErrorName(error: unknown) {
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+async function launchOllamaSetup() {
+  const platform = getOllamaSetupPlatform();
+  const setupDir = await ensureOllamaSetupTempDirectory();
+  const launcherPath =
+    platform === "windows"
+      ? await prepareWindowsOllamaSetup(setupDir)
+      : await prepareMacOllamaSetup(setupDir);
+
+  Zotero.File.pathToFile(launcherPath).launch();
+  return { platform, path: launcherPath };
+}
+
+function getOllamaSetupPlatform(): OllamaSetupPlatform {
+  if (Zotero.isWin) return "windows";
+  if (Zotero.isMac) return "macos";
+
+  throw new Error("Ollama setup is only available for Windows and macOS.");
+}
+
+async function ensureOllamaSetupTempDirectory() {
+  const setupDir = PathUtils.join(
+    Zotero.getTempDirectory().path,
+    OLLAMA_SETUP_TEMP_DIR,
+  );
+  await IOUtils.makeDirectory(setupDir, {
+    createAncestors: true,
+    ignoreExisting: true,
+  });
+  return setupDir;
+}
+
+async function prepareWindowsOllamaSetup(setupDir: string) {
+  for (const fileName of OLLAMA_WINDOWS_SETUP_FILES) {
+    await copyBundledSetupFile(fileName, setupDir);
+  }
+  return PathUtils.join(setupDir, OLLAMA_WINDOWS_SETUP_FILES[0]);
+}
+
+async function prepareMacOllamaSetup(setupDir: string) {
+  const launcherPath = await copyBundledSetupFile(
+    OLLAMA_MACOS_SETUP_FILE,
+    setupDir,
+  );
+  await IOUtils.setPermissions(launcherPath, 0o755);
+  return launcherPath;
+}
+
+async function copyBundledSetupFile(fileName: string, targetDir: string) {
+  const sourceUrl = rootURI + `setup/${fileName}`;
+  const targetPath = PathUtils.join(targetDir, fileName);
+  const contents = await Zotero.File.getContentsFromURLAsync(sourceUrl);
+  await Zotero.File.putContentsAsync(targetPath, contents, "utf-8");
+  return targetPath;
 }
 
 async function logSelectedPaperChunks(itemID?: number) {

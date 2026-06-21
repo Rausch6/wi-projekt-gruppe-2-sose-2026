@@ -304,6 +304,10 @@ function createLocalSetup(doc: Document) {
     ]),
     createProviderSetupActions(doc, "ollama", [
       {
+        action: "launch-ollama-setup",
+        label: getString("sidebar-launch-ollama-setup"),
+      },
+      {
         action: "check-provider",
         label: getString("sidebar-check-provider"),
       },
