@@ -103,6 +103,8 @@ let modelPickerExpanded = false;
 let activeAssistantResponse: ActiveAssistantResponse | null = null;
 let ollamaModelPullRunning = false;
 let ollamaSetupLaunchRunning = false;
+let ollamaStartRunning = false;
+let ollamaStopRunning = false;
 
 export function bindAssistantChat(host: HTMLElement) {
   hosts.add(host);
@@ -145,6 +147,14 @@ export function bindAssistantChat(host: HTMLElement) {
     host.querySelectorAll(
       '.zai-provider-setup-button[data-action="launch-ollama-setup"]',
     ),
+  ) as HTMLButtonElement[];
+  const ollamaStartButtons = Array.from(
+    host.querySelectorAll(
+      '.zai-provider-setup-button[data-action="start-ollama"]',
+    ),
+  ) as HTMLButtonElement[];
+  const ollamaStopButtons = Array.from(
+    host.querySelectorAll('.zai-stop-ollama-button[data-action="stop-ollama"]'),
   ) as HTMLButtonElement[];
 
   syncModelPicker(host);
@@ -260,6 +270,18 @@ export function bindAssistantChat(host: HTMLElement) {
     ollamaSetupLaunchButton.addEventListener("click", () => {
       hosts.add(host);
       void launchOllamaSetup();
+    });
+  }
+  for (const ollamaStartButton of ollamaStartButtons) {
+    ollamaStartButton.addEventListener("click", () => {
+      hosts.add(host);
+      void startOllama();
+    });
+  }
+  for (const ollamaStopButton of ollamaStopButtons) {
+    ollamaStopButton.addEventListener("click", () => {
+      hosts.add(host);
+      void stopOllama();
     });
   }
   modelButton?.addEventListener("click", () => {
@@ -1002,7 +1024,19 @@ function renderHost(host: HTMLElement) {
   const welcome = host.querySelector<HTMLElement>(".zai-welcome");
   const messageList = host.querySelector<HTMLElement>(".zai-messages");
   const chatList = host.querySelector<HTMLElement>(".zai-chat-list");
+  const chatListActions = host.querySelector<HTMLElement>(
+    ".zai-chat-list-actions",
+  );
   const seeAll = host.querySelector<HTMLButtonElement>(".zai-see-all");
+  const stopOllamaButtons = Array.from(
+    host.querySelectorAll(".zai-stop-ollama-button"),
+  ) as HTMLButtonElement[];
+  const chatListStopOllamaButton = host.querySelector<HTMLButtonElement>(
+    ".zai-chat-list-stop-ollama-button",
+  );
+  const activeChatStopOllamaButton = host.querySelector<HTMLButtonElement>(
+    ".zai-active-chat-stop-ollama-button",
+  );
   const activeChatBar = host.querySelector<HTMLElement>(".zai-active-chat-bar");
   const activeChatTitle = host.querySelector<HTMLElement>(
     ".zai-active-chat-title",
@@ -1039,7 +1073,20 @@ function renderHost(host: HTMLElement) {
   syncProviderSetup(host, activeProvider, providerConnection);
   messageList.toggleAttribute("hidden", !showChat);
   chatList?.toggleAttribute("hidden", !showWelcome);
-  seeAll?.toggleAttribute("hidden", !showWelcome || chatSummaries.length <= 3);
+  const showSeeAll = showWelcome && chatSummaries.length > 3;
+  const canStopOllama = activeProvider === "ollama" && providerReady;
+  const showChatListStopOllama = showWelcome && canStopOllama;
+  const showActiveChatStopOllama = showChat && canStopOllama;
+  chatListActions?.toggleAttribute(
+    "hidden",
+    !showSeeAll && !showChatListStopOllama,
+  );
+  seeAll?.toggleAttribute("hidden", !showSeeAll);
+  chatListStopOllamaButton?.toggleAttribute("hidden", !showChatListStopOllama);
+  activeChatStopOllamaButton?.toggleAttribute(
+    "hidden",
+    !showActiveChatStopOllama,
+  );
   activeChatBar?.toggleAttribute("hidden", !showChat);
 
   if (activeChatTitle) {
@@ -1067,6 +1114,14 @@ function renderHost(host: HTMLElement) {
   }
   if (seeAll) {
     seeAll.textContent = showAllChats ? "Weniger anzeigen" : "Alle ansehen";
+  }
+  for (const stopOllamaButton of stopOllamaButtons) {
+    const label = ollamaStopRunning
+      ? getString("sidebar-stopping-ollama")
+      : getString("sidebar-stop-ollama");
+    stopOllamaButton.disabled = ollamaStopRunning;
+    stopOllamaButton.setAttribute("aria-label", label);
+    stopOllamaButton.setAttribute("title", label);
   }
   for (const actionButton of actionButtons) {
     actionButton.disabled = requestRunning || !providerReady;
@@ -1177,6 +1232,18 @@ function syncProviderSetup(
     });
 
   setup
+    .querySelectorAll<HTMLButtonElement>(
+      '.zai-provider-setup-button[data-action="start-ollama"]',
+    )
+    .forEach((button) => {
+      const isActiveProvider = provider === "ollama";
+      button.disabled = !isActiveProvider || ollamaStartRunning;
+      button.textContent = ollamaStartRunning
+        ? getString("sidebar-starting-ollama")
+        : getString("sidebar-start-ollama");
+    });
+
+  setup
     .querySelectorAll<HTMLElement>(".zai-provider-setup-status[data-provider]")
     .forEach((status) => {
       const isActiveProvider = status.dataset.provider === provider;
@@ -1193,6 +1260,12 @@ function getProviderConnectionStatusText(
   provider: LLMProvider,
   connection: ProviderConnectionResult | undefined,
 ) {
+  if (provider === "ollama" && ollamaStopRunning) {
+    return getString("sidebar-stopping-ollama");
+  }
+  if (provider === "ollama" && ollamaStartRunning) {
+    return getString("sidebar-starting-ollama");
+  }
   if (provider === "ollama" && ollamaSetupLaunchRunning) {
     return getString("sidebar-launching-ollama-setup");
   }
@@ -1554,6 +1627,78 @@ async function launchOllamaSetup() {
     ollamaSetupLaunchRunning = false;
     renderAllHosts();
   }
+}
+
+async function startOllama() {
+  if (ollamaStartRunning) return;
+
+  ollamaStartRunning = true;
+  renderAllHosts();
+
+  try {
+    await addon.api.startOllama();
+    await waitForOllamaConnection();
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+    const currentConnection = addon.data.runtime.providerConnections.ollama;
+    addon.data.runtime.providerConnections.ollama = {
+      ...(currentConnection ??
+        createProviderConnectionResult("ollama", "error")),
+      status: "error",
+      ok: false,
+      issue: "unknown-error",
+      error: error instanceof Error ? error.message : String(error),
+      message: getString("sidebar-start-ollama-failed"),
+    };
+  } finally {
+    ollamaStartRunning = false;
+    renderAllHosts();
+  }
+}
+
+async function stopOllama() {
+  if (ollamaStopRunning) return;
+
+  ollamaStopRunning = true;
+  renderAllHosts();
+
+  try {
+    await addon.api.stopOllama();
+    await delay(1_000);
+    await checkProviderConnection("ollama", true);
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+    const currentConnection = addon.data.runtime.providerConnections.ollama;
+    addon.data.runtime.providerConnections.ollama = {
+      ...(currentConnection ??
+        createProviderConnectionResult("ollama", "error")),
+      status: "error",
+      ok: false,
+      issue: "unknown-error",
+      error: error instanceof Error ? error.message : String(error),
+      message: getString("sidebar-stop-ollama-failed"),
+    };
+  } finally {
+    ollamaStopRunning = false;
+    renderAllHosts();
+  }
+}
+
+async function waitForOllamaConnection() {
+  const timeoutAt = Date.now() + 12_000;
+  let result: ProviderConnectionResult | undefined;
+
+  do {
+    result = await checkProviderConnection("ollama", true);
+    if (result && result.status !== "unreachable") return result;
+    await delay(1_000);
+  } while (Date.now() < timeoutAt);
+
+  return result;
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function ensureModelOptionsLoaded(provider: LLMProvider, force = false) {

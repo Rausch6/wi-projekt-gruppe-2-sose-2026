@@ -43,6 +43,7 @@ const OLLAMA_WINDOWS_SETUP_FILES = [
   "setup-ollama-windows.ps1",
 ];
 const OLLAMA_MACOS_SETUP_FILE = "setup-ollama-macos.command";
+const OLLAMA_STARTUP_POLL_TIMEOUT_MS = 1_000;
 
 export type PluginSettings = {
   provider: LLMProvider;
@@ -86,6 +87,8 @@ class Addon {
       provider?: LLMProvider,
     ) => Promise<ProviderConnectionResult>;
     launchOllamaSetup: typeof launchOllamaSetup;
+    startOllama: () => ReturnType<typeof startOllama>;
+    stopOllama: () => ReturnType<typeof stopOllama>;
     analyze: (
       query: string,
       options?: Record<string, unknown>,
@@ -163,6 +166,8 @@ class Addon {
       checkProviderConnection: (provider = this.data.settings.provider) =>
         this.checkProviderConnection(provider),
       launchOllamaSetup,
+      startOllama: () => startOllama(this.data.settings.ollamaBaseUrl),
+      stopOllama: () => stopOllama(this.data.settings.ollamaBaseUrl),
       analyze: async (query, options = {}) => {
         this.data.runtime.isAnalyzing = true;
         delete this.data.runtime.lastError;
@@ -380,6 +385,32 @@ async function launchOllamaSetup() {
   return { platform, path: launcherPath };
 }
 
+async function startOllama(baseUrl: string) {
+  const platform = getOllamaSetupPlatform();
+  if (await isOllamaServerReachable(baseUrl)) {
+    return { platform, started: false, alreadyRunning: true };
+  }
+
+  const launcher = await findOllamaLauncher(platform);
+  runDetachedProcess(launcher.executablePath, launcher.args);
+  return {
+    platform,
+    started: true,
+    alreadyRunning: false,
+    path: launcher.executablePath,
+  };
+}
+
+async function stopOllama(baseUrl: string) {
+  const platform = getOllamaSetupPlatform();
+  if (!(await isOllamaServerReachable(baseUrl))) {
+    return { platform, stopped: false, alreadyStopped: true };
+  }
+
+  await runOllamaStopCommand(platform);
+  return { platform, stopped: true, alreadyStopped: false };
+}
+
 function getOllamaSetupPlatform(): OllamaSetupPlatform {
   if (Zotero.isWin) return "windows";
   if (Zotero.isMac) return "macos";
@@ -421,6 +452,178 @@ async function copyBundledSetupFile(fileName: string, targetDir: string) {
   const contents = await Zotero.File.getContentsFromURLAsync(sourceUrl);
   await Zotero.File.putContentsAsync(targetPath, contents, "utf-8");
   return targetPath;
+}
+
+async function findOllamaLauncher(platform: OllamaSetupPlatform) {
+  if (platform === "windows") {
+    const launcher = await findExistingLauncher(getWindowsOllamaLaunchers());
+    if (!launcher) throw new Error("Ollama is not installed.");
+    return launcher;
+  }
+
+  const appPath = await findExistingPath(getMacOllamaAppPaths());
+  if (appPath) {
+    return { executablePath: "/usr/bin/open", args: [appPath] };
+  }
+
+  const executablePath = await findExistingPath(getMacOllamaCliPaths());
+  if (!executablePath) throw new Error("Ollama is not installed.");
+  return { executablePath, args: ["serve"] };
+}
+
+async function findExistingPath(paths: string[]) {
+  for (const path of paths) {
+    if (path && (await IOUtils.exists(path))) return path;
+  }
+  return null;
+}
+
+async function findExistingLauncher(
+  launchers: Array<{ executablePath: string; args: string[] }>,
+) {
+  for (const launcher of launchers) {
+    if (
+      launcher.executablePath &&
+      (await IOUtils.exists(launcher.executablePath))
+    ) {
+      return launcher;
+    }
+  }
+  return null;
+}
+
+function getWindowsOllamaLaunchers() {
+  const launchers: Array<{ executablePath: string; args: string[] }> = [];
+  for (const basePath of getWindowsOllamaBasePaths()) {
+    launchers.push({
+      executablePath: PathUtils.join(basePath, "ollama.exe"),
+      args: ["serve"],
+    });
+    launchers.push({
+      executablePath: PathUtils.join(basePath, "ollama app.exe"),
+      args: [],
+    });
+  }
+  return launchers;
+}
+
+function getWindowsOllamaBasePaths() {
+  const localAppData = getEnv("LOCALAPPDATA");
+  const programFiles = getEnv("ProgramFiles");
+  const programFilesX86 = getEnv("ProgramFiles(x86)");
+  return [
+    localAppData ? PathUtils.join(localAppData, "Programs", "Ollama") : "",
+    localAppData ? PathUtils.join(localAppData, "Ollama") : "",
+    programFiles ? PathUtils.join(programFiles, "Ollama") : "",
+    programFilesX86 ? PathUtils.join(programFilesX86, "Ollama") : "",
+  ].filter(Boolean);
+}
+
+function getMacOllamaAppPaths() {
+  const home = getEnv("HOME");
+  return [
+    "/Applications/Ollama.app",
+    home ? PathUtils.join(home, "Applications", "Ollama.app") : "",
+  ].filter(Boolean);
+}
+
+function getMacOllamaCliPaths() {
+  return [
+    "/usr/local/bin/ollama",
+    "/opt/homebrew/bin/ollama",
+    "/usr/bin/ollama",
+  ];
+}
+
+function getEnv(name: string) {
+  return Services.env.exists(name) ? Services.env.get(name) : "";
+}
+
+function runDetachedProcess(executablePath: string, args: string[]) {
+  const executable = Zotero.File.pathToFile(executablePath);
+  const process = Components.classes[
+    "@mozilla.org/process/util;1"
+  ].createInstance(Components.interfaces.nsIProcess);
+  process.init(executable);
+  process.startHidden = true;
+  process.noShell = true;
+  process.runAsync(args, args.length);
+}
+
+async function runOllamaStopCommand(platform: OllamaSetupPlatform) {
+  if (platform === "windows") {
+    const taskkillPath = await findWindowsTaskkillPath();
+    runDetachedProcess(taskkillPath, ["/IM", "ollama.exe", "/T", "/F"]);
+    runDetachedProcess(taskkillPath, ["/IM", "ollama app.exe", "/T", "/F"]);
+    return;
+  }
+
+  await runMacOllamaStopCommands();
+}
+
+async function findWindowsTaskkillPath() {
+  const systemRoot = getEnv("SystemRoot") || "C:\\Windows";
+  const taskkillPath = PathUtils.join(systemRoot, "System32", "taskkill.exe");
+  if (await IOUtils.exists(taskkillPath)) return taskkillPath;
+
+  throw new Error("taskkill.exe was not found.");
+}
+
+async function runMacOllamaStopCommands() {
+  const pkillPath = "/usr/bin/pkill";
+  if (!(await IOUtils.exists(pkillPath))) {
+    throw new Error("pkill was not found.");
+  }
+
+  runDetachedProcess(pkillPath, ["-x", "Ollama"]);
+  runDetachedProcess(pkillPath, ["-x", "ollama"]);
+}
+
+async function isOllamaServerReachable(baseUrl: string) {
+  const normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, "");
+  if (!normalizedBaseUrl) return false;
+
+  try {
+    const response = await Zotero.HTTP.request(
+      "GET",
+      `${normalizedBaseUrl}/api/tags`,
+      {
+        timeout: OLLAMA_STARTUP_POLL_TIMEOUT_MS,
+        successCodes: false,
+        errorDelayMax: 0,
+      },
+    );
+    return response.status >= 200 && response.status < 300;
+  } catch (_zoteroHttpError) {
+    try {
+      const response = await raceWithTimeout(
+        fetch(`${normalizedBaseUrl}/api/tags`),
+        OLLAMA_STARTUP_POLL_TIMEOUT_MS,
+      );
+      return response.ok;
+    } catch (_fetchError) {
+      return false;
+    }
+  }
+}
+
+function raceWithTimeout<T>(promise: Promise<T>, timeout: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Timed out after ${timeout} ms.`));
+    }, timeout);
+
+    Promise.resolve(promise).then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 async function logSelectedPaperChunks(itemID?: number) {

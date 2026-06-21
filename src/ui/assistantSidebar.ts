@@ -76,6 +76,10 @@ function createSidebar(doc: Document, options: AssistantSidebarRenderOptions) {
     "div",
     "zai-active-chat-actions",
   );
+  const activeChatStopOllamaButton = createStopOllamaButton(
+    doc,
+    "zai-chat-action-button zai-stop-ollama-button zai-active-chat-stop-ollama-button",
+  );
   const favoriteButton = createButton(
     doc,
     "zai-chat-action-button zai-chat-favorite-button",
@@ -91,7 +95,11 @@ function createSidebar(doc: Document, options: AssistantSidebarRenderOptions) {
   deleteButton.setAttribute("aria-label", "Chat löschen");
   deleteButton.setAttribute("title", "Chat löschen");
   deleteButton.append(createTrashIcon(doc));
-  activeChatActions.append(favoriteButton, deleteButton);
+  activeChatActions.append(
+    activeChatStopOllamaButton,
+    favoriteButton,
+    deleteButton,
+  );
   activeChatBar.append(backButton, activeChatTitle, activeChatActions);
 
   const divider = createHtmlElement(doc, "div", "zai-divider");
@@ -100,7 +108,24 @@ function createSidebar(doc: Document, options: AssistantSidebarRenderOptions) {
   const chatList = createHtmlElement(doc, "div", "zai-chat-list");
 
   const seeAll = createButton(doc, "zai-see-all", "Alle ansehen");
-  top.append(header, modelPicker, divider, activeChatBar, chatList, seeAll);
+  const chatListActions = createHtmlElement(
+    doc,
+    "div",
+    "zai-chat-list-actions",
+  );
+  const stopOllamaButton = createStopOllamaButton(
+    doc,
+    "zai-chat-list-icon-button zai-stop-ollama-button zai-chat-list-stop-ollama-button",
+  );
+  chatListActions.append(seeAll, stopOllamaButton);
+  top.append(
+    header,
+    modelPicker,
+    divider,
+    activeChatBar,
+    chatList,
+    chatListActions,
+  );
 
   const main = createHtmlElement(doc, "main", "zai-main");
   const welcome = createHtmlElement(doc, "div", "zai-welcome");
@@ -161,6 +186,15 @@ function createButton(doc: Document, className: string, text?: string) {
   const button = createHtmlElement(doc, "button", className, text);
   button.setAttribute("type", "button");
   return button as HTMLButtonElement;
+}
+
+function createStopOllamaButton(doc: Document, className: string) {
+  const button = createButton(doc, className);
+  button.dataset.action = "stop-ollama";
+  button.setAttribute("aria-label", getString("sidebar-stop-ollama"));
+  button.setAttribute("title", getString("sidebar-stop-ollama"));
+  button.append(createStopHandIcon(doc));
+  return button;
 }
 
 function createPopoutButton(doc: Document) {
@@ -306,6 +340,10 @@ function createLocalSetup(doc: Document) {
       {
         action: "launch-ollama-setup",
         label: getString("sidebar-launch-ollama-setup"),
+      },
+      {
+        action: "start-ollama",
+        label: getString("sidebar-start-ollama"),
       },
       {
         action: "check-provider",
@@ -580,6 +618,19 @@ function createTrashIcon(doc: Document) {
   rightLine.setAttribute("d", "M14 11v6");
 
   svg.append(lid, handle, bin, leftLine, rightLine);
+  return svg;
+}
+
+function createStopHandIcon(doc: Document) {
+  const svg = createIconSvg(doc, "18");
+
+  const hand = doc.createElementNS(SVG_NS, "path");
+  hand.setAttribute(
+    "d",
+    "M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V5a2 2 0 0 0-4 0v9M6 14l-1-1a2 2 0 0 0-3 2.6l3.9 5.2A6 6 0 0 0 10.7 23H14a6 6 0 0 0 6-6v-5a2 2 0 0 0-4 0v1",
+  );
+
+  svg.append(hand);
   return svg;
 }
 
