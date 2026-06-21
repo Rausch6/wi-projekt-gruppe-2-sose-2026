@@ -1,5 +1,4 @@
-import { create, insertMultiple, search, removeMultiple, Orama } from '@orama/orama';
-import { persist, restore } from '@orama/plugin-data-persistence';
+import { create, insertMultiple, search, removeMultiple, Orama, save, load } from '@orama/orama';
 
 declare const Zotero: any;
 declare const IOUtils: any;  
@@ -132,13 +131,14 @@ export class OramaService {
 
     private async saveIndex() {
         try {
-            const indexData = await persist(this.db, 'json');
+            const indexData = await save(this.db);
+            const indexString = JSON.stringify(indexData);
             
             if (typeof IOUtils !== 'undefined') {
-                await IOUtils.writeUTF8(this.dbFilePath, indexData as string, { tmpPath: this.dbFilePath + '.tmp' });
+                await IOUtils.writeUTF8(this.dbFilePath, indexString, { tmpPath: this.dbFilePath + '.tmp' });
             } else if (typeof OS !== 'undefined' && OS.File) {
                 const encoder = new TextEncoder();
-                const array = encoder.encode(indexData as string);
+                const array = encoder.encode(indexString);
                 await OS.File.writeAtomic(this.dbFilePath, array, { tmpPath: this.dbFilePath + '.tmp' });
             } else {
                 Zotero.debug("[OramaService] Konnte Index nicht speichern: Keine File API gefunden.");
@@ -167,7 +167,8 @@ export class OramaService {
             }
 
             if (indexData) {
-                this.db = await restore('json', indexData);
+                const parsedData = JSON.parse(indexData);
+                await load(this.db, parsedData);
                 Zotero.debug("[OramaService] Index erfolgreich von Festplatte geladen.");
             }
         } catch (e) {
