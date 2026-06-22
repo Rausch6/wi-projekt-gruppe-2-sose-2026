@@ -7,6 +7,7 @@ import {
 import { CreateChatInput, StoredChat } from "../core/chatTypes";
 import { renderMarkdownContent } from "./markdownRenderer";
 import type { LLMProvider } from "../addon";
+import { EMBEDDING_DEFAULT_MODEL } from "../ai/EmbeddingProvider.js";
 import { KISSKI_MODEL_OPTIONS } from "../ai/providers/KisskiProvider.js";
 import {
   createCheckingProviderConnectionResult,
@@ -587,9 +588,10 @@ function isActiveProviderReady() {
 }
 
 function getActiveModel(provider: LLMProvider = getActiveProvider()) {
-  return provider === "ollama"
-    ? addon.data.settings.ollamaModel
-    : addon.data.settings.model;
+  if (provider !== "ollama") return addon.data.settings.model;
+
+  const model = addon.data.settings.ollamaModel;
+  return isLocalEmbeddingModel(model) ? OLLAMA_DEFAULT_MODEL : model;
 }
 
 async function createRequestMessages(prompt: string) {
@@ -1653,6 +1655,7 @@ async function ensureModelOptionsLoaded(provider: LLMProvider, force = false) {
     }
     const models = normalizeModelOptions(
       await addon.api.ai.listModels(provider),
+      provider,
     );
     if (modelLoadStates.get(provider)?.requestID !== requestID) return;
 
@@ -1674,7 +1677,10 @@ async function ensureModelOptionsLoaded(provider: LLMProvider, force = false) {
   }
 }
 
-function normalizeModelOptions(models: unknown): ModelOption[] {
+function normalizeModelOptions(
+  models: unknown,
+  provider?: LLMProvider,
+): ModelOption[] {
   if (!Array.isArray(models)) return [];
 
   const seen = new Set<string>();
@@ -1688,6 +1694,7 @@ function normalizeModelOptions(models: unknown): ModelOption[] {
     };
     const id = typeof record.id === "string" ? record.id.trim() : "";
     if (!id || seen.has(id)) continue;
+    if (provider === "ollama" && isLocalEmbeddingModel(id)) continue;
 
     const name =
       typeof record.name === "string" && record.name.trim()
@@ -1705,6 +1712,16 @@ function normalizeModelOptions(models: unknown): ModelOption[] {
   }
 
   return sortModelOptions(options);
+}
+
+function isLocalEmbeddingModel(model: string) {
+  const value = model.trim().toLowerCase();
+  if (!value) return false;
+
+  return (
+    value === EMBEDDING_DEFAULT_MODEL.toLowerCase() ||
+    /(^|[-_/.:])embed(?:ding)?($|[-_/.:])/i.test(value)
+  );
 }
 
 function syncModelDropdown(
