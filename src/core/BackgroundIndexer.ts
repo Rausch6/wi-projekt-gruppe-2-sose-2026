@@ -150,6 +150,8 @@ export class BackgroundIndexer {
         continue;
       }
 
+      Zotero.debug(`[BackgroundIndexer] Chunk ${chunk.id} embedded successfully! Length of vector: ${embedding ? embedding.length : 'undefined'}`);
+
       oramaChunks.push({
         id: `doc_${item.id}_${chunk.id}`,
         zoteroItemId: item.id.toString(),
@@ -157,9 +159,15 @@ export class BackgroundIndexer {
         pageNumber: chunk.pageStart || 0,
         embedding,
       });
+      
+      // Heartbeat every 5 chunks to ensure the user sees logs
+      if (oramaChunks.length % 5 === 0) {
+        Zotero.debug(`[BackgroundIndexer] Heartbeat: Still processing item ${item.id}, ${oramaChunks.length} chunks done...`);
+      }
     }
 
     if (oramaChunks.length > 0) {
+      Zotero.debug(`[BackgroundIndexer] Now adding ${oramaChunks.length} chunks to Orama for item ${item.id}...`);
       await vectorStore.addChunks(oramaChunks);
       Zotero.debug(`[BackgroundIndexer] Successfully indexed ${oramaChunks.length} chunks for item ${item.id}.`);
     }
@@ -182,7 +190,7 @@ export class BackgroundIndexer {
           library.libraryID,
           false, 
           false, 
-          true,  
+          false,  // excludeAttachments = false
         );
         allAttachments.push(...items);
       } catch (err) {
@@ -192,24 +200,23 @@ export class BackgroundIndexer {
       }
     }
 
-    const pdfAttachments = allAttachments.filter(
-      (item) => item.attachmentContentType === "application/pdf",
+    const targetItems = allAttachments.filter(
+      (item) => item.isRegularItem() || (item.isAttachment() && item.attachmentContentType === "application/pdf" && !item.parentID)
     );
 
-    Zotero.debug(
-      `[BackgroundIndexer] ${pdfAttachments.length} PDFs in allen Bibliotheken gefunden. Starte Hintergrund-Indexierung...`,
-    );
+    const msg = `[BackgroundIndexer] ${targetItems.length} unterstützte Einträge (Paper & Standalone PDFs) gefunden. Starte Erst-Indexierung...`;
+    Zotero.debug(msg);
 
     const BATCH_SIZE = 5;
     const BATCH_PAUSE_MS = 300;
     let indexed = 0;
     let skipped = 0;
 
-    for (let i = 0; i < pdfAttachments.length; i += BATCH_SIZE) {
-      const batch = pdfAttachments.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < targetItems.length; i += BATCH_SIZE) {
+      const batch = targetItems.slice(i, i + BATCH_SIZE);
 
-      for (const attachment of batch) {
-        const idStr = attachment.id.toString();
+      for (const item of batch) {
+        const idStr = item.id.toString();
 
         if (await vectorStore.isItemIndexed(idStr)) {
           skipped++;
@@ -217,24 +224,22 @@ export class BackgroundIndexer {
         }
 
         try {
-          await this.indexItem(attachment.id);
+          await this.indexItem(item.id);
           indexed++;
         } catch (err) {
           Zotero.debug(
-            `[BackgroundIndexer] Fehler bei Erst-Indexierung von Item ${attachment.id}: ${err}`,
+            `[BackgroundIndexer] Fehler bei Erst-Indexierung von Item ${item.id}: ${err}`,
           );
         }
       }
 
-      if (i + BATCH_SIZE < pdfAttachments.length) {
+      if (i + BATCH_SIZE < targetItems.length) {
         await new Promise<void>((resolve) => setTimeout(resolve, BATCH_PAUSE_MS));
       }
     }
 
-    Zotero.debug(
-      `[BackgroundIndexer] Erst-Indexierung abgeschlossen: ` +
-      `${indexed} neu indexiert, ${skipped} bereits vorhanden.`,
-    );
+    const finishMsg = `[BackgroundIndexer] Erst-Indexierung abgeschlossen: ${indexed} neu indexiert, ${skipped} bereits vorhanden.`;
+    Zotero.debug(finishMsg);
   }
 }
 

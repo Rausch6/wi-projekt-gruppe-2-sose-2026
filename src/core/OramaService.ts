@@ -67,6 +67,7 @@ export class OramaService {
                 value: queryVector,
                 property: 'embedding',
             },
+            similarity: 0.1, // Ensure we get the closest hits even if absolute similarity is low
             limit: limit,
         };
 
@@ -79,6 +80,8 @@ export class OramaService {
         }
 
         const results = await search(this.db, searchParams);
+
+        Zotero.debug(`[OramaService] Suche ausgeführt (Mode: ${searchParams.mode}, Filter: ${whereFilter ? JSON.stringify(whereFilter) : 'keine'}, Term: ${term || 'keiner'}). Treffer: ${results.hits.length}`);
 
         return results.hits;
     }
@@ -113,12 +116,56 @@ export class OramaService {
      */
     async isItemIndexed(zoteroItemId: string): Promise<boolean> {
         this.checkInit();
+        
+        // Debug: Log the number of total documents in DB
+        const allDocs = await search(this.db, { term: '', limit: 0 });
+        Zotero.debug(`[OramaService] isItemIndexed called for ${zoteroItemId}. Total DB size: ${allDocs.count}`);
+        
         const results = await search(this.db, {
             term: '',
             where: { zoteroItemId },
             limit: 1,
         });
+        
+        Zotero.debug(`[OramaService] isItemIndexed(${zoteroItemId}) -> ${results.hits.length > 0}`);
         return results.hits.length > 0;
+    }
+
+    /**
+     * Gibt alle indexierten PDFs im Debug-Kanal aus.
+     */
+    async logIndexedDocuments() {
+        this.checkInit();
+        const allDocs = await search(this.db, { term: '', limit: 100000 });
+        const uniqueIds = new Set<string>();
+        
+        for (const hit of allDocs.hits) {
+            uniqueIds.add((hit.document as any).zoteroItemId);
+        }
+
+        Zotero.debug(`[OramaService] ==============================================`);
+        Zotero.debug(`[OramaService] Vektordatenbank enthält Chunks für ${uniqueIds.size} eindeutige PDFs:`);
+        
+        for (const idStr of uniqueIds) {
+            try {
+                const itemId = parseInt(idStr, 10);
+                const item = await Zotero.Items.getAsync(itemId);
+                if (item) {
+                    let title = "Ohne Titel";
+                    if (item.isRegularItem()) {
+                        title = item.getField("title") || "Ohne Titel";
+                    } else if (item.isAttachment()) {
+                        title = `[Attachment] ${item.getField("title") || item.getFilename()}`;
+                    }
+                    Zotero.debug(`[OramaService]  -> "${title}" (ItemID: ${itemId})`);
+                } else {
+                    Zotero.debug(`[OramaService]  -> [Unbekannt] ItemID: ${itemId} (Nicht in Zotero gefunden)`);
+                }
+            } catch (err) {
+                Zotero.debug(`[OramaService]  -> Fehler beim Laden von ItemID ${idStr}: ${err}`);
+            }
+        }
+        Zotero.debug(`[OramaService] ==============================================`);
     }
 
     private checkInit() {
@@ -134,15 +181,8 @@ export class OramaService {
             const indexData = await save(this.db);
             const indexString = JSON.stringify(indexData);
             
-            if (typeof IOUtils !== 'undefined') {
-                await IOUtils.writeUTF8(this.dbFilePath, indexString, { tmpPath: this.dbFilePath + '.tmp' });
-            } else if (typeof OS !== 'undefined' && OS.File) {
-                const encoder = new TextEncoder();
-                const array = encoder.encode(indexString);
-                await OS.File.writeAtomic(this.dbFilePath, array, { tmpPath: this.dbFilePath + '.tmp' });
-            } else {
-                Zotero.debug("[OramaService] Konnte Index nicht speichern: Keine File API gefunden.");
-            }
+            await Zotero.File.putContentsAsync(this.dbFilePath, indexString);
+            Zotero.debug("[OramaService] Index erfolgreich gespeichert.");
         } catch (e) {
             Zotero.debug(`[OramaService] Fehler beim Speichern des Index: ${e}`);
         }
@@ -150,24 +190,9 @@ export class OramaService {
 
     private async loadIndex() {
         try {
-            let indexData: string | null = null;
-
-            if (typeof IOUtils !== 'undefined') {
-                const exists = await IOUtils.exists(this.dbFilePath);
-                if (exists) {
-                    indexData = await IOUtils.readUTF8(this.dbFilePath);
-                }
-            } else if (typeof OS !== 'undefined' && OS.File) {
-                const exists = await OS.File.exists(this.dbFilePath);
-                if (exists) {
-                    const array = await OS.File.read(this.dbFilePath);
-                    const decoder = new TextDecoder();
-                    indexData = decoder.decode(array);
-                }
-            }
-
-            if (indexData) {
-                const parsedData = JSON.parse(indexData);
+            const contents = await Zotero.File.getContentsAsync(this.dbFilePath, "utf-8");
+            if (typeof contents === "string" && contents.trim().length > 0) {
+                const parsedData = JSON.parse(contents);
                 await load(this.db, parsedData);
                 Zotero.debug("[OramaService] Index erfolgreich von Festplatte geladen.");
             }

@@ -77,21 +77,35 @@ function loadSettings() {
 }
 
 async function onStartup() {
-  await Promise.all([
-    Zotero.initializationPromise,
-    Zotero.unlockPromise,
-    Zotero.uiReadyPromise,
-  ]);
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  Zotero.debug("[ZAIA-Startup] onStartup BEGIN");
+  try {
+    await Promise.all([
+      Zotero.initializationPromise,
+      Zotero.unlockPromise,
+      Zotero.uiReadyPromise,
+    ]);
+    Zotero.debug("[ZAIA-Startup] Promises resolved");
+    
+    initLocale();
+    loadSettings();
+    Zotero.debug("[ZAIA-Startup] Settings loaded.");
+    
+    await vectorStore.initialize();
+    Zotero.debug("[ZAIA-Startup] vectorStore initialized.");
+    
+    // Log currently indexed documents to debug channel
+    await vectorStore.logIndexedDocuments();
+    
+    backgroundIndexer.initialize();
+    Zotero.debug("[ZAIA-Startup] backgroundIndexer initialized.");
 
-  initLocale();
-  loadSettings();
-  
-  await vectorStore.initialize();
-  backgroundIndexer.initialize();
-
-  backgroundIndexer.indexAllLibraryItems().catch((err) => {
-    Zotero.debug(`[BackgroundIndexer] Erst-Indexierung fehlgeschlagen: ${err}`);
-  });
+    backgroundIndexer.indexAllLibraryItems().catch((err) => {
+      Zotero.debug(`[BackgroundIndexer] Erst-Indexierung fehlgeschlagen: ${err}`);
+    });
+  } catch (err: any) {
+    Zotero.debug(`[ZAIA-Startup] CRITICAL ERROR IN ONSTARTUP: ${err}\n${err.stack}`);
+  }
 
 
   await initializeChatDatabase();
@@ -191,7 +205,7 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   });
   popupWin.startCloseTimer(5000);
 
-  addon.hooks.onDialogEvents("dialogExample");
+  // addon.hooks.onDialogEvents("dialogExample");
 }
 
 async function onMainWindowUnload(win: Window): Promise<void> {
@@ -279,6 +293,16 @@ function onShortcuts(type: string) {
 
 function onDialogEvents(type: string) {
   switch (type) {
+    case "manualTrigger":
+      Zotero.debug("[ZAIA-ManualTrigger] User requested manual background indexer start.");
+      Zotero.getMainWindow()?.alert("Starte BackgroundIndexer manuell...");
+      backgroundIndexer.indexAllLibraryItems()
+        .then(() => Zotero.getMainWindow()?.alert("Indexer-Startbefehl gesendet!"))
+        .catch(err => {
+          Zotero.debug("[ZAIA-ManualTrigger] Error: " + err);
+          Zotero.getMainWindow()?.alert("Fehler beim Indexer: " + err);
+        });
+      break;
     case "dialogExample":
       HelperExampleFactory.dialogExample();
       break;

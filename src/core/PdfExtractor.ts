@@ -24,6 +24,10 @@ export class PdfExtractor {
   static async getPdfAttachment(
     parentItem: Zotero.Item,
   ): Promise<Zotero.Item | null> {
+    if (parentItem.isAttachment() && parentItem.attachmentContentType === "application/pdf") {
+      return parentItem;
+    }
+
     const regularItem = await resolveRegularItem(parentItem);
     if (!regularItem) return null;
 
@@ -57,11 +61,10 @@ export class PdfExtractor {
   static async extractDocument(
     parentItem: Zotero.Item,
   ): Promise<ExtractedPaperDocument | null> {
-    const item = await resolveRegularItem(parentItem);
-    if (!item) return null;
-
-    const attachment = await this.getPdfAttachment(item);
+    const attachment = await this.getPdfAttachment(parentItem);
     if (!attachment) return null;
+
+    const item = await resolveRegularItem(parentItem) || attachment;
 
     const text = await readZoteroFullText(attachment);
     if (!text.trim()) {

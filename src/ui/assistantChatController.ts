@@ -296,9 +296,14 @@ export async function sendChatPrompt(prompt: string) {
   renderAllHosts();
 
   try {
-    const assistantMessage = await requestAssistantResponse(
-      await createRequestMessages(content),
-    );
+    const requestMessages = await createRequestMessages(content);
+    Zotero.debug(`[assistantChatController] Sende Anfrage an LLM. Anzahl Nachrichten: ${requestMessages.length}.`);
+    const systemMsg = requestMessages.find(m => m.role === 'system');
+    if (systemMsg) {
+      Zotero.debug(`[assistantChatController] System-Context Vorschau:\n${systemMsg.content.substring(0, 500)}...`);
+    }
+
+    const assistantMessage = await requestAssistantResponse(requestMessages);
 
     if (!assistantMessage.content.trim()) {
       throw new Error("ZAIA hat keine Textantwort zurückgegeben.");
@@ -571,7 +576,7 @@ async function createPaperContextMessage(prompt: string) {
   const context = await PaperContextService.buildContext(reference, prompt);
   if (!context) {
     throw new Error(
-      "Paper-Kontext ist aktiviert, aber Zotero konnte keinen Text aus dem verknüpften PDF laden. Prüfe, ob das PDF lokal verfügbar und per OCR durchsuchbar ist.",
+      "ZAIA konnte keinen relevanten Kontext für diese Anfrage in dem gewählten Paper finden. Dies passiert, wenn das PDF keinen auslesbaren Text hat (OCR fehlt) oder wenn das Paper nicht in der Vektor-Datenbank gefunden wurde.",
     );
   }
 
@@ -579,13 +584,26 @@ async function createPaperContextMessage(prompt: string) {
 }
 
 function getActivePaperReference(): PaperReference | null {
-  const chat = getActiveChatSummary();
-  if (!chat?.zoteroLibraryID || !chat.zoteroItemKey) return null;
+  const selectedItems = ItemManager.filterItems();
+  if (selectedItems.length > 0) {
+    Zotero.debug(`[assistantChatController] Paper-Referenz erkannt (On-the-fly markiert): ItemKey ${selectedItems[0].key}`);
+    return {
+      libraryID: selectedItems[0].libraryID,
+      itemKey: selectedItems[0].key,
+    };
+  }
 
-  return {
-    libraryID: chat.zoteroLibraryID,
-    itemKey: chat.zoteroItemKey,
-  };
+  const chat = getActiveChatSummary();
+  if (chat?.zoteroLibraryID && chat.zoteroItemKey) {
+    Zotero.debug(`[assistantChatController] Paper-Referenz erkannt (Aus Chat-Verlauf): ItemKey ${chat.zoteroItemKey}`);
+    return {
+      libraryID: chat.zoteroLibraryID,
+      itemKey: chat.zoteroItemKey,
+    };
+  }
+
+  Zotero.debug(`[assistantChatController] Kein Paper markiert -> Bibliotheksweite Suche`);
+  return null;
 }
 
 function appendAssistantDelta(delta: string) {

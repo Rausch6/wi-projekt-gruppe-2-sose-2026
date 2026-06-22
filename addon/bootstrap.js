@@ -69,7 +69,13 @@ function shutdown({ id, version, resourceURI, rootURI }, reason) {
     .getService(Components.interfaces.nsIStringBundleService)
     .flushBundles();
 
-  Cu.unload(`${rootURI}/content/scripts/__addonRef__.js`);
+  try {
+    if (Cu.unload) {
+      Cu.unload(`${rootURI}/content/scripts/__addonRef__.js`);
+    }
+  } catch (e) {
+    // Ignore in Zotero 7 / Firefox 115+
+  }
 
   if (chromeHandle) {
     chromeHandle.destruct();

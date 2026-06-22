@@ -97,6 +97,7 @@ export class ItemManager {
 
   private static resolveRegularItem(item: Zotero.Item) {
     if (item.isRegularItem()) return item;
+    if (item.isAttachment() && item.attachmentContentType === "application/pdf" && !item.parentID) return item;
     if (!item.isAttachment() || !item.parentID) return null;
 
     const parent = Zotero.Items.get(item.parentID);
@@ -105,6 +106,7 @@ export class ItemManager {
 
   private static async resolveRegularItemAsync(item: Zotero.Item) {
     if (item.isRegularItem()) return item;
+    if (item.isAttachment() && item.attachmentContentType === "application/pdf" && !item.parentID) return item;
     if (!item.isAttachment() || !item.parentID) return null;
 
     const parent = await Zotero.Items.getAsync(item.parentID);
