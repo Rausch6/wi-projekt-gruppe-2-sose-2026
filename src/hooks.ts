@@ -12,6 +12,7 @@ import {
 import { getString, initLocale } from "./utils/locale";
 import { registerPreferencesPane } from "./modules/preferences";
 import { registerPrefsScripts } from "./modules/preferenceScript";
+import { createCheckingProviderConnectionResult } from "./ai/providerConnectionStatus";
 import {
   closeChatDatabase,
   initializeChatDatabase,
@@ -83,6 +84,7 @@ async function onStartup() {
 
   initLocale();
   loadSettings();
+  void checkActiveProviderConnectionOnStartup();
   await initializeChatDatabase();
   await cleanupOldChatsOnStartup();
   await initializeChatPersistence();
@@ -128,6 +130,18 @@ async function cleanupOldChatsOnStartup() {
 function getProviderSetting(): LLMProvider {
   const value = getStringSetting("provider", "kisski");
   return value === "ollama" ? "ollama" : "kisski";
+}
+
+async function checkActiveProviderConnectionOnStartup() {
+  const provider = addon.data.settings.provider;
+  addon.data.runtime.providerConnections[provider] =
+    createCheckingProviderConnectionResult(provider);
+
+  try {
+    await addon.api.checkProviderConnection(provider);
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+  }
 }
 
 async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {

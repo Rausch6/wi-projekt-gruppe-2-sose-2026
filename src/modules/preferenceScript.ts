@@ -26,11 +26,6 @@ const FIELD_NAMES = [
   "auto-delete-old-chats",
 ] as const;
 
-const OLLAMA_INSTALL_COMMANDS = {
-  unix: "curl -fsSL https://ollama.com/install.sh | sh",
-  windows: "irm https://ollama.com/install.ps1 | iex",
-} as const;
-
 export async function registerPrefsScripts(window: Window) {
   addon.data.prefs = {
     window,
