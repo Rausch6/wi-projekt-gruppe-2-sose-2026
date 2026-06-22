@@ -334,7 +334,6 @@ function createLocalSetup(doc: Document) {
     createInstructionList(doc, [
       createLocalInstallStep(doc, createLocalSetupButton(doc)),
       createLocalStartStep(doc),
-      createLocalModelStep(doc),
     ]),
     createProviderSetupActions(doc, "ollama", [
       {
@@ -434,21 +433,6 @@ function createLocalStartStep(doc: Document) {
   button.dataset.action = "start-ollama";
 
   fragment.append(getString("sidebar-local-setup-step-start"));
-  appendInlineSetupButton(fragment, button);
-  return fragment;
-}
-
-function createLocalModelStep(doc: Document) {
-  const fragment = doc.createDocumentFragment();
-  const button = createButton(
-    doc,
-    "zai-provider-setup-button zai-provider-setup-inline-button",
-    getString("sidebar-pull-ollama-model"),
-  );
-  button.dataset.provider = "ollama";
-  button.dataset.action = "pull-ollama-model";
-
-  fragment.append(getString("sidebar-local-setup-step-model"));
   appendInlineSetupButton(fragment, button);
   return fragment;
 }

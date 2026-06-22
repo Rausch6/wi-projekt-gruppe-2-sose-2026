@@ -101,7 +101,6 @@ let simulationEnabled = false;
 let requestRunning = false;
 let modelPickerExpanded = false;
 let activeAssistantResponse: ActiveAssistantResponse | null = null;
-let ollamaModelPullRunning = false;
 let ollamaSetupLaunchRunning = false;
 let ollamaStartRunning = false;
 let ollamaStopRunning = false;
@@ -136,11 +135,6 @@ export function bindAssistantChat(host: HTMLElement) {
   const providerCheckButtons = Array.from(
     host.querySelectorAll(
       '.zai-provider-setup-button[data-action="check-provider"][data-provider]',
-    ),
-  ) as HTMLButtonElement[];
-  const ollamaModelPullButtons = Array.from(
-    host.querySelectorAll(
-      '.zai-provider-setup-button[data-action="pull-ollama-model"]',
     ),
   ) as HTMLButtonElement[];
   const ollamaSetupLaunchButtons = Array.from(
@@ -258,12 +252,6 @@ export function bindAssistantChat(host: HTMLElement) {
         getProviderButtonValue(providerCheckButton),
         true,
       );
-    });
-  }
-  for (const ollamaModelPullButton of ollamaModelPullButtons) {
-    ollamaModelPullButton.addEventListener("click", () => {
-      hosts.add(host);
-      void pullOllamaModel();
     });
   }
   for (const ollamaSetupLaunchButton of ollamaSetupLaunchButtons) {
@@ -1209,18 +1197,6 @@ function syncProviderSetup(
 
   setup
     .querySelectorAll<HTMLButtonElement>(
-      '.zai-provider-setup-button[data-action="pull-ollama-model"]',
-    )
-    .forEach((button) => {
-      const isActiveProvider = provider === "ollama";
-      button.disabled = !isActiveProvider || ollamaModelPullRunning;
-      button.textContent = ollamaModelPullRunning
-        ? getString("sidebar-pulling-ollama-model")
-        : getString("sidebar-pull-ollama-model");
-    });
-
-  setup
-    .querySelectorAll<HTMLButtonElement>(
       '.zai-provider-setup-button[data-action="launch-ollama-setup"]',
     )
     .forEach((button) => {
@@ -1268,9 +1244,6 @@ function getProviderConnectionStatusText(
   }
   if (provider === "ollama" && ollamaSetupLaunchRunning) {
     return getString("sidebar-launching-ollama-setup");
-  }
-  if (provider === "ollama" && ollamaModelPullRunning) {
-    return getString("sidebar-pulling-ollama-model");
   }
   if (!connection) return getString("sidebar-connection-not-checked");
   if (connection.status === "checking") {
@@ -1559,46 +1532,6 @@ async function checkProviderConnection(provider: LLMProvider, force: boolean) {
     Zotero.logError(error instanceof Error ? error : new Error(String(error)));
     return addon.data.runtime.providerConnections[provider];
   } finally {
-    renderAllHosts();
-  }
-}
-
-async function pullOllamaModel() {
-  if (ollamaModelPullRunning) return;
-
-  const model = addon.data.settings.ollamaModel.trim();
-  if (!model) return;
-
-  ollamaModelPullRunning = true;
-  renderAllHosts();
-
-  try {
-    addon.api.configureAI();
-    const provider = addon.api.ai.getProvider("ollama") as {
-      pullModel?: (model: string) => Promise<unknown>;
-    };
-
-    if (typeof provider.pullModel !== "function") {
-      throw new Error("Ollama provider does not support model downloads.");
-    }
-
-    await provider.pullModel(model);
-    await checkProviderConnection("ollama", true);
-  } catch (error) {
-    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
-    const currentConnection = addon.data.runtime.providerConnections.ollama;
-    if (currentConnection) {
-      addon.data.runtime.providerConnections.ollama = {
-        ...currentConnection,
-        status: "error",
-        ok: false,
-        issue: "unknown-error",
-        error: error instanceof Error ? error.message : String(error),
-        message: getString("sidebar-pull-ollama-model-failed"),
-      };
-    }
-  } finally {
-    ollamaModelPullRunning = false;
     renderAllHosts();
   }
 }
