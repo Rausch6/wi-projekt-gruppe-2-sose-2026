@@ -438,17 +438,31 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   gap: 6px;
 }
 
+.zai-chat-list-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin-top: 8px;
+  min-height: 28px;
+}
+
 .zai-active-chat-bar[hidden],
 .zai-chat-list[hidden],
+.zai-chat-list-actions[hidden],
 .zai-see-all[hidden],
+.zai-stop-ollama-button[hidden],
 .zai-welcome[hidden],
+.zai-provider-setup[hidden],
+.zai-provider-setup-panel[hidden],
+.zai-provider-setup-status[hidden],
 .zai-messages[hidden] {
   display: none !important;
 }
 
 .zai-chat-entry,
 .zai-see-all,
-.zai-action-pill,
+.zai-chat-list-icon-button,
 .zai-send-button {
   appearance: none;
   border-radius: 6px;
@@ -502,8 +516,37 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   background: transparent;
   border: 0;
   color: var(--accent-blue, #2563eb);
-  margin-top: 8px;
   padding: 4px 2px;
+}
+
+.zai-chat-list-icon-button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  color: inherit;
+  display: inline-flex;
+  flex: 0 0 28px;
+  height: 28px;
+  justify-content: center;
+  min-height: 28px;
+  min-width: 28px;
+  padding: 4px;
+  width: 28px;
+}
+
+.zai-chat-list-icon-button:hover,
+.zai-chat-list-icon-button:focus-visible {
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.zai-chat-list-icon-button:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+.zai-chat-list-icon-button svg {
+  height: 16px;
+  width: 16px;
 }
 
 .zai-main {
@@ -555,9 +598,144 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   margin: 0;
 }
 
+.zai-provider-setup {
+  box-sizing: border-box;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.zai-provider-setup-panel {
+  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.14));
+  border-radius: 8px;
+  box-sizing: border-box;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+}
+
+.zai-provider-setup-title {
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.zai-provider-setup-description {
+  color: var(--text-secondary, #5f6b7a);
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.zai-provider-setup-list {
+  color: var(--text-primary, inherit);
+  display: grid;
+  font-size: 13px;
+  gap: 7px;
+  line-height: 1.4;
+  margin: 0;
+  padding-inline-start: 20px;
+}
+
+.zai-provider-setup-list-item {
+  padding-inline-start: 2px;
+}
+
+.zai-provider-setup-link {
+  color: var(--accent-blue, #2563eb);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.zai-provider-setup-link:hover,
+.zai-provider-setup-link:focus-visible {
+  color: color-mix(in srgb, var(--accent-blue, #2563eb) 78%, #000);
+}
+
+.zai-provider-setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.zai-provider-setup-button {
+  appearance: none;
+  background: var(--accent-blue, #2563eb);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  box-sizing: border-box;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  min-height: 30px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 6px 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zai-provider-setup-button:hover,
+.zai-provider-setup-button:focus-visible {
+  background: color-mix(in srgb, var(--accent-blue, #2563eb) 85%, #000);
+}
+
+.zai-provider-setup-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.zai-provider-setup-inline-button {
+  display: block;
+  margin-top: 6px;
+  width: fit-content;
+}
+
+.zai-provider-setup-button[data-action="open-preferences"] {
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  border-color: var(--border-color, rgba(0, 0, 0, 0.14));
+  color: inherit;
+}
+
+.zai-provider-setup-button[data-action="open-preferences"]:hover,
+.zai-provider-setup-button[data-action="open-preferences"]:focus-visible {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.zai-provider-setup-status {
+  color: var(--text-secondary, #5f6b7a);
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 0;
+}
+
 .zai-messages {
   display: grid;
   gap: 10px;
+}
+
+.zai-message-row {
+  box-sizing: border-box;
+  display: grid;
+  max-width: 92%;
+  min-width: 0;
+}
+
+.zai-message-row-user {
+  justify-items: end;
+  justify-self: end;
+}
+
+.zai-message-row-assistant,
+.zai-message-row-error {
+  justify-items: start;
+  justify-self: start;
 }
 
 .zai-message {
@@ -565,8 +743,11 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   box-sizing: border-box;
   font-size: 13px;
   line-height: 1.45;
-  max-width: 92%;
+  max-width: 100%;
   padding: 9px 11px;
+  position: relative;
+  -moz-user-select: text;
+  user-select: text;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -574,20 +755,17 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
 .zai-message-user {
   background: var(--accent-blue, #2563eb);
   color: #fff;
-  justify-self: end;
 }
 
 .zai-message-assistant {
   background: color-mix(in srgb, currentColor 7%, transparent);
   border: 1px solid var(--border-color, rgba(0, 0, 0, 0.12));
-  justify-self: start;
 }
 
 .zai-message-error {
   background: color-mix(in srgb, #dc2626 12%, transparent);
   border: 1px solid color-mix(in srgb, #dc2626 35%, transparent);
   color: var(--text-primary, inherit);
-  justify-self: start;
 }
 
 .zai-activity-line {
@@ -622,7 +800,43 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
 }
 
 .zai-message-content {
+  -moz-user-select: text;
+  user-select: text;
   white-space: pre-wrap;
+}
+
+.zai-message-actions {
+  display: flex;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  transition: opacity 120ms ease;
+  -moz-user-select: none;
+  user-select: none;
+}
+
+.zai-message:hover .zai-message-actions,
+.zai-message:focus-within .zai-message-actions,
+.zai-message-actions-active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.zai-message-copy-button {
+  -moz-context-properties: fill, stroke;
+  background: transparent;
+  fill: none;
+  stroke: currentColor;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.zai-message-copy-button:hover,
+.zai-message-copy-button:focus-visible,
+.zai-message-copy-button.zai-message-copy-button-active {
+  background: transparent;
 }
 
 .zai-message-assistant .zai-message-content {
@@ -800,27 +1014,8 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   padding: 12px;
 }
 
-.zai-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-
-.zai-action-pill {
-  background: color-mix(in srgb, currentColor 6%, transparent);
-  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.12));
-  box-sizing: border-box;
-  color: inherit;
-  max-width: 100%;
-  min-height: 28px;
-  overflow: hidden;
-  padding: 4px 8px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .zai-composer {
+  background: color-mix(in srgb, currentColor 6%, transparent);
   border: 1px solid var(--border-color, rgba(0, 0, 0, 0.14));
   border-radius: 8px;
   box-sizing: border-box;
@@ -1035,17 +1230,26 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
 
 .zai-send-button {
   align-items: center;
-  background: var(--accent-blue, #2563eb);
-  border: 1px solid transparent;
-  color: #fff;
+  -moz-appearance: none;
+  appearance: none;
+  aspect-ratio: 1 / 1;
+  background: #fff;
+  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.14));
+  box-sizing: border-box;
+  color: var(--text-primary, #1f2933);
   display: inline-flex;
-  height: 32px;
+  flex: 0 0 38px;
+  height: 38px;
   justify-content: center;
-  min-width: 36px;
-  padding: 0 8px;
+  max-height: 38px;
+  max-width: 38px;
+  min-height: 38px;
+  min-width: 38px;
+  padding: 0;
   position: absolute;
   right: 8px;
   bottom: 8px;
+  width: 38px;
 }
 
 .zai-send-button:disabled,
@@ -1056,5 +1260,5 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
 
 .zai-send-button:hover,
 .zai-send-button:focus-visible {
-  background: color-mix(in srgb, var(--accent-blue, #2563eb) 85%, #000);
+  background: #fff;
 }

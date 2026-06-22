@@ -12,6 +12,7 @@ import {
 import { getString, initLocale } from "./utils/locale";
 import { registerPreferencesPane } from "./modules/preferences";
 import { registerPrefsScripts } from "./modules/preferenceScript";
+import { createCheckingProviderConnectionResult } from "./ai/providerConnectionStatus";
 import {
   closeChatDatabase,
   initializeChatDatabase,
@@ -108,6 +109,7 @@ async function onStartup() {
   }
 
 
+  void checkActiveProviderConnectionOnStartup();
   await initializeChatDatabase();
   await cleanupOldChatsOnStartup();
   await initializeChatPersistence();
@@ -153,6 +155,18 @@ async function cleanupOldChatsOnStartup() {
 function getProviderSetting(): LLMProvider {
   const value = getStringSetting("provider", "kisski");
   return value === "ollama" ? "ollama" : "kisski";
+}
+
+async function checkActiveProviderConnectionOnStartup() {
+  const provider = addon.data.settings.provider;
+  addon.data.runtime.providerConnections[provider] =
+    createCheckingProviderConnectionResult(provider);
+
+  try {
+    await addon.api.checkProviderConnection(provider);
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+  }
 }
 
 async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
@@ -217,22 +231,30 @@ async function onMainWindowUnload(win: Window): Promise<void> {
   addon.data.dialog?.window?.close();
 }
 
-function onShutdown(): void {
-  Zotero.getMainWindows().forEach((win) => {
-    UIExampleFactory.unregisterAssistantToolbarButton(win);
-    unregisterAssistantSidebarController(win);
-  });
-  UIExampleFactory.unregisterAssistantSidenavButton();
-  UIExampleFactory.unregisterTemplateItemPaneSections();
-  ztoolkit.unregisterAll();
-  addon.data.dialog?.window?.close();
-  void closeChatDatabase().catch((error) => {
-    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
-  });
-  // Remove addon object
+async function onShutdown(): Promise<void> {
   addon.data.alive = false;
-  // @ts-ignore - Plugin instance is not typed
-  delete Zotero[addon.data.config.addonInstance];
+
+  try {
+    Zotero.getMainWindows().forEach((win) => {
+      UIExampleFactory.unregisterAssistantToolbarButton(win);
+      unregisterAssistantSidebarController(win);
+    });
+    UIExampleFactory.unregisterAssistantSidenavButton();
+    UIExampleFactory.unregisterTemplateItemPaneSections();
+    ztoolkit.unregisterAll();
+    addon.data.dialog?.window?.close();
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+  }
+
+  try {
+    await closeChatDatabase();
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+  } finally {
+    // @ts-ignore - Plugin instance is not typed
+    delete Zotero[addon.data.config.addonInstance];
+  }
 }
 
 /**

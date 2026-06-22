@@ -27,6 +27,30 @@ export interface EmbeddingSearchStatus {
   error?: string;
 }
 
+export interface EmbeddingDebugOptions extends EmbeddingSearchOptions {
+  query?: string;
+}
+
+export interface ChunkEmbeddingDebugRecord {
+  chunk: TextChunk;
+  input: string;
+  embedding: number[];
+  normalizedEmbedding: number[];
+  rank?: number;
+  score?: number;
+  selected?: boolean;
+}
+
+export interface ChunkEmbeddingDebugResult {
+  provider: ReturnType<EmbeddingProvider["getConfig"]>;
+  query?: {
+    text: string;
+    embedding: number[];
+    normalizedEmbedding: number[];
+  };
+  records: ChunkEmbeddingDebugRecord[];
+}
+
 type CachedChunkEmbeddings = {
   chunkSignature: string;
   embeddings: number[][];
@@ -129,6 +153,77 @@ export class EmbeddingSearchService {
       return selectRelevantChunks(chunks, query, options);
     }
   }
+
+  static async createEmbeddingDebugReport(
+    chunks: TextChunk[],
+    options: EmbeddingDebugOptions = {},
+  ): Promise<ChunkEmbeddingDebugResult> {
+    if (!chunks.length) {
+      return {
+        provider: embeddingProvider.getConfig(),
+        records: [],
+      };
+    }
+
+    const inputs = chunks.map((chunk) =>
+      createPassageEmbeddingText(chunk.text),
+    );
+    const embeddings = await embeddingProvider.embedTexts(inputs, {
+      inputType: "passage",
+    });
+    const normalizedEmbeddings = embeddings.map(normalize);
+    cacheChunkEmbeddings(chunks, normalizedEmbeddings, options);
+
+    const records: ChunkEmbeddingDebugRecord[] = chunks.map((chunk, index) => ({
+      chunk,
+      input: inputs[index],
+      embedding: embeddings[index],
+      normalizedEmbedding: normalizedEmbeddings[index],
+    }));
+    const query = options.query?.trim();
+
+    if (!query) {
+      return {
+        provider: embeddingProvider.getConfig(),
+        records,
+      };
+    }
+
+    const [queryEmbedding] = await embeddingProvider.embedTexts([query], {
+      inputType: "query",
+    });
+    const normalizedQueryEmbedding = normalize(queryEmbedding);
+    const ranked = rankByEmbeddingSimilarity(
+      chunks,
+      normalizedQueryEmbedding,
+      normalizedEmbeddings,
+    );
+    const selectedChunkIDs = new Set(
+      selectByEmbeddingSimilarity(
+        chunks,
+        normalizedQueryEmbedding,
+        normalizedEmbeddings,
+        options,
+      ).map((chunk) => chunk.id),
+    );
+
+    for (const [rankIndex, entry] of ranked.entries()) {
+      const record = records[entry.index];
+      record.rank = rankIndex + 1;
+      record.score = entry.score;
+      record.selected = selectedChunkIDs.has(record.chunk.id);
+    }
+
+    return {
+      provider: embeddingProvider.getConfig(),
+      query: {
+        text: query,
+        embedding: queryEmbedding,
+        normalizedEmbedding: normalizedQueryEmbedding,
+      },
+      records,
+    };
+  }
 }
 
 async function getChunkEmbeddings(
@@ -150,12 +245,23 @@ async function getChunkEmbeddings(
     )
   ).map(normalize);
 
+  cacheChunkEmbeddings(chunks, embeddings, options);
+
+  return embeddings;
+}
+
+function cacheChunkEmbeddings(
+  chunks: TextChunk[],
+  embeddings: number[][],
+  options: EmbeddingSearchOptions,
+) {
+  const cacheKey = options.cacheKey ?? createChunkSignature(chunks);
+  const chunkSignature = createChunkSignature(chunks);
+
   chunkEmbeddingCache.set(cacheKey, {
     chunkSignature,
     embeddings,
   });
-
-  return embeddings;
 }
 
 function selectByEmbeddingSimilarity(
@@ -166,13 +272,11 @@ function selectByEmbeddingSimilarity(
 ) {
   const maxChunks = options.maxChunks ?? 6;
   const maxTokens = options.maxTokens ?? 4_500;
-  const ranked = chunks
-    .map((chunk, index) => ({
-      chunk,
-      index,
-      score: cosineSimilarity(queryEmbedding, chunkEmbeddings[index]),
-    }))
-    .sort((a, b) => b.score - a.score || a.index - b.index);
+  const ranked = rankByEmbeddingSimilarity(
+    chunks,
+    queryEmbedding,
+    chunkEmbeddings,
+  );
 
   const selected: Array<{ chunk: TextChunk; index: number }> = [];
   let usedTokens = 0;
@@ -191,6 +295,20 @@ function selectByEmbeddingSimilarity(
   }
 
   return selected.sort((a, b) => a.index - b.index).map(({ chunk }) => chunk);
+}
+
+function rankByEmbeddingSimilarity(
+  chunks: TextChunk[],
+  queryEmbedding: number[],
+  chunkEmbeddings: number[][],
+) {
+  return chunks
+    .map((chunk, index) => ({
+      chunk,
+      index,
+      score: cosineSimilarity(queryEmbedding, chunkEmbeddings[index]),
+    }))
+    .sort((a, b) => b.score - a.score || a.index - b.index);
 }
 
 function normalize(vector: number[]) {

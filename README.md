@@ -24,15 +24,15 @@ Verfuegbare Modelle lassen sich in den Plugin-Einstellungen laden oder ueber
 
 Fuer die Auswahl relevanter PDF-Auschnitte kann das Plugin semantische
 Embeddings verwenden. Standardmaessig ist das Ollama-Modell
-`qwen3-embedding:latest` unter `http://localhost:11434/api/embed`
+`embeddinggemma:latest` unter `http://localhost:11434/api/embed`
 konfiguriert.
 
 Das Modell kann lokal mit Ollama installiert und getestet werden:
 
 ```bash
-ollama pull qwen3-embedding:latest
+ollama pull embeddinggemma:latest
 curl http://localhost:11434/api/embed -d '{
-  "model": "qwen3-embedding:latest",
+  "model": "embeddinggemma:latest",
   "input": "Warum ist der Himmel blau?"
 }'
 ```

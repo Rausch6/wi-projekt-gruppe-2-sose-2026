@@ -7,9 +7,17 @@ import {
 import { CreateChatInput, StoredChat } from "../core/chatTypes";
 import { renderMarkdownContent } from "./markdownRenderer";
 import type { LLMProvider } from "../addon";
+import { EMBEDDING_DEFAULT_MODEL } from "../ai/EmbeddingProvider.js";
 import { KISSKI_MODEL_OPTIONS } from "../ai/providers/KisskiProvider.js";
+import {
+  createCheckingProviderConnectionResult,
+  createProviderConnectionResult,
+  type ProviderConnectionResult,
+} from "../ai/providerConnectionStatus";
+import { getString } from "../utils/locale";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
+const SVG_NS = "http://www.w3.org/2000/svg";
 const MAX_GENERATED_TITLE_LENGTH = 80;
 const TITLE_GENERATION_SYSTEM_PROMPT =
   "Erstelle einen knappen, natürlichen Chat-Titel auf der Sprache der ersten Nachricht des Nutzers.\n\n" +
@@ -83,16 +91,23 @@ const modelOptionsByProvider = new Map<LLMProvider, ModelOption[]>([
   ["kisski", normalizeModelOptions(KISSKI_MODEL_OPTIONS)],
 ]);
 const modelLoadStates = new Map<LLMProvider, ModelLoadState>();
+const providerConnectionRequestIDs = new Map<LLMProvider, number>();
 
 let nextMessageID = 1;
 let nextModelLoadRequestID = 1;
+let nextProviderConnectionRequestID = 1;
 let activeChatID: string | null = null;
 let showAllChats = false;
 let chatSummariesLoaded = false;
 let simulationEnabled = false;
 let requestRunning = false;
+let activeChatRequestID = 0;
+let activeChatCancelRequested = false;
 let modelPickerExpanded = false;
 let activeAssistantResponse: ActiveAssistantResponse | null = null;
+let ollamaSetupLaunchRunning = false;
+let ollamaStartRunning = false;
+let ollamaStopRunning = false;
 
 export function bindAssistantChat(host: HTMLElement) {
   hosts.add(host);
@@ -121,10 +136,29 @@ export function bindAssistantChat(host: HTMLElement) {
   const providerButtons = Array.from(
     host.querySelectorAll(".zai-provider-toggle-button[data-provider]"),
   ) as HTMLButtonElement[];
+  const providerCheckButtons = Array.from(
+    host.querySelectorAll(
+      '.zai-provider-setup-button[data-action="check-provider"][data-provider]',
+    ),
+  ) as HTMLButtonElement[];
+  const ollamaSetupLaunchButtons = Array.from(
+    host.querySelectorAll(
+      '.zai-provider-setup-button[data-action="launch-ollama-setup"]',
+    ),
+  ) as HTMLButtonElement[];
+  const ollamaStartButtons = Array.from(
+    host.querySelectorAll(
+      '.zai-provider-setup-button[data-action="start-ollama"]',
+    ),
+  ) as HTMLButtonElement[];
+  const ollamaStopButtons = Array.from(
+    host.querySelectorAll('.zai-stop-ollama-button[data-action="stop-ollama"]'),
+  ) as HTMLButtonElement[];
 
   syncModelPicker(host);
   ensureModelDropdownOutsideHandler(host.ownerDocument);
   void ensureModelOptionsLoaded(getActiveProvider());
+  void ensureProviderConnectionChecked(getActiveProvider());
   if (!activeChatID) invalidateChatSummaries();
   renderHost(host);
   void refreshChatSummaries(true).catch((error) => {
@@ -134,7 +168,7 @@ export function bindAssistantChat(host: HTMLElement) {
   const sendCurrentPrompt = () => {
     hosts.add(host);
     const prompt = textarea?.value.trim() ?? "";
-    if (!prompt || requestRunning) return;
+    if (!prompt || requestRunning || !isActiveProviderReady()) return;
 
     if (textarea) textarea.value = "";
     void sendChatPrompt(prompt).catch(() => {
@@ -142,7 +176,14 @@ export function bindAssistantChat(host: HTMLElement) {
     });
   };
 
-  sendButton?.addEventListener("click", sendCurrentPrompt);
+  sendButton?.addEventListener("click", () => {
+    if (requestRunning) {
+      cancelActiveAssistantResponse();
+      return;
+    }
+
+    sendCurrentPrompt();
+  });
   chatList?.addEventListener("click", (event) => {
     const button = (event.target as Element | null)?.closest<HTMLButtonElement>(
       ".zai-chat-entry[data-chat-id]",
@@ -215,6 +256,33 @@ export function bindAssistantChat(host: HTMLElement) {
       setActiveProvider(getProviderButtonValue(providerButton));
     });
   }
+  for (const providerCheckButton of providerCheckButtons) {
+    providerCheckButton.addEventListener("click", () => {
+      hosts.add(host);
+      void checkProviderConnection(
+        getProviderButtonValue(providerCheckButton),
+        true,
+      );
+    });
+  }
+  for (const ollamaSetupLaunchButton of ollamaSetupLaunchButtons) {
+    ollamaSetupLaunchButton.addEventListener("click", () => {
+      hosts.add(host);
+      void launchOllamaSetup();
+    });
+  }
+  for (const ollamaStartButton of ollamaStartButtons) {
+    ollamaStartButton.addEventListener("click", () => {
+      hosts.add(host);
+      void startOllama();
+    });
+  }
+  for (const ollamaStopButton of ollamaStopButtons) {
+    ollamaStopButton.addEventListener("click", () => {
+      hosts.add(host);
+      void stopOllama();
+    });
+  }
   modelButton?.addEventListener("click", () => {
     if (!modelDropdown) return;
 
@@ -251,6 +319,9 @@ export async function sendChatPrompt(prompt: string) {
   if (!content) {
     throw new Error("Der Prompt darf nicht leer sein.");
   }
+  if (!isActiveProviderReady()) {
+    throw new Error(getString("sidebar-active-provider-not-connected-error"));
+  }
 
   const chat = await ensureActiveChat(content);
   const chatID = chat.chatID;
@@ -279,6 +350,8 @@ export async function sendChatPrompt(prompt: string) {
     return userMessage;
   }
 
+  const requestID = ++activeChatRequestID;
+  activeChatCancelRequested = false;
   requestRunning = true;
   renderAllHosts();
 
@@ -303,7 +376,14 @@ export async function sendChatPrompt(prompt: string) {
       Zotero.debug(`[assistantChatController] System-Context Vorschau:\n${systemMsg.content.substring(0, 500)}...`);
     }
 
-    const assistantMessage = await requestAssistantResponse(requestMessages);
+    const assistantMessage = await requestAssistantResponse(
+      requestMessages,
+      requestID,
+    );
+
+    if (!assistantMessage) {
+      return userMessage;
+    }
 
     if (!assistantMessage.content.trim()) {
       throw new Error("ZAIA hat keine Textantwort zurückgegeben.");
@@ -313,6 +393,10 @@ export async function sendChatPrompt(prompt: string) {
     await refreshChatSummaries(false);
     return assistantMessage;
   } catch (error) {
+    if (isActiveChatRequestCancelled(requestID)) {
+      return userMessage;
+    }
+
     finalizeActiveAssistantMessage();
     const message = error instanceof Error ? error.message : String(error);
     requestRunning = false;
@@ -320,9 +404,12 @@ export async function sendChatPrompt(prompt: string) {
     appendMessage("error", `Anfrage fehlgeschlagen: ${message}`);
     throw error;
   } finally {
-    requestRunning = false;
-    activeAssistantResponse = null;
-    renderAllHosts();
+    if (requestID === activeChatRequestID) {
+      requestRunning = false;
+      activeChatCancelRequested = false;
+      activeAssistantResponse = null;
+      renderAllHosts();
+    }
   }
 }
 
@@ -436,6 +523,18 @@ function returnToWelcome() {
   });
 }
 
+function cancelActiveAssistantResponse() {
+  if (!requestRunning || activeChatCancelRequested) return;
+
+  activeChatCancelRequested = true;
+  finalizeActiveAssistantMessage();
+  renderAllHosts();
+}
+
+function isActiveChatRequestCancelled(requestID: number) {
+  return requestID === activeChatRequestID && activeChatCancelRequested;
+}
+
 async function refreshChatSummaries(render = true) {
   try {
     const chats = await ChatRepository.listChats();
@@ -455,26 +554,33 @@ function invalidateChatSummaries() {
   chatSummaries.length = 0;
 }
 
-async function requestAssistantResponse(requestMessages: RequestMessage[]) {
+async function requestAssistantResponse(
+  requestMessages: RequestMessage[],
+  requestID: number,
+) {
   if (typeof addon.api.ai.chatStream === "function") {
     try {
-      return await requestStreamingAssistantResponse(requestMessages);
+      return await requestStreamingAssistantResponse(
+        requestMessages,
+        requestID,
+      );
     } catch (error) {
       if (
         !activeAssistantResponse?.assistantMessage &&
         shouldFallbackToBufferedChat(error)
       ) {
-        return requestBufferedAssistantResponse(requestMessages);
+        return requestBufferedAssistantResponse(requestMessages, requestID);
       }
       throw error;
     }
   }
 
-  return requestBufferedAssistantResponse(requestMessages);
+  return requestBufferedAssistantResponse(requestMessages, requestID);
 }
 
 async function requestStreamingAssistantResponse(
   requestMessages: RequestMessage[],
+  requestID: number,
 ) {
   let assistantMessage: AssistantChatMessage | null = null;
 
@@ -482,6 +588,7 @@ async function requestStreamingAssistantResponse(
     providerId: getActiveProvider(),
     model: getActiveModel(),
   }) as AsyncIterable<{ type?: unknown; content?: unknown }>) {
+    if (isActiveChatRequestCancelled(requestID)) break;
     if (!event || typeof event !== "object") continue;
 
     if (event.type === "reasoning") {
@@ -502,16 +609,22 @@ async function requestStreamingAssistantResponse(
     if (event.type === "done") break;
   }
 
-  return finalizeActiveAssistantMessage() ?? assistantMessage ?? failNoAnswer();
+  const finalMessage = finalizeActiveAssistantMessage() ?? assistantMessage;
+  if (isActiveChatRequestCancelled(requestID)) return finalMessage;
+
+  return finalMessage ?? failNoAnswer();
 }
 
 async function requestBufferedAssistantResponse(
   requestMessages: RequestMessage[],
+  requestID: number,
 ) {
   const result = (await addon.api.ai.chat(requestMessages, {
     providerId: getActiveProvider(),
     model: getActiveModel(),
   })) as { content?: unknown };
+
+  if (isActiveChatRequestCancelled(requestID)) return null;
 
   if (typeof result?.content !== "string" || !result.content.trim()) {
     throw new Error("ZAIA hat keine Textantwort zurückgegeben.");
@@ -525,10 +638,17 @@ function getActiveProvider(): LLMProvider {
   return addon.data.settings.provider === "ollama" ? "ollama" : "kisski";
 }
 
+function isActiveProviderReady() {
+  return isProviderConnectionReady(
+    addon.data.runtime.providerConnections[getActiveProvider()],
+  );
+}
+
 function getActiveModel(provider: LLMProvider = getActiveProvider()) {
-  return provider === "ollama"
-    ? addon.data.settings.ollamaModel
-    : addon.data.settings.model;
+  if (provider !== "ollama") return addon.data.settings.model;
+
+  const model = addon.data.settings.ollamaModel;
+  return isLocalEmbeddingModel(model) ? OLLAMA_DEFAULT_MODEL : model;
 }
 
 async function createRequestMessages(prompt: string) {
@@ -679,6 +799,7 @@ function getVisibleActivity() {
   const activeResponse = activeAssistantResponse;
   if (
     !requestRunning ||
+    activeChatCancelRequested ||
     !activeResponse ||
     activeResponse.assistantMessage?.content.trim()
   ) {
@@ -967,7 +1088,19 @@ function renderHost(host: HTMLElement) {
   const welcome = host.querySelector<HTMLElement>(".zai-welcome");
   const messageList = host.querySelector<HTMLElement>(".zai-messages");
   const chatList = host.querySelector<HTMLElement>(".zai-chat-list");
+  const chatListActions = host.querySelector<HTMLElement>(
+    ".zai-chat-list-actions",
+  );
   const seeAll = host.querySelector<HTMLButtonElement>(".zai-see-all");
+  const stopOllamaButtons = Array.from(
+    host.querySelectorAll(".zai-stop-ollama-button"),
+  ) as HTMLButtonElement[];
+  const chatListStopOllamaButton = host.querySelector<HTMLButtonElement>(
+    ".zai-chat-list-stop-ollama-button",
+  );
+  const activeChatStopOllamaButton = host.querySelector<HTMLButtonElement>(
+    ".zai-active-chat-stop-ollama-button",
+  );
   const activeChatBar = host.querySelector<HTMLElement>(".zai-active-chat-bar");
   const activeChatTitle = host.querySelector<HTMLElement>(
     ".zai-active-chat-title",
@@ -987,15 +1120,34 @@ function renderHost(host: HTMLElement) {
 
   if (!main || !messageList) return;
 
-  const showWelcome = !activeChatID;
-  const showChat = !showWelcome;
+  const activeProvider = getActiveProvider();
+  const providerConnection =
+    addon.data.runtime.providerConnections[activeProvider];
+  const providerReady = isProviderConnectionReady(providerConnection);
+  const showProviderSetup = shouldShowProviderSetup(providerConnection);
+  const showWelcome = !activeChatID && !showProviderSetup;
+  const showChat = !showWelcome && !showProviderSetup;
   top?.classList.toggle("zai-top-chat-active", showChat);
-  main.classList.toggle("zai-main-empty", showWelcome);
+  main.classList.toggle("zai-main-empty", showWelcome || showProviderSetup);
   main.classList.toggle("zai-main-chat-active", showChat);
   welcome?.toggleAttribute("hidden", !showWelcome);
-  messageList.toggleAttribute("hidden", showWelcome);
+  syncProviderSetup(host, activeProvider, providerConnection);
+  messageList.toggleAttribute("hidden", !showChat);
   chatList?.toggleAttribute("hidden", !showWelcome);
-  seeAll?.toggleAttribute("hidden", !showWelcome || chatSummaries.length <= 3);
+  const showSeeAll = showWelcome && chatSummaries.length > 3;
+  const canStopOllama = activeProvider === "ollama" && providerReady;
+  const showChatListStopOllama = showWelcome && canStopOllama;
+  const showActiveChatStopOllama = showChat && canStopOllama;
+  chatListActions?.toggleAttribute(
+    "hidden",
+    !showSeeAll && !showChatListStopOllama,
+  );
+  seeAll?.toggleAttribute("hidden", !showSeeAll);
+  chatListStopOllamaButton?.toggleAttribute("hidden", !showChatListStopOllama);
+  activeChatStopOllamaButton?.toggleAttribute(
+    "hidden",
+    !showActiveChatStopOllama,
+  );
   activeChatBar?.toggleAttribute("hidden", !showChat);
 
   if (activeChatTitle) {
@@ -1024,7 +1176,14 @@ function renderHost(host: HTMLElement) {
   if (seeAll) {
     seeAll.textContent = showAllChats ? "Weniger anzeigen" : "Alle ansehen";
   }
-
+  for (const stopOllamaButton of stopOllamaButtons) {
+    const label = ollamaStopRunning
+      ? getString("sidebar-stopping-ollama")
+      : getString("sidebar-stop-ollama");
+    stopOllamaButton.disabled = ollamaStopRunning;
+    stopOllamaButton.setAttribute("aria-label", label);
+    stopOllamaButton.setAttribute("title", label);
+  }
   if (chatList && showWelcome) renderChatList(host, chatList);
 
   const renderedMessages = messages
@@ -1037,23 +1196,192 @@ function renderHost(host: HTMLElement) {
     messageList.append(createActivityElement(host, activeActivity));
   }
 
-  if (sendButton) sendButton.disabled = requestRunning;
-  if (textarea) textarea.disabled = requestRunning;
+  if (sendButton) syncSendButton(sendButton, providerReady);
+  if (textarea) textarea.disabled = requestRunning || !providerReady;
 
   if (status) {
-    const statusText = simulationEnabled
-      ? pendingSimulationPrompts.length
-        ? `Simulation: ${pendingSimulationPrompts.length} Antwort(en) ausstehend`
-        : "Simulation aktiv"
-      : requestRunning
-        ? "ZAIA antwortet"
-        : "";
+    const statusText = getComposerStatusText(providerReady);
     status.textContent = statusText;
     status.toggleAttribute("hidden", !statusText);
     status.classList.toggle("zai-chat-status-simulation", simulationEnabled);
   }
 
   main.scrollTop = showWelcome ? 0 : main.scrollHeight;
+}
+
+function shouldShowProviderSetup(
+  connection: ProviderConnectionResult | undefined,
+) {
+  return !isProviderConnectionReady(connection);
+}
+
+function isProviderConnectionReady(
+  connection: ProviderConnectionResult | undefined,
+) {
+  return connection?.status === "ready";
+}
+
+function getComposerStatusText(providerReady: boolean) {
+  if (!providerReady) return getString("sidebar-provider-not-connected");
+  if (simulationEnabled) {
+    return pendingSimulationPrompts.length
+      ? `Simulation: ${pendingSimulationPrompts.length} Antwort(en) ausstehend`
+      : "Simulation aktiv";
+  }
+  if (requestRunning && activeChatCancelRequested) return "Stoppe Antwort...";
+  return requestRunning ? "ZAIA antwortet" : "";
+}
+
+function syncSendButton(button: HTMLButtonElement, providerReady: boolean) {
+  const doc = button.ownerDocument;
+  const isStopping = requestRunning && activeChatCancelRequested;
+  const label = isStopping
+    ? "Antwort wird gestoppt"
+    : requestRunning
+      ? "Antwort stoppen"
+      : "Nachricht senden";
+
+  button.disabled = !providerReady || isStopping;
+  button.classList.toggle("zai-send-button-stop", requestRunning);
+  button.setAttribute("aria-label", label);
+  button.setAttribute("title", label);
+  button.replaceChildren(
+    requestRunning ? createStopSquareIcon(doc) : createSendArrowIcon(doc),
+  );
+}
+
+function syncProviderSetup(
+  host: HTMLElement,
+  provider: LLMProvider,
+  connection: ProviderConnectionResult | undefined,
+) {
+  const setup = host.querySelector<HTMLElement>(".zai-provider-setup");
+  if (!setup) return;
+
+  const showSetup = shouldShowProviderSetup(connection);
+  setup.toggleAttribute("hidden", !showSetup);
+
+  setup
+    .querySelectorAll<HTMLElement>(".zai-provider-setup-panel[data-provider]")
+    .forEach((panel) => {
+      panel.toggleAttribute(
+        "hidden",
+        !showSetup || panel.dataset.provider !== provider,
+      );
+    });
+
+  setup
+    .querySelectorAll<HTMLButtonElement>(
+      '.zai-provider-setup-button[data-action="check-provider"]',
+    )
+    .forEach((button) => {
+      const isActiveProvider = button.dataset.provider === provider;
+      const isChecking = isActiveProvider && connection?.status === "checking";
+      button.disabled = isChecking;
+      button.textContent = isChecking
+        ? getString("sidebar-checking-provider")
+        : getString("sidebar-check-provider");
+    });
+
+  setup
+    .querySelectorAll<HTMLButtonElement>(
+      '.zai-provider-setup-button[data-action="launch-ollama-setup"]',
+    )
+    .forEach((button) => {
+      const isActiveProvider = provider === "ollama";
+      button.disabled = !isActiveProvider || ollamaSetupLaunchRunning;
+      button.textContent = ollamaSetupLaunchRunning
+        ? getString("sidebar-launching-ollama-setup")
+        : getString("sidebar-launch-ollama-setup");
+    });
+
+  setup
+    .querySelectorAll<HTMLButtonElement>(
+      '.zai-provider-setup-button[data-action="start-ollama"]',
+    )
+    .forEach((button) => {
+      const isActiveProvider = provider === "ollama";
+      button.disabled = !isActiveProvider || ollamaStartRunning;
+      button.textContent = ollamaStartRunning
+        ? getString("sidebar-starting-ollama")
+        : getString("sidebar-start-ollama");
+    });
+
+  setup
+    .querySelectorAll<HTMLElement>(".zai-provider-setup-status[data-provider]")
+    .forEach((status) => {
+      const isActiveProvider = status.dataset.provider === provider;
+      const text =
+        showSetup && isActiveProvider
+          ? getProviderConnectionStatusText(provider, connection)
+          : "";
+      status.textContent = text;
+      status.toggleAttribute("hidden", !text);
+    });
+}
+
+function getProviderConnectionStatusText(
+  provider: LLMProvider,
+  connection: ProviderConnectionResult | undefined,
+) {
+  if (provider === "ollama" && ollamaStopRunning) {
+    return getString("sidebar-stopping-ollama");
+  }
+  if (provider === "ollama" && ollamaStartRunning) {
+    return getString("sidebar-starting-ollama");
+  }
+  if (provider === "ollama" && ollamaSetupLaunchRunning) {
+    return getString("sidebar-launching-ollama-setup");
+  }
+  if (!connection) return getString("sidebar-connection-not-checked");
+  if (connection.status === "checking") {
+    return getString("sidebar-checking-provider");
+  }
+  if (connection.status === "ready") return "";
+
+  if (connection.status === "missing-config") {
+    if (connection.issue === "api-key-missing") {
+      return getString("sidebar-cloud-api-key-missing");
+    }
+    if (connection.issue === "base-url-missing") {
+      return getString("sidebar-base-url-missing");
+    }
+    if (connection.issue === "model-missing") {
+      return getString("sidebar-model-missing");
+    }
+    return provider === "ollama"
+      ? getString("sidebar-local-config-incomplete")
+      : getString("sidebar-cloud-config-incomplete");
+  }
+
+  if (connection.status === "missing-model") {
+    return provider === "ollama"
+      ? getString("sidebar-local-model-not-installed", {
+          args: { model: connection.model ?? "" },
+        })
+      : getString("sidebar-cloud-model-not-available", {
+          args: { model: connection.model ?? "" },
+        });
+  }
+
+  if (connection.status === "unreachable") {
+    return provider === "ollama"
+      ? getString("sidebar-local-unreachable")
+      : getString("sidebar-cloud-unreachable");
+  }
+
+  if (connection.status === "error") {
+    if (connection.issue === "unknown-error" && connection.message) {
+      return connection.message;
+    }
+    return provider === "ollama"
+      ? getString("sidebar-local-invalid-response")
+      : getString("sidebar-cloud-invalid-response");
+  }
+
+  if (connection.message) return connection.message;
+
+  return getString("sidebar-connection-check-failed");
 }
 
 function createMessageElement(
@@ -1068,7 +1396,10 @@ function createMessageElement(
   }
 
   const doc = host.ownerDocument!;
+  const row = doc.createElementNS(HTML_NS, "div") as HTMLElement;
   const wrapper = doc.createElementNS(HTML_NS, "article") as HTMLElement;
+
+  row.className = `zai-message-row zai-message-row-${message.role}`;
   wrapper.className = `zai-message zai-message-${message.role}`;
 
   const label = doc.createElementNS(HTML_NS, "strong") as HTMLElement;
@@ -1088,8 +1419,222 @@ function createMessageElement(
     content.textContent = message.content;
   }
 
-  wrapper.append(label, content);
-  return wrapper;
+  wrapper.append(label, content, createMessageCopyActions(host, message));
+  row.append(wrapper);
+  return row;
+}
+
+function createMessageCopyActions(
+  host: HTMLElement,
+  message: AssistantChatMessage,
+) {
+  const doc = host.ownerDocument!;
+  const actions = doc.createElementNS(HTML_NS, "div") as HTMLElement;
+  const copyButton = doc.createElementNS(
+    HTML_NS,
+    "button",
+  ) as HTMLButtonElement;
+
+  actions.className = "zai-message-actions";
+  copyButton.className = "zai-chat-action-button zai-message-copy-button";
+  copyButton.type = "button";
+  copyButton.setAttribute("aria-label", "Nachricht kopieren");
+  copyButton.setAttribute("title", "Nachricht kopieren");
+
+  copyButton.append(createCopyIcon(doc));
+  copyButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    void copyMessageToClipboard(host, message.content, copyButton);
+  });
+
+  actions.append(copyButton);
+  return actions;
+}
+
+async function copyMessageToClipboard(
+  host: HTMLElement,
+  text: string,
+  button: HTMLButtonElement,
+) {
+  try {
+    await writeTextToClipboard(host, text);
+    setCopyButtonState(host, button, "Nachricht kopiert", true);
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+    setCopyButtonState(
+      host,
+      button,
+      "Nachricht konnte nicht kopiert werden",
+      false,
+    );
+  }
+}
+
+async function writeTextToClipboard(host: HTMLElement, text: string) {
+  const win = host.ownerDocument?.defaultView;
+  const clipboard = win?.navigator?.clipboard;
+  let clipboardError: unknown = null;
+
+  if (typeof clipboard?.writeText === "function") {
+    try {
+      await clipboard.writeText(text);
+      return;
+    } catch (error) {
+      clipboardError = error;
+    }
+  }
+
+  if (copyTextWithClipboardHelper(text)) return;
+  if (copyTextWithSelectionFallback(host, text)) return;
+
+  throw clipboardError ?? new Error("Clipboard API nicht verfügbar.");
+}
+
+function copyTextWithClipboardHelper(text: string) {
+  try {
+    Components.classes["@mozilla.org/widget/clipboardhelper;1"]
+      .getService(Components.interfaces.nsIClipboardHelper)
+      .copyString(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function copyTextWithSelectionFallback(host: HTMLElement, text: string) {
+  const doc = host.ownerDocument;
+  const textarea = doc.createElementNS(
+    HTML_NS,
+    "textarea",
+  ) as HTMLTextAreaElement;
+
+  textarea.value = text;
+  textarea.readOnly = true;
+  textarea.setAttribute("aria-hidden", "true");
+  textarea.style.left = "-9999px";
+  textarea.style.opacity = "0";
+  textarea.style.position = "fixed";
+  textarea.style.top = "0";
+
+  host.append(textarea);
+  textarea.focus();
+  textarea.select();
+
+  try {
+    return typeof doc.execCommand === "function" && doc.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+  }
+}
+
+function setCopyButtonState(
+  host: HTMLElement,
+  button: HTMLButtonElement,
+  ariaLabel: string,
+  copied: boolean,
+) {
+  const win = host.ownerDocument.defaultView;
+  const actions = button.closest(".zai-message-actions");
+
+  actions?.classList.add("zai-message-actions-active");
+  button.classList.add("zai-message-copy-button-active");
+  button.classList.toggle("zai-message-copy-button-copied", copied);
+  button.setAttribute("aria-label", ariaLabel);
+  button.setAttribute("title", ariaLabel);
+  if (copied) {
+    button.replaceChildren(createCheckIcon(button.ownerDocument));
+  }
+
+  win?.setTimeout(() => {
+    if (!button.isConnected) return;
+
+    button.classList.remove("zai-message-copy-button-active");
+    button.classList.remove("zai-message-copy-button-copied");
+    actions?.classList.remove("zai-message-actions-active");
+    button.setAttribute("aria-label", "Nachricht kopieren");
+    button.setAttribute("title", "Nachricht kopieren");
+    button.replaceChildren(createCopyIcon(button.ownerDocument));
+  }, 1200);
+}
+
+function createCopyIcon(doc: Document) {
+  const svg = doc.createElementNS(SVG_NS, "svg");
+  const rectBack = doc.createElementNS(SVG_NS, "rect");
+  const rectFront = doc.createElementNS(SVG_NS, "rect");
+
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  rectBack.setAttribute("x", "8");
+  rectBack.setAttribute("y", "7");
+  rectBack.setAttribute("width", "10");
+  rectBack.setAttribute("height", "12");
+  rectBack.setAttribute("rx", "2");
+  rectFront.setAttribute("x", "5");
+  rectFront.setAttribute("y", "4");
+  rectFront.setAttribute("width", "10");
+  rectFront.setAttribute("height", "12");
+  rectFront.setAttribute("rx", "2");
+  svg.append(rectBack, rectFront);
+
+  return svg;
+}
+
+function createCheckIcon(doc: Document) {
+  const svg = doc.createElementNS(SVG_NS, "svg");
+  const path = doc.createElementNS(SVG_NS, "path");
+
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  path.setAttribute("d", "M5 12.5l4.3 4.2L19 7.3");
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke-linecap", "round");
+  path.setAttribute("stroke-linejoin", "round");
+  svg.append(path);
+
+  return svg;
+}
+
+function createSendArrowIcon(doc: Document) {
+  const svg = createIconSvg(doc, "20");
+  const line = doc.createElementNS(SVG_NS, "path");
+  const arrow = doc.createElementNS(SVG_NS, "path");
+
+  line.setAttribute("d", "M12 19V5");
+  arrow.setAttribute("d", "m5 12 7-7 7 7");
+  svg.append(line, arrow);
+
+  return svg;
+}
+
+function createStopSquareIcon(doc: Document) {
+  const svg = createIconSvg(doc, "22");
+  const square = doc.createElementNS(SVG_NS, "rect");
+
+  square.setAttribute("x", "6");
+  square.setAttribute("y", "6");
+  square.setAttribute("width", "12");
+  square.setAttribute("height", "12");
+  square.setAttribute("rx", "1.5");
+  svg.append(square);
+
+  return svg;
+}
+
+function createIconSvg(doc: Document, size: string) {
+  const svg = doc.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", size);
+  svg.setAttribute("height", size);
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  return svg;
 }
 
 function createActivityElement(host: HTMLElement, text: string) {
@@ -1255,6 +1800,144 @@ function setActiveProvider(provider: LLMProvider) {
 
   syncAllModelPickers();
   void ensureModelOptionsLoaded(provider);
+  void checkProviderConnection(provider, true);
+}
+
+function ensureProviderConnectionChecked(provider: LLMProvider) {
+  const connection = addon.data.runtime.providerConnections[provider];
+  if (connection) {
+    renderAllHosts();
+    return;
+  }
+
+  void checkProviderConnection(provider, false);
+}
+
+async function checkProviderConnection(provider: LLMProvider, force: boolean) {
+  const currentConnection = addon.data.runtime.providerConnections[provider];
+  if (!force && currentConnection) return currentConnection;
+
+  const requestID = nextProviderConnectionRequestID++;
+  providerConnectionRequestIDs.set(provider, requestID);
+  addon.data.runtime.providerConnections[provider] =
+    createCheckingProviderConnectionResult(provider);
+  renderAllHosts();
+
+  try {
+    const result = await addon.api.checkProviderConnection(provider);
+    if (providerConnectionRequestIDs.get(provider) !== requestID) {
+      return result;
+    }
+
+    addon.data.runtime.providerConnections[provider] = result;
+    if (result.ok) {
+      void ensureModelOptionsLoaded(provider, true);
+    }
+    return result;
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+    return addon.data.runtime.providerConnections[provider];
+  } finally {
+    renderAllHosts();
+  }
+}
+
+async function launchOllamaSetup() {
+  if (ollamaSetupLaunchRunning) return;
+
+  ollamaSetupLaunchRunning = true;
+  renderAllHosts();
+
+  try {
+    await addon.api.launchOllamaSetup();
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+    const currentConnection = addon.data.runtime.providerConnections.ollama;
+    addon.data.runtime.providerConnections.ollama = {
+      ...(currentConnection ??
+        createProviderConnectionResult("ollama", "error")),
+      status: "error",
+      ok: false,
+      issue: "unknown-error",
+      error: error instanceof Error ? error.message : String(error),
+      message: getString("sidebar-launch-ollama-setup-failed"),
+    };
+  } finally {
+    ollamaSetupLaunchRunning = false;
+    renderAllHosts();
+  }
+}
+
+async function startOllama() {
+  if (ollamaStartRunning) return;
+
+  ollamaStartRunning = true;
+  renderAllHosts();
+
+  try {
+    await addon.api.startOllama();
+    await waitForOllamaConnection();
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+    const currentConnection = addon.data.runtime.providerConnections.ollama;
+    addon.data.runtime.providerConnections.ollama = {
+      ...(currentConnection ??
+        createProviderConnectionResult("ollama", "error")),
+      status: "error",
+      ok: false,
+      issue: "unknown-error",
+      error: error instanceof Error ? error.message : String(error),
+      message: getString("sidebar-start-ollama-failed"),
+    };
+  } finally {
+    ollamaStartRunning = false;
+    renderAllHosts();
+  }
+}
+
+async function stopOllama() {
+  if (ollamaStopRunning) return;
+
+  ollamaStopRunning = true;
+  renderAllHosts();
+
+  try {
+    await addon.api.stopOllama();
+    await delay(1_000);
+    await checkProviderConnection("ollama", true);
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+    const currentConnection = addon.data.runtime.providerConnections.ollama;
+    addon.data.runtime.providerConnections.ollama = {
+      ...(currentConnection ??
+        createProviderConnectionResult("ollama", "error")),
+      status: "error",
+      ok: false,
+      issue: "unknown-error",
+      error: error instanceof Error ? error.message : String(error),
+      message: getString("sidebar-stop-ollama-failed"),
+    };
+  } finally {
+    ollamaStopRunning = false;
+    renderAllHosts();
+  }
+}
+
+async function waitForOllamaConnection() {
+  const timeoutAt = Date.now() + 12_000;
+  let result: ProviderConnectionResult | undefined;
+
+  do {
+    result = await checkProviderConnection("ollama", true);
+    if (result && result.status !== "unreachable") return result;
+    await delay(1_000);
+  } while (Date.now() < timeoutAt);
+
+  return result;
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function ensureModelOptionsLoaded(provider: LLMProvider, force = false) {
@@ -1277,6 +1960,7 @@ async function ensureModelOptionsLoaded(provider: LLMProvider, force = false) {
     }
     const models = normalizeModelOptions(
       await addon.api.ai.listModels(provider),
+      provider,
     );
     if (modelLoadStates.get(provider)?.requestID !== requestID) return;
 
@@ -1298,7 +1982,10 @@ async function ensureModelOptionsLoaded(provider: LLMProvider, force = false) {
   }
 }
 
-function normalizeModelOptions(models: unknown): ModelOption[] {
+function normalizeModelOptions(
+  models: unknown,
+  provider?: LLMProvider,
+): ModelOption[] {
   if (!Array.isArray(models)) return [];
 
   const seen = new Set<string>();
@@ -1312,6 +1999,7 @@ function normalizeModelOptions(models: unknown): ModelOption[] {
     };
     const id = typeof record.id === "string" ? record.id.trim() : "";
     if (!id || seen.has(id)) continue;
+    if (provider === "ollama" && isLocalEmbeddingModel(id)) continue;
 
     const name =
       typeof record.name === "string" && record.name.trim()
@@ -1329,6 +2017,16 @@ function normalizeModelOptions(models: unknown): ModelOption[] {
   }
 
   return sortModelOptions(options);
+}
+
+function isLocalEmbeddingModel(model: string) {
+  const value = model.trim().toLowerCase();
+  if (!value) return false;
+
+  return (
+    value === EMBEDDING_DEFAULT_MODEL.toLowerCase() ||
+    /(^|[-_/.:])embed(?:ding)?($|[-_/.:])/i.test(value)
+  );
 }
 
 function syncModelDropdown(
