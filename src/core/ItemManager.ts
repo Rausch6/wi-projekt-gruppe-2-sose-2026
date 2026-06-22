@@ -80,7 +80,8 @@ export class ItemManager {
     itemKey: string,
   ): Promise<Zotero.Item | null> {
     const item = await Zotero.Items.getByLibraryAndKeyAsync(libraryID, itemKey);
-    return item && item.isRegularItem() ? item : null;
+    if (!item) return null;
+    return this.resolveRegularItemAsync(item);
   }
 
   static async getSelectedRegularItem(

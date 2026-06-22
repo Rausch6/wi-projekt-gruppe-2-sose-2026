@@ -8,6 +8,7 @@ import { CreateChatInput, StoredChat } from "../core/chatTypes";
 import { renderMarkdownContent } from "./markdownRenderer";
 import type { LLMProvider } from "../addon";
 import { EMBEDDING_DEFAULT_MODEL } from "../ai/EmbeddingProvider.js";
+import { OLLAMA_DEFAULT_MODEL } from "../ai/providers/OllamaProvider.js";
 import { KISSKI_MODEL_OPTIONS } from "../ai/providers/KisskiProvider.js";
 import {
   createCheckingProviderConnectionResult,

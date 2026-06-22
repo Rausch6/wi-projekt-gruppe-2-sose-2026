@@ -10,6 +10,7 @@ import {
 import {
   OLLAMA_DEFAULT_BASE_URL,
   OLLAMA_DEFAULT_MODEL,
+  OLLAMA_INSTALL_COMMANDS,
 } from "../ai/providers/OllamaProvider.js";
 
 const FIELD_NAMES = [

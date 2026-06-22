@@ -4,7 +4,7 @@ declare const Zotero: any;
 declare const IOUtils: any;  
 declare const OS: any;     
 
-const VECTOR_SIZE = 4096; 
+const VECTOR_SIZE = 1024; 
 
 const mySchema = {
     id: 'string',
@@ -56,23 +56,31 @@ export class OramaService {
     }
 
     /**
-     * Führt eine Vektorsuche in Orama durch.
+     * Führt eine kombinierte Vektor- und/oder Keyword-Suche in Orama durch.
      */
-    async searchSimilar(queryVector: number[], limit: number = 5, whereFilter?: any, term?: string) {
+    async searchSimilar(queryVector: number[] | null, limit: number = 5, whereFilter?: any, term?: string) {
         this.checkInit();
 
+        let mode = 'vector';
+        if (queryVector && term) mode = 'hybrid';
+        else if (!queryVector && term) mode = 'fulltext';
+
         const searchParams: any = {
-            mode: term ? 'hybrid' : 'vector',
-            vector: {
-                value: queryVector,
-                property: 'embedding',
-            },
-            similarity: 0.1, // Ensure we get the closest hits even if absolute similarity is low
+            mode: mode,
             limit: limit,
         };
 
+        if (queryVector) {
+            searchParams.vector = {
+                value: queryVector,
+                property: 'embedding',
+            };
+            searchParams.similarity = 0.1; // Ensure we get the closest hits even if absolute similarity is low
+        }
+
         if (term) {
             searchParams.term = term;
+            searchParams.properties = ['content'];
         }
 
         if (whereFilter) {

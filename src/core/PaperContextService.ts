@@ -1,7 +1,7 @@
 import { ItemManager } from "./ItemManager";
 import { EmbeddingSearchService } from "./EmbeddingSearchService";
 import { PdfExtractor } from "./PdfExtractor";
-import {chunkPaperText,selectRelevantChunks,type TextChunk,} from "./TextChunker";
+import {chunkPaperText,estimateTokens,type TextChunk,} from "./TextChunker";
 import { vectorStore, type ChunkDocument } from "./OramaService";
 import { embeddingProvider } from "../ai/EmbeddingProvider.js";
 
@@ -79,57 +79,56 @@ export class PaperContextService {
     const paper = await getCachedPaper(item);
     if (!paper) return null;
     
+    let queryVector: number[] | null = null;
     try {
-      const [queryVector] = await embeddingProvider.embedTexts([query], {
+      [queryVector] = await embeddingProvider.embedTexts([query], {
         inputType: "query",
       });
 
-      const itemIdStr = item.id.toString();
-
-      Zotero.debug(`[PaperContextService] Starte dokumentbezogene Vektorsuche für Item ${itemIdStr}`);
-      const searchResults = await vectorStore.searchSimilar(queryVector, 5, {
-        zoteroItemId: itemIdStr,
-      });
-
-      const relevantHits = searchResults.map(
-        (hit) => hit.document as unknown as ChunkDocument,
-      );
-
-      if (!relevantHits.length) return null;
-
-      const chunks: TextChunk[] = relevantHits.map((doc, index) => {
-        const originalChunkId = doc.id.split("_").pop() || `C${index}`;
-        return {
-          id: originalChunkId,
-          text: doc.content,
-          pageStart: doc.pageNumber || null,
-          pageEnd: doc.pageNumber || null,
-          estimatedTokens: 0,
-        };
-      });
-
-      Zotero.debug(`[PaperContextService] Vektor-Suche für Paper erfolgreich. Folgende Chunks werden genutzt:`);
-      chunks.forEach((c) => Zotero.debug(` -> [${c.id}] (Seite ${c.pageStart}): ${c.text.substring(0, 100)}...`));
-
-      return {
-        attachmentID: paper.attachmentID,
-        chunks,
-        systemMessage: formatPaperContext(paper, chunks),
-      };
+      // --- DEBUG VECTOR ---
+      const vecLength = queryVector.length;
+      const vecPreview = queryVector.slice(0, 5).map(n => n.toFixed(4)).join(", ");
+      Zotero.debug(`[PaperContextService] Vektorisierung erfolgreich! Die Frage wurde in einen Vektor mit ${vecLength} Dimensionen konvertiert.`);
+      Zotero.debug(`[PaperContextService] Vektor-Vorschau (erste 5 Werte): [${vecPreview}, ...]`);
+      // --------------------
     } catch (error) {
       Zotero.debug(
-        `[PaperContextService] Embedding-Suche fehlgeschlagen, Keyword-Fallback aktiv: ${error}`,
+        `[PaperContextService] Embedding-Suche fehlgeschlagen, Orama Keyword-Fallback aktiv: ${error}`,
       );
-
-      const chunks = selectRelevantChunks(paper.chunks, query);
-      if (!chunks.length) return null;
-
-      return {
-        attachmentID: paper.attachmentID,
-        chunks,
-        systemMessage: formatPaperContext(paper, chunks),
-      };
     }
+
+    const itemIdStr = item.id.toString();
+
+    Zotero.debug(`[PaperContextService] Starte dokumentbezogene Suche für Item ${itemIdStr} (Hybrid/Fulltext)`);
+    const searchResults = await vectorStore.searchSimilar(queryVector, 5, {
+      zoteroItemId: itemIdStr,
+    }, query);
+
+    const relevantHits = searchResults.map(
+      (hit) => hit.document as unknown as ChunkDocument,
+    );
+
+    if (!relevantHits.length) return null;
+
+    const chunks: TextChunk[] = relevantHits.map((doc, index) => {
+      const originalChunkId = doc.id.split("_").pop() || `C${index}`;
+      return {
+        id: originalChunkId,
+        text: doc.content,
+        pageStart: doc.pageNumber || null,
+        pageEnd: doc.pageNumber || null,
+        estimatedTokens: estimateTokens(doc.content),
+      };
+    });
+
+    Zotero.debug(`[PaperContextService] Suche für Paper erfolgreich. Folgende Chunks werden genutzt:`);
+    chunks.forEach((c) => Zotero.debug(` -> [${c.id}] (Seite ${c.pageStart}): ${c.text.substring(0, 100)}...`));
+
+    return {
+      attachmentID: paper.attachmentID,
+      chunks,
+      systemMessage: formatPaperContext(paper, chunks),
+    };
   }
 
   /**
@@ -139,16 +138,31 @@ export class PaperContextService {
    */
   static async buildGlobalContext(query: string): Promise<string | null> {
     let searchResults: Awaited<ReturnType<typeof vectorStore.searchSimilar>>;
+    let queryVector: number[] | null = null;
 
     try {
-      const [queryVector] = await embeddingProvider.embedTexts([query], {
+      [queryVector] = await embeddingProvider.embedTexts([query], {
         inputType: "query",
       });
-      Zotero.debug(`[PaperContextService] Starte bibliotheksweite Vektorsuche`);
-      searchResults = await vectorStore.searchSimilar(queryVector, 5, undefined);
+
+      // --- DEBUG VECTOR ---
+      const vecLength = queryVector.length;
+      const vecPreview = queryVector.slice(0, 5).map(n => n.toFixed(4)).join(", ");
+      Zotero.debug(`[PaperContextService] Globale Vektorisierung erfolgreich! Die Frage wurde in einen Vektor mit ${vecLength} Dimensionen konvertiert.`);
+      Zotero.debug(`[PaperContextService] Globale Vektor-Vorschau (erste 5 Werte): [${vecPreview}, ...]`);
+      // --------------------
     } catch (error) {
       Zotero.debug(
-        `[PaperContextService] Globale Embedding-Suche fehlgeschlagen: ${error}`,
+        `[PaperContextService] Globale Embedding-Suche fehlgeschlagen, Orama Keyword-Fallback aktiv: ${error}`,
+      );
+    }
+
+    try {
+      Zotero.debug(`[PaperContextService] Starte bibliotheksweite Suche (Hybrid/Fulltext)`);
+      searchResults = await vectorStore.searchSimilar(queryVector, 5, undefined, query);
+    } catch (error) {
+      Zotero.debug(
+        `[PaperContextService] Globale Orama-Suche fehlgeschlagen: ${error}`,
       );
       return null;
     }
