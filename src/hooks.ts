@@ -5,6 +5,10 @@ import {
   PromptExampleFactory,
   UIExampleFactory,
 } from "./modules/examples";
+import {
+  EMBEDDING_DEFAULT_BASE_URL,
+  EMBEDDING_DEFAULT_MODEL,
+} from "./ai/EmbeddingProvider.js";
 import { getString, initLocale } from "./utils/locale";
 import { registerPreferencesPane } from "./modules/preferences";
 import { registerPrefsScripts } from "./modules/preferenceScript";
@@ -56,12 +60,19 @@ function loadSettings() {
       "sendPaperContextToKisski",
       true,
     ),
+    embeddingSearchEnabled: getBooleanSetting("embeddingSearchEnabled", true),
+    embeddingBaseUrl: getStringSetting(
+      "embeddingBaseUrl",
+      EMBEDDING_DEFAULT_BASE_URL,
+    ),
+    embeddingModel: getStringSetting("embeddingModel", EMBEDDING_DEFAULT_MODEL),
     maxItems: getNumberSetting("maxItems", 20),
     ollamaBaseUrl: getStringSetting("ollamaBaseUrl", "http://localhost:11434"),
     ollamaModel: getStringSetting("ollamaModel", "qwen2.5:3b"),
     autoDeleteOldChats: getBooleanSetting("autoDeleteOldChats", true),
   };
   addon.api.configureAI();
+  addon.api.configureEmbeddings();
 }
 
 async function onStartup() {

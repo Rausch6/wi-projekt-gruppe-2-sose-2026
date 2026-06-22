@@ -59,6 +59,57 @@
     <html:p data-l10n-id="pref-paper-context-cloud-notice"></html:p>
   </vbox>
 
+  <html:section class="zaia-pref-section">
+    <html:h3 data-l10n-id="pref-embedding-section-title"></html:h3>
+  </html:section>
+
+  <vbox>
+    <html:label class="zaia-pref-checkbox">
+      <html:input
+        type="checkbox"
+        id="zotero-prefpane-__addonRef__-embedding-search-enabled"
+        preference="embeddingSearchEnabled"
+      ></html:input>
+      <html:span data-l10n-id="pref-embedding-search-enabled"></html:span>
+    </html:label>
+    <html:p data-l10n-id="pref-embedding-search-notice"></html:p>
+  </vbox>
+
+  <vbox>
+    <html:label
+      for="zotero-prefpane-__addonRef__-embedding-base-url"
+      data-l10n-id="pref-embedding-base-url"
+    ></html:label>
+    <html:input
+      type="url"
+      id="zotero-prefpane-__addonRef__-embedding-base-url"
+      preference="embeddingBaseUrl"
+    ></html:input>
+  </vbox>
+
+  <vbox>
+    <html:label
+      for="zotero-prefpane-__addonRef__-embedding-model"
+      data-l10n-id="pref-embedding-model"
+    ></html:label>
+    <html:input
+      type="text"
+      id="zotero-prefpane-__addonRef__-embedding-model"
+      preference="embeddingModel"
+    ></html:input>
+  </vbox>
+
+  <hbox align="center">
+    <button
+      id="zotero-prefpane-__addonRef__-test-embedding-service"
+      data-l10n-id="pref-test-embedding-service"
+    />
+    <html:span
+      id="zotero-prefpane-__addonRef__-embedding-service-status"
+      class="zaia-pref-status"
+    ></html:span>
+  </hbox>
+
   <vbox>
     <html:label
       for="zotero-prefpane-__addonRef__-max-items"
