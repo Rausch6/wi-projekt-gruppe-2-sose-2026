@@ -10,7 +10,7 @@ import {
 
 export const EMBEDDING_PROVIDER_ID = "local-embeddings";
 export const EMBEDDING_DEFAULT_BASE_URL = "http://localhost:11434";
-export const EMBEDDING_DEFAULT_MODEL = "qwen3-embedding:latest";
+export const EMBEDDING_DEFAULT_MODEL = "embeddinggemma:latest";
 export const EMBEDDING_DEFAULT_TIMEOUT = 120_000;
 
 export class EmbeddingProvider {
@@ -299,7 +299,7 @@ function createOllamaEmbedUrl(baseUrl) {
 
 function shouldUseOllamaEndpoint(baseUrl, model) {
   return (
-    /(^|\/)qwen3-embedding(?::|$)/i.test(model) ||
+    /(^|\/)(?:embeddinggemma)(?::|$)/i.test(model) ||
     /:11434(?:\/|$)/.test(baseUrl)
   );
 }
