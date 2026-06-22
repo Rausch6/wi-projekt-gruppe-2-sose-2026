@@ -108,6 +108,9 @@ export class PaperContextService {
         };
       });
 
+      Zotero.debug(`[PaperContextService] Vektor-Suche für Paper erfolgreich. Folgende Chunks werden genutzt:`);
+      chunks.forEach((c) => Zotero.debug(` -> [${c.id}] (Seite ${c.pageStart}): ${c.text.substring(0, 100)}...`));
+
       return {
         attachmentID: paper.attachmentID,
         chunks,
@@ -171,6 +174,7 @@ export class PaperContextService {
     );
 
     const excerpts = excerptsArray.join("\n\n");
+    Zotero.debug(`[PaperContextService] Globale Vektor-Suche erfolgreich. Folgende Chunks werden an das LLM gesendet:\n${excerpts}`);
 
     return [
       "Du bist ein wissenschaftlicher KI-Assistent für die Literaturverwaltung Zotero.",
