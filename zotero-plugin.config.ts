@@ -1,4 +1,5 @@
 import { defineConfig } from "zotero-plugin-scaffold";
+import path from "node:path";
 import pkg from "./package.json";
 
 export default defineConfig({
@@ -14,7 +15,7 @@ export default defineConfig({
     "https://github.com/{{owner}}/{{repo}}/releases/download/v{{version}}/{{xpiName}}.xpi",
 
   build: {
-    assets: ["addon/**/*.*"],
+    assets: ["addon/**/*.*", "setup/**/*.*"],
     define: {
       ...pkg.config,
       author: pkg.author,
@@ -28,7 +29,7 @@ export default defineConfig({
     },
     esbuildOptions: [
       {
-        entryPoints: ["src/index.ts"],
+        entryPoints: [path.resolve("src/index.ts")],
         define: {
           __env__: `"${process.env.NODE_ENV}"`,
         },

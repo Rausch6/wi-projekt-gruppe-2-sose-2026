@@ -24,16 +24,3 @@ image[src$="LogoPlugin.png"] {
   display: flex;
   gap: 0.5rem;
 }
-
-.zaia-pref-ollama-setup {
-  gap: 0.35rem;
-  margin-block-end: 0.75rem;
-}
-
-.zaia-pref-button-row {
-  gap: 0.5rem;
-}
-
-.zaia-pref-status {
-  min-height: 1.2em;
-}

@@ -8,6 +8,12 @@ import { CreateChatInput, StoredChat } from "../core/chatTypes";
 import { renderMarkdownContent } from "./markdownRenderer";
 import type { LLMProvider } from "../addon";
 import { KISSKI_MODEL_OPTIONS } from "../ai/providers/KisskiProvider.js";
+import {
+  createCheckingProviderConnectionResult,
+  createProviderConnectionResult,
+  type ProviderConnectionResult,
+} from "../ai/providerConnectionStatus";
+import { getString } from "../utils/locale";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const MAX_GENERATED_TITLE_LENGTH = 80;
@@ -83,9 +89,11 @@ const modelOptionsByProvider = new Map<LLMProvider, ModelOption[]>([
   ["kisski", normalizeModelOptions(KISSKI_MODEL_OPTIONS)],
 ]);
 const modelLoadStates = new Map<LLMProvider, ModelLoadState>();
+const providerConnectionRequestIDs = new Map<LLMProvider, number>();
 
 let nextMessageID = 1;
 let nextModelLoadRequestID = 1;
+let nextProviderConnectionRequestID = 1;
 let activeChatID: string | null = null;
 let showAllChats = false;
 let chatSummariesLoaded = false;
@@ -93,6 +101,9 @@ let simulationEnabled = false;
 let requestRunning = false;
 let modelPickerExpanded = false;
 let activeAssistantResponse: ActiveAssistantResponse | null = null;
+let ollamaSetupLaunchRunning = false;
+let ollamaStartRunning = false;
+let ollamaStopRunning = false;
 
 export function bindAssistantChat(host: HTMLElement) {
   hosts.add(host);
@@ -121,10 +132,29 @@ export function bindAssistantChat(host: HTMLElement) {
   const providerButtons = Array.from(
     host.querySelectorAll(".zai-provider-toggle-button[data-provider]"),
   ) as HTMLButtonElement[];
+  const providerCheckButtons = Array.from(
+    host.querySelectorAll(
+      '.zai-provider-setup-button[data-action="check-provider"][data-provider]',
+    ),
+  ) as HTMLButtonElement[];
+  const ollamaSetupLaunchButtons = Array.from(
+    host.querySelectorAll(
+      '.zai-provider-setup-button[data-action="launch-ollama-setup"]',
+    ),
+  ) as HTMLButtonElement[];
+  const ollamaStartButtons = Array.from(
+    host.querySelectorAll(
+      '.zai-provider-setup-button[data-action="start-ollama"]',
+    ),
+  ) as HTMLButtonElement[];
+  const ollamaStopButtons = Array.from(
+    host.querySelectorAll('.zai-stop-ollama-button[data-action="stop-ollama"]'),
+  ) as HTMLButtonElement[];
 
   syncModelPicker(host);
   ensureModelDropdownOutsideHandler(host.ownerDocument);
   void ensureModelOptionsLoaded(getActiveProvider());
+  void ensureProviderConnectionChecked(getActiveProvider());
   if (!activeChatID) invalidateChatSummaries();
   renderHost(host);
   void refreshChatSummaries(true).catch((error) => {
@@ -134,7 +164,7 @@ export function bindAssistantChat(host: HTMLElement) {
   const sendCurrentPrompt = () => {
     hosts.add(host);
     const prompt = textarea?.value.trim() ?? "";
-    if (!prompt || requestRunning) return;
+    if (!prompt || requestRunning || !isActiveProviderReady()) return;
 
     if (textarea) textarea.value = "";
     void sendChatPrompt(prompt).catch(() => {
@@ -215,6 +245,33 @@ export function bindAssistantChat(host: HTMLElement) {
       setActiveProvider(getProviderButtonValue(providerButton));
     });
   }
+  for (const providerCheckButton of providerCheckButtons) {
+    providerCheckButton.addEventListener("click", () => {
+      hosts.add(host);
+      void checkProviderConnection(
+        getProviderButtonValue(providerCheckButton),
+        true,
+      );
+    });
+  }
+  for (const ollamaSetupLaunchButton of ollamaSetupLaunchButtons) {
+    ollamaSetupLaunchButton.addEventListener("click", () => {
+      hosts.add(host);
+      void launchOllamaSetup();
+    });
+  }
+  for (const ollamaStartButton of ollamaStartButtons) {
+    ollamaStartButton.addEventListener("click", () => {
+      hosts.add(host);
+      void startOllama();
+    });
+  }
+  for (const ollamaStopButton of ollamaStopButtons) {
+    ollamaStopButton.addEventListener("click", () => {
+      hosts.add(host);
+      void stopOllama();
+    });
+  }
   modelButton?.addEventListener("click", () => {
     if (!modelDropdown) return;
 
@@ -250,6 +307,9 @@ export async function sendChatPrompt(prompt: string) {
   const content = prompt.trim();
   if (!content) {
     throw new Error("Der Prompt darf nicht leer sein.");
+  }
+  if (!isActiveProviderReady()) {
+    throw new Error(getString("sidebar-active-provider-not-connected-error"));
   }
 
   const chat = await ensureActiveChat(content);
@@ -518,6 +578,12 @@ async function requestBufferedAssistantResponse(
 
 function getActiveProvider(): LLMProvider {
   return addon.data.settings.provider === "ollama" ? "ollama" : "kisski";
+}
+
+function isActiveProviderReady() {
+  return isProviderConnectionReady(
+    addon.data.runtime.providerConnections[getActiveProvider()],
+  );
 }
 
 function getActiveModel(provider: LLMProvider = getActiveProvider()) {
@@ -946,7 +1012,19 @@ function renderHost(host: HTMLElement) {
   const welcome = host.querySelector<HTMLElement>(".zai-welcome");
   const messageList = host.querySelector<HTMLElement>(".zai-messages");
   const chatList = host.querySelector<HTMLElement>(".zai-chat-list");
+  const chatListActions = host.querySelector<HTMLElement>(
+    ".zai-chat-list-actions",
+  );
   const seeAll = host.querySelector<HTMLButtonElement>(".zai-see-all");
+  const stopOllamaButtons = Array.from(
+    host.querySelectorAll(".zai-stop-ollama-button"),
+  ) as HTMLButtonElement[];
+  const chatListStopOllamaButton = host.querySelector<HTMLButtonElement>(
+    ".zai-chat-list-stop-ollama-button",
+  );
+  const activeChatStopOllamaButton = host.querySelector<HTMLButtonElement>(
+    ".zai-active-chat-stop-ollama-button",
+  );
   const activeChatBar = host.querySelector<HTMLElement>(".zai-active-chat-bar");
   const activeChatTitle = host.querySelector<HTMLElement>(
     ".zai-active-chat-title",
@@ -960,21 +1038,43 @@ function renderHost(host: HTMLElement) {
   const deleteButton = host.querySelector<HTMLButtonElement>(
     ".zai-chat-delete-button",
   );
+  const actionButtons = Array.from(
+    host.querySelectorAll(".zai-action-pill"),
+  ) as HTMLButtonElement[];
   const sendButton = host.querySelector<HTMLButtonElement>(".zai-send-button");
   const textarea = host.querySelector<HTMLTextAreaElement>(".zai-input");
   const status = host.querySelector<HTMLElement>(".zai-chat-status");
 
   if (!main || !messageList) return;
 
-  const showWelcome = !activeChatID;
-  const showChat = !showWelcome;
+  const activeProvider = getActiveProvider();
+  const providerConnection =
+    addon.data.runtime.providerConnections[activeProvider];
+  const providerReady = isProviderConnectionReady(providerConnection);
+  const showProviderSetup = shouldShowProviderSetup(providerConnection);
+  const showWelcome = !activeChatID && !showProviderSetup;
+  const showChat = !showWelcome && !showProviderSetup;
   top?.classList.toggle("zai-top-chat-active", showChat);
-  main.classList.toggle("zai-main-empty", showWelcome);
+  main.classList.toggle("zai-main-empty", showWelcome || showProviderSetup);
   main.classList.toggle("zai-main-chat-active", showChat);
   welcome?.toggleAttribute("hidden", !showWelcome);
-  messageList.toggleAttribute("hidden", showWelcome);
+  syncProviderSetup(host, activeProvider, providerConnection);
+  messageList.toggleAttribute("hidden", !showChat);
   chatList?.toggleAttribute("hidden", !showWelcome);
-  seeAll?.toggleAttribute("hidden", !showWelcome || chatSummaries.length <= 3);
+  const showSeeAll = showWelcome && chatSummaries.length > 3;
+  const canStopOllama = activeProvider === "ollama" && providerReady;
+  const showChatListStopOllama = showWelcome && canStopOllama;
+  const showActiveChatStopOllama = showChat && canStopOllama;
+  chatListActions?.toggleAttribute(
+    "hidden",
+    !showSeeAll && !showChatListStopOllama,
+  );
+  seeAll?.toggleAttribute("hidden", !showSeeAll);
+  chatListStopOllamaButton?.toggleAttribute("hidden", !showChatListStopOllama);
+  activeChatStopOllamaButton?.toggleAttribute(
+    "hidden",
+    !showActiveChatStopOllama,
+  );
   activeChatBar?.toggleAttribute("hidden", !showChat);
 
   if (activeChatTitle) {
@@ -1003,6 +1103,17 @@ function renderHost(host: HTMLElement) {
   if (seeAll) {
     seeAll.textContent = showAllChats ? "Weniger anzeigen" : "Alle ansehen";
   }
+  for (const stopOllamaButton of stopOllamaButtons) {
+    const label = ollamaStopRunning
+      ? getString("sidebar-stopping-ollama")
+      : getString("sidebar-stop-ollama");
+    stopOllamaButton.disabled = ollamaStopRunning;
+    stopOllamaButton.setAttribute("aria-label", label);
+    stopOllamaButton.setAttribute("title", label);
+  }
+  for (const actionButton of actionButtons) {
+    actionButton.disabled = requestRunning || !providerReady;
+  }
 
   if (chatList && showWelcome) renderChatList(host, chatList);
 
@@ -1016,23 +1127,173 @@ function renderHost(host: HTMLElement) {
     messageList.append(createActivityElement(host, activeActivity));
   }
 
-  if (sendButton) sendButton.disabled = requestRunning;
-  if (textarea) textarea.disabled = requestRunning;
+  if (sendButton) sendButton.disabled = requestRunning || !providerReady;
+  if (textarea) textarea.disabled = requestRunning || !providerReady;
 
   if (status) {
-    const statusText = simulationEnabled
-      ? pendingSimulationPrompts.length
-        ? `Simulation: ${pendingSimulationPrompts.length} Antwort(en) ausstehend`
-        : "Simulation aktiv"
-      : requestRunning
-        ? "ZAIA antwortet"
-        : "";
+    const statusText = getComposerStatusText(providerReady);
     status.textContent = statusText;
     status.toggleAttribute("hidden", !statusText);
     status.classList.toggle("zai-chat-status-simulation", simulationEnabled);
   }
 
   main.scrollTop = showWelcome ? 0 : main.scrollHeight;
+}
+
+function shouldShowProviderSetup(
+  connection: ProviderConnectionResult | undefined,
+) {
+  return !isProviderConnectionReady(connection);
+}
+
+function isProviderConnectionReady(
+  connection: ProviderConnectionResult | undefined,
+) {
+  return connection?.status === "ready";
+}
+
+function getComposerStatusText(providerReady: boolean) {
+  if (!providerReady) return getString("sidebar-provider-not-connected");
+  if (simulationEnabled) {
+    return pendingSimulationPrompts.length
+      ? `Simulation: ${pendingSimulationPrompts.length} Antwort(en) ausstehend`
+      : "Simulation aktiv";
+  }
+  return requestRunning ? "ZAIA antwortet" : "";
+}
+
+function syncProviderSetup(
+  host: HTMLElement,
+  provider: LLMProvider,
+  connection: ProviderConnectionResult | undefined,
+) {
+  const setup = host.querySelector<HTMLElement>(".zai-provider-setup");
+  if (!setup) return;
+
+  const showSetup = shouldShowProviderSetup(connection);
+  setup.toggleAttribute("hidden", !showSetup);
+
+  setup
+    .querySelectorAll<HTMLElement>(".zai-provider-setup-panel[data-provider]")
+    .forEach((panel) => {
+      panel.toggleAttribute(
+        "hidden",
+        !showSetup || panel.dataset.provider !== provider,
+      );
+    });
+
+  setup
+    .querySelectorAll<HTMLButtonElement>(
+      '.zai-provider-setup-button[data-action="check-provider"]',
+    )
+    .forEach((button) => {
+      const isActiveProvider = button.dataset.provider === provider;
+      const isChecking = isActiveProvider && connection?.status === "checking";
+      button.disabled = isChecking;
+      button.textContent = isChecking
+        ? getString("sidebar-checking-provider")
+        : getString("sidebar-check-provider");
+    });
+
+  setup
+    .querySelectorAll<HTMLButtonElement>(
+      '.zai-provider-setup-button[data-action="launch-ollama-setup"]',
+    )
+    .forEach((button) => {
+      const isActiveProvider = provider === "ollama";
+      button.disabled = !isActiveProvider || ollamaSetupLaunchRunning;
+      button.textContent = ollamaSetupLaunchRunning
+        ? getString("sidebar-launching-ollama-setup")
+        : getString("sidebar-launch-ollama-setup");
+    });
+
+  setup
+    .querySelectorAll<HTMLButtonElement>(
+      '.zai-provider-setup-button[data-action="start-ollama"]',
+    )
+    .forEach((button) => {
+      const isActiveProvider = provider === "ollama";
+      button.disabled = !isActiveProvider || ollamaStartRunning;
+      button.textContent = ollamaStartRunning
+        ? getString("sidebar-starting-ollama")
+        : getString("sidebar-start-ollama");
+    });
+
+  setup
+    .querySelectorAll<HTMLElement>(".zai-provider-setup-status[data-provider]")
+    .forEach((status) => {
+      const isActiveProvider = status.dataset.provider === provider;
+      const text =
+        showSetup && isActiveProvider
+          ? getProviderConnectionStatusText(provider, connection)
+          : "";
+      status.textContent = text;
+      status.toggleAttribute("hidden", !text);
+    });
+}
+
+function getProviderConnectionStatusText(
+  provider: LLMProvider,
+  connection: ProviderConnectionResult | undefined,
+) {
+  if (provider === "ollama" && ollamaStopRunning) {
+    return getString("sidebar-stopping-ollama");
+  }
+  if (provider === "ollama" && ollamaStartRunning) {
+    return getString("sidebar-starting-ollama");
+  }
+  if (provider === "ollama" && ollamaSetupLaunchRunning) {
+    return getString("sidebar-launching-ollama-setup");
+  }
+  if (!connection) return getString("sidebar-connection-not-checked");
+  if (connection.status === "checking") {
+    return getString("sidebar-checking-provider");
+  }
+  if (connection.status === "ready") return "";
+
+  if (connection.status === "missing-config") {
+    if (connection.issue === "api-key-missing") {
+      return getString("sidebar-cloud-api-key-missing");
+    }
+    if (connection.issue === "base-url-missing") {
+      return getString("sidebar-base-url-missing");
+    }
+    if (connection.issue === "model-missing") {
+      return getString("sidebar-model-missing");
+    }
+    return provider === "ollama"
+      ? getString("sidebar-local-config-incomplete")
+      : getString("sidebar-cloud-config-incomplete");
+  }
+
+  if (connection.status === "missing-model") {
+    return provider === "ollama"
+      ? getString("sidebar-local-model-not-installed", {
+          args: { model: connection.model ?? "" },
+        })
+      : getString("sidebar-cloud-model-not-available", {
+          args: { model: connection.model ?? "" },
+        });
+  }
+
+  if (connection.status === "unreachable") {
+    return provider === "ollama"
+      ? getString("sidebar-local-unreachable")
+      : getString("sidebar-cloud-unreachable");
+  }
+
+  if (connection.status === "error") {
+    if (connection.issue === "unknown-error" && connection.message) {
+      return connection.message;
+    }
+    return provider === "ollama"
+      ? getString("sidebar-local-invalid-response")
+      : getString("sidebar-cloud-invalid-response");
+  }
+
+  if (connection.message) return connection.message;
+
+  return getString("sidebar-connection-check-failed");
 }
 
 function createMessageElement(
@@ -1233,6 +1494,144 @@ function setActiveProvider(provider: LLMProvider) {
 
   syncAllModelPickers();
   void ensureModelOptionsLoaded(provider);
+  void checkProviderConnection(provider, true);
+}
+
+function ensureProviderConnectionChecked(provider: LLMProvider) {
+  const connection = addon.data.runtime.providerConnections[provider];
+  if (connection) {
+    renderAllHosts();
+    return;
+  }
+
+  void checkProviderConnection(provider, false);
+}
+
+async function checkProviderConnection(provider: LLMProvider, force: boolean) {
+  const currentConnection = addon.data.runtime.providerConnections[provider];
+  if (!force && currentConnection) return currentConnection;
+
+  const requestID = nextProviderConnectionRequestID++;
+  providerConnectionRequestIDs.set(provider, requestID);
+  addon.data.runtime.providerConnections[provider] =
+    createCheckingProviderConnectionResult(provider);
+  renderAllHosts();
+
+  try {
+    const result = await addon.api.checkProviderConnection(provider);
+    if (providerConnectionRequestIDs.get(provider) !== requestID) {
+      return result;
+    }
+
+    addon.data.runtime.providerConnections[provider] = result;
+    if (result.ok) {
+      void ensureModelOptionsLoaded(provider, true);
+    }
+    return result;
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+    return addon.data.runtime.providerConnections[provider];
+  } finally {
+    renderAllHosts();
+  }
+}
+
+async function launchOllamaSetup() {
+  if (ollamaSetupLaunchRunning) return;
+
+  ollamaSetupLaunchRunning = true;
+  renderAllHosts();
+
+  try {
+    await addon.api.launchOllamaSetup();
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+    const currentConnection = addon.data.runtime.providerConnections.ollama;
+    addon.data.runtime.providerConnections.ollama = {
+      ...(currentConnection ??
+        createProviderConnectionResult("ollama", "error")),
+      status: "error",
+      ok: false,
+      issue: "unknown-error",
+      error: error instanceof Error ? error.message : String(error),
+      message: getString("sidebar-launch-ollama-setup-failed"),
+    };
+  } finally {
+    ollamaSetupLaunchRunning = false;
+    renderAllHosts();
+  }
+}
+
+async function startOllama() {
+  if (ollamaStartRunning) return;
+
+  ollamaStartRunning = true;
+  renderAllHosts();
+
+  try {
+    await addon.api.startOllama();
+    await waitForOllamaConnection();
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+    const currentConnection = addon.data.runtime.providerConnections.ollama;
+    addon.data.runtime.providerConnections.ollama = {
+      ...(currentConnection ??
+        createProviderConnectionResult("ollama", "error")),
+      status: "error",
+      ok: false,
+      issue: "unknown-error",
+      error: error instanceof Error ? error.message : String(error),
+      message: getString("sidebar-start-ollama-failed"),
+    };
+  } finally {
+    ollamaStartRunning = false;
+    renderAllHosts();
+  }
+}
+
+async function stopOllama() {
+  if (ollamaStopRunning) return;
+
+  ollamaStopRunning = true;
+  renderAllHosts();
+
+  try {
+    await addon.api.stopOllama();
+    await delay(1_000);
+    await checkProviderConnection("ollama", true);
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+    const currentConnection = addon.data.runtime.providerConnections.ollama;
+    addon.data.runtime.providerConnections.ollama = {
+      ...(currentConnection ??
+        createProviderConnectionResult("ollama", "error")),
+      status: "error",
+      ok: false,
+      issue: "unknown-error",
+      error: error instanceof Error ? error.message : String(error),
+      message: getString("sidebar-stop-ollama-failed"),
+    };
+  } finally {
+    ollamaStopRunning = false;
+    renderAllHosts();
+  }
+}
+
+async function waitForOllamaConnection() {
+  const timeoutAt = Date.now() + 12_000;
+  let result: ProviderConnectionResult | undefined;
+
+  do {
+    result = await checkProviderConnection("ollama", true);
+    if (result && result.status !== "unreachable") return result;
+    await delay(1_000);
+  } while (Date.now() < timeoutAt);
+
+  return result;
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function ensureModelOptionsLoaded(provider: LLMProvider, force = false) {
