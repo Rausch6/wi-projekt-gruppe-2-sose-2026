@@ -17,6 +17,7 @@ import {
 import { getString } from "../utils/locale";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
+const SVG_NS = "http://www.w3.org/2000/svg";
 const MAX_GENERATED_TITLE_LENGTH = 80;
 const TITLE_GENERATION_SYSTEM_PROMPT =
   "Erstelle einen knappen, natürlichen Chat-Titel auf der Sprache der ersten Nachricht des Nutzers.\n\n" +
@@ -100,6 +101,8 @@ let showAllChats = false;
 let chatSummariesLoaded = false;
 let simulationEnabled = false;
 let requestRunning = false;
+let activeChatRequestID = 0;
+let activeChatCancelRequested = false;
 let modelPickerExpanded = false;
 let activeAssistantResponse: ActiveAssistantResponse | null = null;
 let ollamaSetupLaunchRunning = false;
@@ -173,7 +176,14 @@ export function bindAssistantChat(host: HTMLElement) {
     });
   };
 
-  sendButton?.addEventListener("click", sendCurrentPrompt);
+  sendButton?.addEventListener("click", () => {
+    if (requestRunning) {
+      cancelActiveAssistantResponse();
+      return;
+    }
+
+    sendCurrentPrompt();
+  });
   chatList?.addEventListener("click", (event) => {
     const button = (event.target as Element | null)?.closest<HTMLButtonElement>(
       ".zai-chat-entry[data-chat-id]",
@@ -340,6 +350,8 @@ export async function sendChatPrompt(prompt: string) {
     return userMessage;
   }
 
+  const requestID = ++activeChatRequestID;
+  activeChatCancelRequested = false;
   requestRunning = true;
   renderAllHosts();
 
@@ -359,7 +371,12 @@ export async function sendChatPrompt(prompt: string) {
   try {
     const assistantMessage = await requestAssistantResponse(
       await createRequestMessages(content),
+      requestID,
     );
+
+    if (!assistantMessage) {
+      return userMessage;
+    }
 
     if (!assistantMessage.content.trim()) {
       throw new Error("ZAIA hat keine Textantwort zurückgegeben.");
@@ -369,6 +386,10 @@ export async function sendChatPrompt(prompt: string) {
     await refreshChatSummaries(false);
     return assistantMessage;
   } catch (error) {
+    if (isActiveChatRequestCancelled(requestID)) {
+      return userMessage;
+    }
+
     finalizeActiveAssistantMessage();
     const message = error instanceof Error ? error.message : String(error);
     requestRunning = false;
@@ -376,9 +397,12 @@ export async function sendChatPrompt(prompt: string) {
     appendMessage("error", `Anfrage fehlgeschlagen: ${message}`);
     throw error;
   } finally {
-    requestRunning = false;
-    activeAssistantResponse = null;
-    renderAllHosts();
+    if (requestID === activeChatRequestID) {
+      requestRunning = false;
+      activeChatCancelRequested = false;
+      activeAssistantResponse = null;
+      renderAllHosts();
+    }
   }
 }
 
@@ -492,6 +516,18 @@ function returnToWelcome() {
   });
 }
 
+function cancelActiveAssistantResponse() {
+  if (!requestRunning || activeChatCancelRequested) return;
+
+  activeChatCancelRequested = true;
+  finalizeActiveAssistantMessage();
+  renderAllHosts();
+}
+
+function isActiveChatRequestCancelled(requestID: number) {
+  return requestID === activeChatRequestID && activeChatCancelRequested;
+}
+
 async function refreshChatSummaries(render = true) {
   try {
     const chats = await ChatRepository.listChats();
@@ -511,26 +547,33 @@ function invalidateChatSummaries() {
   chatSummaries.length = 0;
 }
 
-async function requestAssistantResponse(requestMessages: RequestMessage[]) {
+async function requestAssistantResponse(
+  requestMessages: RequestMessage[],
+  requestID: number,
+) {
   if (typeof addon.api.ai.chatStream === "function") {
     try {
-      return await requestStreamingAssistantResponse(requestMessages);
+      return await requestStreamingAssistantResponse(
+        requestMessages,
+        requestID,
+      );
     } catch (error) {
       if (
         !activeAssistantResponse?.assistantMessage &&
         shouldFallbackToBufferedChat(error)
       ) {
-        return requestBufferedAssistantResponse(requestMessages);
+        return requestBufferedAssistantResponse(requestMessages, requestID);
       }
       throw error;
     }
   }
 
-  return requestBufferedAssistantResponse(requestMessages);
+  return requestBufferedAssistantResponse(requestMessages, requestID);
 }
 
 async function requestStreamingAssistantResponse(
   requestMessages: RequestMessage[],
+  requestID: number,
 ) {
   let assistantMessage: AssistantChatMessage | null = null;
 
@@ -538,6 +581,7 @@ async function requestStreamingAssistantResponse(
     providerId: getActiveProvider(),
     model: getActiveModel(),
   }) as AsyncIterable<{ type?: unknown; content?: unknown }>) {
+    if (isActiveChatRequestCancelled(requestID)) break;
     if (!event || typeof event !== "object") continue;
 
     if (event.type === "reasoning") {
@@ -558,16 +602,22 @@ async function requestStreamingAssistantResponse(
     if (event.type === "done") break;
   }
 
-  return finalizeActiveAssistantMessage() ?? assistantMessage ?? failNoAnswer();
+  const finalMessage = finalizeActiveAssistantMessage() ?? assistantMessage;
+  if (isActiveChatRequestCancelled(requestID)) return finalMessage;
+
+  return finalMessage ?? failNoAnswer();
 }
 
 async function requestBufferedAssistantResponse(
   requestMessages: RequestMessage[],
+  requestID: number,
 ) {
   const result = (await addon.api.ai.chat(requestMessages, {
     providerId: getActiveProvider(),
     model: getActiveModel(),
   })) as { content?: unknown };
+
+  if (isActiveChatRequestCancelled(requestID)) return null;
 
   if (typeof result?.content !== "string" || !result.content.trim()) {
     throw new Error("ZAIA hat keine Textantwort zurückgegeben.");
@@ -726,6 +776,7 @@ function getVisibleActivity() {
   const activeResponse = activeAssistantResponse;
   if (
     !requestRunning ||
+    activeChatCancelRequested ||
     !activeResponse ||
     activeResponse.assistantMessage?.content.trim()
   ) {
@@ -1040,9 +1091,6 @@ function renderHost(host: HTMLElement) {
   const deleteButton = host.querySelector<HTMLButtonElement>(
     ".zai-chat-delete-button",
   );
-  const actionButtons = Array.from(
-    host.querySelectorAll(".zai-action-pill"),
-  ) as HTMLButtonElement[];
   const sendButton = host.querySelector<HTMLButtonElement>(".zai-send-button");
   const textarea = host.querySelector<HTMLTextAreaElement>(".zai-input");
   const status = host.querySelector<HTMLElement>(".zai-chat-status");
@@ -1113,10 +1161,6 @@ function renderHost(host: HTMLElement) {
     stopOllamaButton.setAttribute("aria-label", label);
     stopOllamaButton.setAttribute("title", label);
   }
-  for (const actionButton of actionButtons) {
-    actionButton.disabled = requestRunning || !providerReady;
-  }
-
   if (chatList && showWelcome) renderChatList(host, chatList);
 
   const renderedMessages = messages
@@ -1129,7 +1173,7 @@ function renderHost(host: HTMLElement) {
     messageList.append(createActivityElement(host, activeActivity));
   }
 
-  if (sendButton) sendButton.disabled = requestRunning || !providerReady;
+  if (sendButton) syncSendButton(sendButton, providerReady);
   if (textarea) textarea.disabled = requestRunning || !providerReady;
 
   if (status) {
@@ -1161,7 +1205,26 @@ function getComposerStatusText(providerReady: boolean) {
       ? `Simulation: ${pendingSimulationPrompts.length} Antwort(en) ausstehend`
       : "Simulation aktiv";
   }
+  if (requestRunning && activeChatCancelRequested) return "Stoppe Antwort...";
   return requestRunning ? "ZAIA antwortet" : "";
+}
+
+function syncSendButton(button: HTMLButtonElement, providerReady: boolean) {
+  const doc = button.ownerDocument;
+  const isStopping = requestRunning && activeChatCancelRequested;
+  const label = isStopping
+    ? "Antwort wird gestoppt"
+    : requestRunning
+      ? "Antwort stoppen"
+      : "Nachricht senden";
+
+  button.disabled = !providerReady || isStopping;
+  button.classList.toggle("zai-send-button-stop", requestRunning);
+  button.setAttribute("aria-label", label);
+  button.setAttribute("title", label);
+  button.replaceChildren(
+    requestRunning ? createStopSquareIcon(doc) : createSendArrowIcon(doc),
+  );
 }
 
 function syncProviderSetup(
@@ -1310,7 +1373,10 @@ function createMessageElement(
   }
 
   const doc = host.ownerDocument!;
+  const row = doc.createElementNS(HTML_NS, "div") as HTMLElement;
   const wrapper = doc.createElementNS(HTML_NS, "article") as HTMLElement;
+
+  row.className = `zai-message-row zai-message-row-${message.role}`;
   wrapper.className = `zai-message zai-message-${message.role}`;
 
   const label = doc.createElementNS(HTML_NS, "strong") as HTMLElement;
@@ -1330,8 +1396,222 @@ function createMessageElement(
     content.textContent = message.content;
   }
 
-  wrapper.append(label, content);
-  return wrapper;
+  wrapper.append(label, content, createMessageCopyActions(host, message));
+  row.append(wrapper);
+  return row;
+}
+
+function createMessageCopyActions(
+  host: HTMLElement,
+  message: AssistantChatMessage,
+) {
+  const doc = host.ownerDocument!;
+  const actions = doc.createElementNS(HTML_NS, "div") as HTMLElement;
+  const copyButton = doc.createElementNS(
+    HTML_NS,
+    "button",
+  ) as HTMLButtonElement;
+
+  actions.className = "zai-message-actions";
+  copyButton.className = "zai-chat-action-button zai-message-copy-button";
+  copyButton.type = "button";
+  copyButton.setAttribute("aria-label", "Nachricht kopieren");
+  copyButton.setAttribute("title", "Nachricht kopieren");
+
+  copyButton.append(createCopyIcon(doc));
+  copyButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    void copyMessageToClipboard(host, message.content, copyButton);
+  });
+
+  actions.append(copyButton);
+  return actions;
+}
+
+async function copyMessageToClipboard(
+  host: HTMLElement,
+  text: string,
+  button: HTMLButtonElement,
+) {
+  try {
+    await writeTextToClipboard(host, text);
+    setCopyButtonState(host, button, "Nachricht kopiert", true);
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+    setCopyButtonState(
+      host,
+      button,
+      "Nachricht konnte nicht kopiert werden",
+      false,
+    );
+  }
+}
+
+async function writeTextToClipboard(host: HTMLElement, text: string) {
+  const win = host.ownerDocument?.defaultView;
+  const clipboard = win?.navigator?.clipboard;
+  let clipboardError: unknown = null;
+
+  if (typeof clipboard?.writeText === "function") {
+    try {
+      await clipboard.writeText(text);
+      return;
+    } catch (error) {
+      clipboardError = error;
+    }
+  }
+
+  if (copyTextWithClipboardHelper(text)) return;
+  if (copyTextWithSelectionFallback(host, text)) return;
+
+  throw clipboardError ?? new Error("Clipboard API nicht verfügbar.");
+}
+
+function copyTextWithClipboardHelper(text: string) {
+  try {
+    Components.classes["@mozilla.org/widget/clipboardhelper;1"]
+      .getService(Components.interfaces.nsIClipboardHelper)
+      .copyString(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function copyTextWithSelectionFallback(host: HTMLElement, text: string) {
+  const doc = host.ownerDocument;
+  const textarea = doc.createElementNS(
+    HTML_NS,
+    "textarea",
+  ) as HTMLTextAreaElement;
+
+  textarea.value = text;
+  textarea.readOnly = true;
+  textarea.setAttribute("aria-hidden", "true");
+  textarea.style.left = "-9999px";
+  textarea.style.opacity = "0";
+  textarea.style.position = "fixed";
+  textarea.style.top = "0";
+
+  host.append(textarea);
+  textarea.focus();
+  textarea.select();
+
+  try {
+    return typeof doc.execCommand === "function" && doc.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+  }
+}
+
+function setCopyButtonState(
+  host: HTMLElement,
+  button: HTMLButtonElement,
+  ariaLabel: string,
+  copied: boolean,
+) {
+  const win = host.ownerDocument.defaultView;
+  const actions = button.closest(".zai-message-actions");
+
+  actions?.classList.add("zai-message-actions-active");
+  button.classList.add("zai-message-copy-button-active");
+  button.classList.toggle("zai-message-copy-button-copied", copied);
+  button.setAttribute("aria-label", ariaLabel);
+  button.setAttribute("title", ariaLabel);
+  if (copied) {
+    button.replaceChildren(createCheckIcon(button.ownerDocument));
+  }
+
+  win?.setTimeout(() => {
+    if (!button.isConnected) return;
+
+    button.classList.remove("zai-message-copy-button-active");
+    button.classList.remove("zai-message-copy-button-copied");
+    actions?.classList.remove("zai-message-actions-active");
+    button.setAttribute("aria-label", "Nachricht kopieren");
+    button.setAttribute("title", "Nachricht kopieren");
+    button.replaceChildren(createCopyIcon(button.ownerDocument));
+  }, 1200);
+}
+
+function createCopyIcon(doc: Document) {
+  const svg = doc.createElementNS(SVG_NS, "svg");
+  const rectBack = doc.createElementNS(SVG_NS, "rect");
+  const rectFront = doc.createElementNS(SVG_NS, "rect");
+
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  rectBack.setAttribute("x", "8");
+  rectBack.setAttribute("y", "7");
+  rectBack.setAttribute("width", "10");
+  rectBack.setAttribute("height", "12");
+  rectBack.setAttribute("rx", "2");
+  rectFront.setAttribute("x", "5");
+  rectFront.setAttribute("y", "4");
+  rectFront.setAttribute("width", "10");
+  rectFront.setAttribute("height", "12");
+  rectFront.setAttribute("rx", "2");
+  svg.append(rectBack, rectFront);
+
+  return svg;
+}
+
+function createCheckIcon(doc: Document) {
+  const svg = doc.createElementNS(SVG_NS, "svg");
+  const path = doc.createElementNS(SVG_NS, "path");
+
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  path.setAttribute("d", "M5 12.5l4.3 4.2L19 7.3");
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke-linecap", "round");
+  path.setAttribute("stroke-linejoin", "round");
+  svg.append(path);
+
+  return svg;
+}
+
+function createSendArrowIcon(doc: Document) {
+  const svg = createIconSvg(doc, "20");
+  const line = doc.createElementNS(SVG_NS, "path");
+  const arrow = doc.createElementNS(SVG_NS, "path");
+
+  line.setAttribute("d", "M12 19V5");
+  arrow.setAttribute("d", "m5 12 7-7 7 7");
+  svg.append(line, arrow);
+
+  return svg;
+}
+
+function createStopSquareIcon(doc: Document) {
+  const svg = createIconSvg(doc, "22");
+  const square = doc.createElementNS(SVG_NS, "rect");
+
+  square.setAttribute("x", "6");
+  square.setAttribute("y", "6");
+  square.setAttribute("width", "12");
+  square.setAttribute("height", "12");
+  square.setAttribute("rx", "1.5");
+  svg.append(square);
+
+  return svg;
+}
+
+function createIconSvg(doc: Document, size: string) {
+  const svg = doc.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", size);
+  svg.setAttribute("height", size);
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  return svg;
 }
 
 function createActivityElement(host: HTMLElement, text: string) {
