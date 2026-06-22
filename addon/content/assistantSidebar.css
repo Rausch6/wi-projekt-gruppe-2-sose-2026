@@ -463,7 +463,6 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
 .zai-chat-entry,
 .zai-see-all,
 .zai-chat-list-icon-button,
-.zai-action-pill,
 .zai-send-button {
   appearance: none;
   border-radius: 6px;
@@ -721,13 +720,34 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   gap: 10px;
 }
 
+.zai-message-row {
+  box-sizing: border-box;
+  display: grid;
+  max-width: 92%;
+  min-width: 0;
+}
+
+.zai-message-row-user {
+  justify-items: end;
+  justify-self: end;
+}
+
+.zai-message-row-assistant,
+.zai-message-row-error {
+  justify-items: start;
+  justify-self: start;
+}
+
 .zai-message {
   border-radius: 10px;
   box-sizing: border-box;
   font-size: 13px;
   line-height: 1.45;
-  max-width: 92%;
+  max-width: 100%;
   padding: 9px 11px;
+  position: relative;
+  -moz-user-select: text;
+  user-select: text;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -735,20 +755,17 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
 .zai-message-user {
   background: var(--accent-blue, #2563eb);
   color: #fff;
-  justify-self: end;
 }
 
 .zai-message-assistant {
   background: color-mix(in srgb, currentColor 7%, transparent);
   border: 1px solid var(--border-color, rgba(0, 0, 0, 0.12));
-  justify-self: start;
 }
 
 .zai-message-error {
   background: color-mix(in srgb, #dc2626 12%, transparent);
   border: 1px solid color-mix(in srgb, #dc2626 35%, transparent);
   color: var(--text-primary, inherit);
-  justify-self: start;
 }
 
 .zai-activity-line {
@@ -783,7 +800,43 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
 }
 
 .zai-message-content {
+  -moz-user-select: text;
+  user-select: text;
   white-space: pre-wrap;
+}
+
+.zai-message-actions {
+  display: flex;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  transition: opacity 120ms ease;
+  -moz-user-select: none;
+  user-select: none;
+}
+
+.zai-message:hover .zai-message-actions,
+.zai-message:focus-within .zai-message-actions,
+.zai-message-actions-active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.zai-message-copy-button {
+  -moz-context-properties: fill, stroke;
+  background: transparent;
+  fill: none;
+  stroke: currentColor;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.zai-message-copy-button:hover,
+.zai-message-copy-button:focus-visible,
+.zai-message-copy-button.zai-message-copy-button-active {
+  background: transparent;
 }
 
 .zai-message-assistant .zai-message-content {
@@ -961,27 +1014,8 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   padding: 12px;
 }
 
-.zai-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-
-.zai-action-pill {
-  background: color-mix(in srgb, currentColor 6%, transparent);
-  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.12));
-  box-sizing: border-box;
-  color: inherit;
-  max-width: 100%;
-  min-height: 28px;
-  overflow: hidden;
-  padding: 4px 8px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .zai-composer {
+  background: color-mix(in srgb, currentColor 6%, transparent);
   border: 1px solid var(--border-color, rgba(0, 0, 0, 0.14));
   border-radius: 8px;
   box-sizing: border-box;
@@ -1196,21 +1230,29 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
 
 .zai-send-button {
   align-items: center;
-  background: var(--accent-blue, #2563eb);
-  border: 1px solid transparent;
-  color: #fff;
+  -moz-appearance: none;
+  appearance: none;
+  aspect-ratio: 1 / 1;
+  background: #fff;
+  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.14));
+  box-sizing: border-box;
+  color: var(--text-primary, #1f2933);
   display: inline-flex;
-  height: 32px;
+  flex: 0 0 38px;
+  height: 38px;
   justify-content: center;
-  min-width: 36px;
-  padding: 0 8px;
+  max-height: 38px;
+  max-width: 38px;
+  min-height: 38px;
+  min-width: 38px;
+  padding: 0;
   position: absolute;
   right: 8px;
   bottom: 8px;
+  width: 38px;
 }
 
 .zai-send-button:disabled,
-.zai-action-pill:disabled,
 .zai-input:disabled {
   cursor: wait;
   opacity: 0.6;
@@ -1218,5 +1260,5 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
 
 .zai-send-button:hover,
 .zai-send-button:focus-visible {
-  background: color-mix(in srgb, var(--accent-blue, #2563eb) 85%, #000);
+  background: #fff;
 }

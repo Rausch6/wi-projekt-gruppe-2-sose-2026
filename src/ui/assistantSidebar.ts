@@ -155,11 +155,6 @@ function createSidebar(doc: Document, options: AssistantSidebarRenderOptions) {
   main.append(welcome, providerSetup, messages);
 
   const footer = createHtmlElement(doc, "footer", "zai-footer");
-  const actions = createHtmlElement(doc, "div", "zai-actions");
-  ["Tags suchen", "Autor suchen", "Abstract lesen"].forEach((label) => {
-    actions.append(createButton(doc, "zai-action-pill", label));
-  });
-
   const composer = createHtmlElement(doc, "div", "zai-composer");
   const textarea = createHtmlElement(
     doc,
@@ -176,7 +171,7 @@ function createSidebar(doc: Document, options: AssistantSidebarRenderOptions) {
   sendButton.append(createSendIcon(doc));
 
   composer.append(textarea, chatStatus, sendButton);
-  footer.append(actions, composer);
+  footer.append(composer);
 
   sidebar.append(top, main, footer);
   return sidebar;
@@ -505,30 +500,15 @@ function createHtmlElement<K extends keyof HTMLElementTagNameMap>(
 }
 
 function createSendIcon(doc: Document) {
-  const svg = doc.createElementNS(SVG_NS, "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("width", "22");
-  svg.setAttribute("height", "22");
-  svg.setAttribute("aria-hidden", "true");
-  svg.setAttribute("focusable", "false");
+  const svg = createIconSvg(doc, "20");
 
-  const path = doc.createElementNS(SVG_NS, "path");
-  path.setAttribute("d", "M22 2 11 13");
-  path.setAttribute("fill", "none");
-  path.setAttribute("stroke", "currentColor");
-  path.setAttribute("stroke-width", "2");
-  path.setAttribute("stroke-linecap", "round");
-  path.setAttribute("stroke-linejoin", "round");
+  const line = doc.createElementNS(SVG_NS, "path");
+  line.setAttribute("d", "M12 19V5");
 
-  const polygon = doc.createElementNS(SVG_NS, "path");
-  polygon.setAttribute("d", "m22 2-7 20-4-9-9-4 20-7Z");
-  polygon.setAttribute("fill", "none");
-  polygon.setAttribute("stroke", "currentColor");
-  polygon.setAttribute("stroke-width", "2");
-  polygon.setAttribute("stroke-linecap", "round");
-  polygon.setAttribute("stroke-linejoin", "round");
+  const arrow = doc.createElementNS(SVG_NS, "path");
+  arrow.setAttribute("d", "m5 12 7-7 7 7");
 
-  svg.append(path, polygon);
+  svg.append(line, arrow);
   return svg;
 }
 
