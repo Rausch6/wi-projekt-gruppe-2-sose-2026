@@ -27,6 +27,8 @@ type VectorDB = Orama<typeof mySchema>;
 export class OramaService {
     private db!: VectorDB;
     private isInitialized = false;
+    private saveTimeout: any = null;
+    private readonly SAVE_DELAY_MS = 2000;
 
     /**
      * Startet die Orama-Datenbank und lädt ggf. einen gespeicherten Index von der Festplatte.
@@ -52,7 +54,7 @@ export class OramaService {
         
         await insertMultiple(this.db, chunks as any);
 
-        await this.saveIndex();
+        this.scheduleSave();
     }
 
     /**
@@ -113,7 +115,7 @@ export class OramaService {
             const idsToRemove = results.hits.map(hit => hit.id);
             await removeMultiple(this.db, idsToRemove);
             
-            await this.saveIndex();
+            this.scheduleSave();
             Zotero.debug(`[OramaService]: Deleted ${idsToRemove.length} chunks for item ${zoteroItemId}`);
         }
     }
@@ -182,6 +184,21 @@ export class OramaService {
 
     private get dbFilePath() {
         return Zotero.getZoteroDirectory().path + '/orama_vector_index.json';
+    }
+
+    private scheduleSave() {
+        if (this.saveTimeout) {
+            clearTimeout(this.saveTimeout);
+            Zotero.debug(`[OramaService] Speichern verzögert: Timer zurückgesetzt (${this.SAVE_DELAY_MS}ms).`);
+        } else {
+            Zotero.debug(`[OramaService] Änderungen am Index erkannt. Starte Debounce-Timer für Speicherung (${this.SAVE_DELAY_MS}ms)...`);
+        }
+
+        this.saveTimeout = setTimeout(async () => {
+            this.saveTimeout = null;
+            Zotero.debug("[OramaService] Timer abgelaufen: Führe eigentliche Index-Speicherung aus...");
+            await this.saveIndex();
+        }, this.SAVE_DELAY_MS);
     }
 
     private async saveIndex() {

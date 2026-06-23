@@ -86,10 +86,12 @@ export class PaperContextService {
       });
 
       // --- DEBUG VECTOR ---
-      const vecLength = queryVector.length;
-      const vecPreview = queryVector.slice(0, 5).map(n => n.toFixed(4)).join(", ");
-      Zotero.debug(`[PaperContextService] Vektorisierung erfolgreich! Die Frage wurde in einen Vektor mit ${vecLength} Dimensionen konvertiert.`);
-      Zotero.debug(`[PaperContextService] Vektor-Vorschau (erste 5 Werte): [${vecPreview}, ...]`);
+      if (queryVector) {
+        const vecLength = queryVector.length;
+        const vecPreview = queryVector.slice(0, 5).map(n => n.toFixed(4)).join(", ");
+        Zotero.debug(`[PaperContextService] Vektorisierung erfolgreich! Die Frage wurde in einen Vektor mit ${vecLength} Dimensionen konvertiert.`);
+        Zotero.debug(`[PaperContextService] Vektor-Vorschau (erste 5 Werte): [${vecPreview}, ...]`);
+      }
       // --------------------
     } catch (error) {
       Zotero.debug(
@@ -146,10 +148,12 @@ export class PaperContextService {
       });
 
       // --- DEBUG VECTOR ---
-      const vecLength = queryVector.length;
-      const vecPreview = queryVector.slice(0, 5).map(n => n.toFixed(4)).join(", ");
-      Zotero.debug(`[PaperContextService] Globale Vektorisierung erfolgreich! Die Frage wurde in einen Vektor mit ${vecLength} Dimensionen konvertiert.`);
-      Zotero.debug(`[PaperContextService] Globale Vektor-Vorschau (erste 5 Werte): [${vecPreview}, ...]`);
+      if (queryVector) {
+        const vecLength = queryVector.length;
+        const vecPreview = queryVector.slice(0, 5).map(n => n.toFixed(4)).join(", ");
+        Zotero.debug(`[PaperContextService] Globale Vektorisierung erfolgreich! Die Frage wurde in einen Vektor mit ${vecLength} Dimensionen konvertiert.`);
+        Zotero.debug(`[PaperContextService] Globale Vektor-Vorschau (erste 5 Werte): [${vecPreview}, ...]`);
+      }
       // --------------------
     } catch (error) {
       Zotero.debug(
