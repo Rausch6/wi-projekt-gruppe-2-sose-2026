@@ -235,6 +235,12 @@ async function onShutdown(): Promise<void> {
   addon.data.alive = false;
 
   try {
+    await vectorStore.forceSave();
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+  }
+
+  try {
     Zotero.getMainWindows().forEach((win) => {
       UIExampleFactory.unregisterAssistantToolbarButton(win);
       unregisterAssistantSidebarController(win);

@@ -11,6 +11,7 @@ export class BackgroundIndexer {
   
   private queue: number[] = [];
   private isProcessing = false;
+  private currentlyIndexing = new Set<number>();
 
   private constructor() {}
 
@@ -116,60 +117,70 @@ export class BackgroundIndexer {
    * Text extrahieren, chunken, einbetten und speichern.
    */
   private async indexItem(itemId: number) {
-    const item = await Zotero.Items.getAsync(itemId);
-    if (!item) return;
-
-    if (!item.isAttachment() || item.attachmentContentType !== "application/pdf") {
-      if (!item.isRegularItem()) return; 
-    }
-
-    Zotero.debug(`[BackgroundIndexer] Starting extraction for item ${item.id}...`);
-
-    const extractedDoc = await PdfExtractor.extractDocument(item);
-    if (!extractedDoc || !extractedDoc.pages || extractedDoc.pages.length === 0) {
-      Zotero.debug(`[BackgroundIndexer] No text found for item ${item.id}.`);
+    if (this.currentlyIndexing.has(itemId)) {
+      Zotero.debug(`[BackgroundIndexer] Item ${itemId} wird bereits indexiert. Überspringe doppelten Aufruf.`);
       return;
     }
+    this.currentlyIndexing.add(itemId);
 
-    await vectorStore.deleteByZoteroItemId(item.id.toString());
+    try {
+      const item = await Zotero.Items.getAsync(itemId);
+      if (!item) return;
 
-    const chunks = chunkPaperText(extractedDoc.pages);
-    
-    const oramaChunks: ChunkDocument[] = [];
-
-    for (const chunk of chunks) {
-      let embedding: number[];
-      try {
-        [embedding] = await embeddingProvider.embedTexts([chunk.text], {
-          inputType: "passage",
-        });
-      } catch (embeddingError) {
-        Zotero.debug(
-          `[BackgroundIndexer] Embedding fehlgeschlagen für Chunk ${chunk.id}, wird übersprungen: ${embeddingError}`
-        );
-        continue;
+      if (!item.isAttachment() || item.attachmentContentType !== "application/pdf") {
+        if (!item.isRegularItem()) return; 
       }
 
-      Zotero.debug(`[BackgroundIndexer] Chunk ${chunk.id} embedded successfully! Length of vector: ${embedding ? embedding.length : 'undefined'}`);
+      Zotero.debug(`[BackgroundIndexer] Starting extraction for item ${item.id}...`);
 
-      oramaChunks.push({
-        id: `doc_${item.id}_${chunk.id}`,
-        zoteroItemId: item.id.toString(),
-        content: chunk.text,
-        pageNumber: chunk.pageStart || 0,
-        embedding,
-      });
+      const extractedDoc = await PdfExtractor.extractDocument(item);
+      if (!extractedDoc || !extractedDoc.pages || extractedDoc.pages.length === 0) {
+        Zotero.debug(`[BackgroundIndexer] No text found for item ${item.id}.`);
+        return;
+      }
+
+      await vectorStore.deleteByZoteroItemId(item.id.toString());
+
+      const chunks = chunkPaperText(extractedDoc.pages);
       
-      // Heartbeat every 5 chunks to ensure the user sees logs
-      if (oramaChunks.length % 5 === 0) {
-        Zotero.debug(`[BackgroundIndexer] Heartbeat: Still processing item ${item.id}, ${oramaChunks.length} chunks done...`);
-      }
-    }
+      const oramaChunks: ChunkDocument[] = [];
 
-    if (oramaChunks.length > 0) {
-      Zotero.debug(`[BackgroundIndexer] Now adding ${oramaChunks.length} chunks to Orama for item ${item.id}...`);
-      await vectorStore.addChunks(oramaChunks);
-      Zotero.debug(`[BackgroundIndexer] Successfully indexed ${oramaChunks.length} chunks for item ${item.id}.`);
+      for (const chunk of chunks) {
+        let embedding: number[];
+        try {
+          [embedding] = await embeddingProvider.embedTexts([chunk.text], {
+            inputType: "passage",
+          });
+        } catch (embeddingError) {
+          Zotero.debug(
+            `[BackgroundIndexer] Embedding fehlgeschlagen für Chunk ${chunk.id}, wird übersprungen: ${embeddingError}`
+          );
+          continue;
+        }
+
+        Zotero.debug(`[BackgroundIndexer] Chunk ${chunk.id} embedded successfully! Length of vector: ${embedding ? embedding.length : 'undefined'}`);
+
+        oramaChunks.push({
+          id: `doc_${item.id}_${chunk.id}`,
+          zoteroItemId: item.id.toString(),
+          content: chunk.text,
+          pageNumber: chunk.pageStart || 0,
+          embedding,
+        });
+        
+        // Heartbeat every 5 chunks to ensure the user sees logs
+        if (oramaChunks.length % 5 === 0) {
+          Zotero.debug(`[BackgroundIndexer] Heartbeat: Still processing item ${item.id}, ${oramaChunks.length} chunks done...`);
+        }
+      }
+
+      if (oramaChunks.length > 0) {
+        Zotero.debug(`[BackgroundIndexer] Now adding ${oramaChunks.length} chunks to Orama for item ${item.id}...`);
+        await vectorStore.addChunks(oramaChunks);
+        Zotero.debug(`[BackgroundIndexer] Successfully indexed ${oramaChunks.length} chunks for item ${item.id}.`);
+      }
+    } finally {
+      this.currentlyIndexing.delete(itemId);
     }
   }
   /**

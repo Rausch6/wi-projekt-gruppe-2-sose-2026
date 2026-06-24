@@ -201,6 +201,14 @@ export class OramaService {
         }, this.SAVE_DELAY_MS);
     }
 
+    public async forceSave() {
+        if (this.saveTimeout) {
+            clearTimeout(this.saveTimeout);
+            this.saveTimeout = null;
+        }
+        await this.saveIndex();
+    }
+
     private async saveIndex() {
         try {
             const indexData = await save(this.db);
