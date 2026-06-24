@@ -205,6 +205,42 @@ export class PaperContextService {
       excerpts,
     ].join("\n");
   }
+  /**
+   * Stellt einen komprimierten Kontext mit Bibliotheks-Metadaten für das LLM bereit.
+   * Das Query-Rewriting-Modul kann 'requestedFields' nutzen, um unnötige Metadaten herauszufiltern.
+   */
+  static async buildLibraryMetadataContext(
+    requestedFields: Array<"title" | "firstCreator" | "year" | "itemType"> = ["title", "firstCreator", "year"]
+  ): Promise<string> {
+    const items = await ItemManager.getAllLibraryItemsMetadata();
+
+    if (!items.length) {
+      return "Die Bibliothek des Nutzers enthält keine relevanten Items oder konnte nicht ausgelesen werden.";
+    }
+
+    const lines = items.map((item) => {
+      let line = `[Zotero-ID: ${item.id}]`;
+      if (requestedFields.includes("title")) {
+        line += ` "${item.title}"`;
+      }
+      if (requestedFields.includes("firstCreator")) {
+        line += ` | Autor: ${item.firstCreator}`;
+      }
+      if (requestedFields.includes("year") && item.year) {
+        line += ` | Jahr: ${item.year}`;
+      }
+      if (requestedFields.includes("itemType")) {
+        line += ` | Typ: ${item.itemType}`;
+      }
+      return line;
+    });
+
+    return [
+      "Hier sind die gewünschten Metadaten der Paper in der Bibliothek:",
+      lines.join("\n"),
+      "Nutze diese Liste für deine Antwort."
+    ].join("\n");
+  }
 
   static clearCache() {
     paperCache.clear();
