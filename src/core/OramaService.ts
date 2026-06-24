@@ -29,6 +29,7 @@ export class OramaService {
     private isInitialized = false;
     private saveTimeout: any = null;
     private readonly SAVE_DELAY_MS = 2000;
+    private textHashes = new Map<string, string>();
 
     /**
      * Startet die Orama-Datenbank und lädt ggf. einen gespeicherten Index von der Festplatte.
@@ -102,6 +103,7 @@ export class OramaService {
      */
     async deleteByZoteroItemId(zoteroItemId: string) {
         this.checkInit();
+        this.deleteTextHash(zoteroItemId);
 
         const results = await search(this.db, {
             term: '',
@@ -182,8 +184,28 @@ export class OramaService {
         if (!this.isInitialized) throw new Error("OramaService ist nicht initialisiert! Bitte rufe initialize() auf.");
     }
 
+    public getTextHash(zoteroItemId: string): string | undefined {
+        return this.textHashes.get(zoteroItemId);
+    }
+
+    public setTextHash(zoteroItemId: string, hash: string) {
+        this.textHashes.set(zoteroItemId, hash);
+        this.scheduleSave();
+    }
+
+    public deleteTextHash(zoteroItemId: string) {
+        if (this.textHashes.has(zoteroItemId)) {
+            this.textHashes.delete(zoteroItemId);
+            this.scheduleSave();
+        }
+    }
+
     private get dbFilePath() {
         return Zotero.getZoteroDirectory().path + '/orama_vector_index.json';
+    }
+
+    private get hashFilePath() {
+        return Zotero.getZoteroDirectory().path + '/orama_text_hashes.json';
     }
 
     private scheduleSave() {
@@ -215,6 +237,10 @@ export class OramaService {
             const indexString = JSON.stringify(indexData);
             
             await Zotero.File.putContentsAsync(this.dbFilePath, indexString);
+            
+            const hashesObj = Object.fromEntries(this.textHashes);
+            await Zotero.File.putContentsAsync(this.hashFilePath, JSON.stringify(hashesObj));
+
             Zotero.debug("[OramaService] Index erfolgreich gespeichert.");
         } catch (e) {
             Zotero.debug(`[OramaService] Fehler beim Speichern des Index: ${e}`);
@@ -231,6 +257,17 @@ export class OramaService {
             }
         } catch (e) {
             Zotero.debug(`[OramaService] Kein existierender Index gefunden oder Fehler beim Laden: ${e}`);
+        }
+
+        try {
+            const hashContents = await Zotero.File.getContentsAsync(this.hashFilePath, "utf-8");
+            if (typeof hashContents === "string" && hashContents.trim().length > 0) {
+                const parsedHashes = JSON.parse(hashContents);
+                this.textHashes = new Map(Object.entries(parsedHashes));
+                Zotero.debug(`[OramaService] Text-Hashes erfolgreich von Festplatte geladen.`);
+            }
+        } catch (e) {
+            Zotero.debug(`[OramaService] Keine existierenden Text-Hashes gefunden.`);
         }
     }
 }
