@@ -24,15 +24,15 @@ Verfuegbare Modelle lassen sich in den Plugin-Einstellungen laden oder ueber
 
 Fuer die Auswahl relevanter PDF-Auschnitte kann das Plugin semantische
 Embeddings verwenden. Standardmaessig ist das Ollama-Modell
-`embeddinggemma:latest` unter `http://localhost:11434/api/embed`
+`bge-m3:latest` unter `http://localhost:11434/api/embed`
 konfiguriert.
 
 Das Modell kann lokal mit Ollama installiert und getestet werden:
 
 ```bash
-ollama pull embeddinggemma:latest
+ollama pull bge-m3:latest
 curl http://localhost:11434/api/embed -d '{
-  "model": "embeddinggemma:latest",
+  "model": "bge-m3:latest",
   "input": "Warum ist der Himmel blau?"
 }'
 ```

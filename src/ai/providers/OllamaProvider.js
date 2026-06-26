@@ -7,6 +7,10 @@ import {
 
 export const OLLAMA_DEFAULT_BASE_URL = "http://localhost:11434";
 export const OLLAMA_DEFAULT_MODEL = "qwen2.5:3b";
+export const OLLAMA_INSTALL_COMMANDS = {
+  windows: "winget install -e --id Ollama.Ollama",
+  unix: "curl -fsSL https://ollama.com/install.sh | sh",
+};
 
 export class OllamaProvider extends AIProvider {
   constructor(options = {}) {

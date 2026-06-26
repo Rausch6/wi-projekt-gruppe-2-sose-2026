@@ -182,9 +182,9 @@ export class UIExampleFactory {
       menus: [
         {
           menuType: "menuitem",
-          l10nID: getLocaleID("menuitem-label"),
+          label: "Start ZAIA Indexer (Debug)",
           icon: menuIcon,
-          onCommand: () => addon.hooks.onDialogEvents("dialogExample"),
+          onCommand: () => addon.hooks.onDialogEvents("manualTrigger"),
         },
       ],
     });
@@ -233,13 +233,8 @@ export class UIExampleFactory {
         },
         {
           menuType: "menuitem",
-          l10nID: getLocaleID("menuitem-filemenulabel"),
-          onCommand: () =>
-            Zotero.alert(
-              Zotero.getMainWindow(),
-              addon.data.config.addonName,
-              "Hello World! File Menuitem.",
-            ),
+          label: "Start ZAIA Background Indexer",
+          onCommand: () => addon.hooks.onDialogEvents("manualTrigger"),
         },
       ],
     });

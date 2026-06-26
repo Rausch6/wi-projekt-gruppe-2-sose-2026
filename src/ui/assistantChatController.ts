@@ -8,6 +8,7 @@ import { CreateChatInput, StoredChat } from "../core/chatTypes";
 import { renderMarkdownContent } from "./markdownRenderer";
 import type { LLMProvider } from "../addon";
 import { EMBEDDING_DEFAULT_MODEL } from "../ai/EmbeddingProvider.js";
+import { OLLAMA_DEFAULT_MODEL } from "../ai/providers/OllamaProvider.js";
 import { KISSKI_MODEL_OPTIONS } from "../ai/providers/KisskiProvider.js";
 import { OLLAMA_DEFAULT_MODEL } from "../ai/providers/OllamaProvider.js";
 import {
@@ -416,8 +417,15 @@ export async function sendChatPrompt(prompt: string) {
   renderAllHosts();
 
   try {
+    const requestMessages = await createRequestMessages(content);
+    Zotero.debug(`[assistantChatController] Sende Anfrage an LLM. Anzahl Nachrichten: ${requestMessages.length}.`);
+    const systemMsg = requestMessages.find(m => m.role === 'system');
+    if (systemMsg) {
+      Zotero.debug(`[assistantChatController] System-Context Vorschau:\n${systemMsg.content.substring(0, 500)}...`);
+    }
+
     const assistantMessage = await requestAssistantResponse(
-      await createRequestMessages(content),
+      requestMessages,
       requestID,
     );
 
@@ -728,12 +736,15 @@ async function createPaperContextMessage(prompt: string) {
   }
 
   const reference = getActivePaperReference();
-  if (!reference) return null;
+  if (!reference) {
+    const globalContext = await PaperContextService.buildGlobalContext(prompt);
+    return globalContext;
+  }
 
   const context = await PaperContextService.buildContext(reference, prompt);
   if (!context) {
     throw new Error(
-      "Paper-Kontext ist aktiviert, aber Zotero konnte keinen Text aus dem verknüpften PDF laden. Prüfe, ob das PDF lokal verfügbar und per OCR durchsuchbar ist.",
+      "ZAIA konnte keinen relevanten Kontext für diese Anfrage in dem gewählten Paper finden. Dies passiert, wenn das PDF keinen auslesbaren Text hat (OCR fehlt) oder wenn das Paper nicht in der Vektor-Datenbank gefunden wurde.",
     );
   }
 
@@ -741,13 +752,26 @@ async function createPaperContextMessage(prompt: string) {
 }
 
 function getActivePaperReference(): PaperReference | null {
-  const chat = getActiveChatSummary();
-  if (!chat?.zoteroLibraryID || !chat.zoteroItemKey) return null;
+  const selectedItems = ItemManager.filterItems();
+  if (selectedItems.length > 0) {
+    Zotero.debug(`[assistantChatController] Paper-Referenz erkannt (On-the-fly markiert): ItemKey ${selectedItems[0].key}`);
+    return {
+      libraryID: selectedItems[0].libraryID,
+      itemKey: selectedItems[0].key,
+    };
+  }
 
-  return {
-    libraryID: chat.zoteroLibraryID,
-    itemKey: chat.zoteroItemKey,
-  };
+  const chat = getActiveChatSummary();
+  if (chat?.zoteroLibraryID && chat.zoteroItemKey) {
+    Zotero.debug(`[assistantChatController] Paper-Referenz erkannt (Aus Chat-Verlauf): ItemKey ${chat.zoteroItemKey}`);
+    return {
+      libraryID: chat.zoteroLibraryID,
+      itemKey: chat.zoteroItemKey,
+    };
+  }
+
+  Zotero.debug(`[assistantChatController] Kein Paper markiert -> Bibliotheksweite Suche`);
+  return null;
 }
 
 function appendAssistantDelta(delta: string) {
@@ -1819,6 +1843,7 @@ function setActiveProvider(provider: LLMProvider) {
     addon.data.settings.provider = provider;
     savePluginPreference("provider", provider);
     addon.api.configureAI();
+    addon.api.configureEmbeddings();
   }
 
   syncAllModelPickers();
@@ -1979,6 +2004,7 @@ async function ensureModelOptionsLoaded(provider: LLMProvider, force = false) {
   try {
     if (provider === getActiveProvider()) {
       addon.api.configureAI();
+      addon.api.configureEmbeddings();
     }
     const models = normalizeModelOptions(
       await addon.api.ai.listModels(provider),
@@ -2216,6 +2242,7 @@ function setProviderModel(provider: LLMProvider, value: string) {
   addon.api.ai.setModel(model, provider);
   if (provider === getActiveProvider()) {
     addon.api.configureAI();
+    addon.api.configureEmbeddings();
   }
 }
 

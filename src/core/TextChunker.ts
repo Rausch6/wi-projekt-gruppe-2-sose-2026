@@ -24,7 +24,7 @@ type TextUnit = {
   tokens: number;
 };
 
-const DEFAULT_TARGET_TOKENS = 700;
+const DEFAULT_TARGET_TOKENS = 512;
 const DEFAULT_OVERLAP_TOKENS = 100;
 const WORDS_PER_TOKEN = 0.75;
 const STOP_WORDS = new Set([
@@ -149,6 +149,7 @@ export function selectRelevantChunks(
 
   return selected.sort((a, b) => a.index - b.index).map(({ chunk }) => chunk);
 }
+
 
 export function estimateTokens(text: string) {
   const words = text.trim().match(/\S+/g)?.length ?? 0;

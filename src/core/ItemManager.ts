@@ -10,6 +10,7 @@ export interface ItemData {
 }
 
 export class ItemManager {
+  
   /**
    * Holt alle aktuell ausgewählten Items im Zotero-Hauptfenster.
    * @returns Array von Zotero Item-Objekten
@@ -74,12 +75,42 @@ export class ItemManager {
     return this.extractItemData(validItems[0]);
   }
 
+  /**
+   * Holt alle regulären Items aus einer spezifischen oder der globalen Bibliothek.
+   * @param libraryID (Optional) Die ID der Bibliothek. Standard ist die Hauptbibliothek.
+   * @returns Ein Array von aufbereiteten ItemData-Objekten
+   */
+  static async getAllLibraryItemsMetadata(libraryID?: number): Promise<ItemData[]> {
+    const targetLibraryID = libraryID ?? Zotero.Libraries.userLibraryID;
+    
+    let items: Zotero.Item[] = [];
+    try {
+      items = await Zotero.Items.getAll(targetLibraryID, true, false);
+    } catch (error) {
+      Zotero.debug(`ZAIA: Fehler beim Abrufen aller Items aus Bibliothek ${targetLibraryID}: ${error}`);
+      return [];
+    }
+
+    const uniqueItemsMap = new Map<number, Zotero.Item>();
+    
+    for (const item of items) {
+      const resolvedItem = await this.resolveRegularItemAsync(item);
+      if (resolvedItem && !uniqueItemsMap.has(resolvedItem.id)) {
+        uniqueItemsMap.set(resolvedItem.id, resolvedItem);
+      }
+    }
+
+    const validItems = Array.from(uniqueItemsMap.values());
+    return validItems.map(item => this.extractItemData(item));
+  }
+
   static async getItemByLibraryAndKey(
     libraryID: number,
     itemKey: string,
   ): Promise<Zotero.Item | null> {
     const item = await Zotero.Items.getByLibraryAndKeyAsync(libraryID, itemKey);
-    return item && item.isRegularItem() ? item : null;
+    if (!item) return null;
+    return this.resolveRegularItemAsync(item);
   }
 
   static async getSelectedRegularItem(
@@ -96,6 +127,7 @@ export class ItemManager {
 
   private static resolveRegularItem(item: Zotero.Item) {
     if (item.isRegularItem()) return item;
+    if (item.isAttachment() && item.attachmentContentType === "application/pdf" && !item.parentID) return item;
     if (!item.isAttachment() || !item.parentID) return null;
 
     const parent = Zotero.Items.get(item.parentID);
@@ -104,6 +136,7 @@ export class ItemManager {
 
   private static async resolveRegularItemAsync(item: Zotero.Item) {
     if (item.isRegularItem()) return item;
+    if (item.isAttachment() && item.attachmentContentType === "application/pdf" && !item.parentID) return item;
     if (!item.isAttachment() || !item.parentID) return null;
 
     const parent = await Zotero.Items.getAsync(item.parentID);
