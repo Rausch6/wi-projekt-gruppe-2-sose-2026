@@ -12,6 +12,11 @@ import {
   OLLAMA_DEFAULT_MODEL,
 } from "../ai/providers/OllamaProvider.js";
 
+const OLLAMA_INSTALL_COMMANDS = {
+  unix: "curl -fsSL https://ollama.com/install.sh | sh",
+  windows: "irm https://ollama.com/install.ps1 | iex",
+};
+
 const FIELD_NAMES = [
   "api-key",
   "base-url",

@@ -9,12 +9,17 @@ import { renderMarkdownContent } from "./markdownRenderer";
 import type { LLMProvider } from "../addon";
 import { EMBEDDING_DEFAULT_MODEL } from "../ai/EmbeddingProvider.js";
 import { KISSKI_MODEL_OPTIONS } from "../ai/providers/KisskiProvider.js";
+import { OLLAMA_DEFAULT_MODEL } from "../ai/providers/OllamaProvider.js";
 import {
   createCheckingProviderConnectionResult,
   createProviderConnectionResult,
   type ProviderConnectionResult,
 } from "../ai/providerConnectionStatus";
 import { getString } from "../utils/locale";
+import {
+  LOCAL_OLLAMA_MODEL_INSTALLED_EVENT,
+  openLocalOllamaModelWindow,
+} from "./localOllamaModelWindow";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -92,6 +97,7 @@ const modelOptionsByProvider = new Map<LLMProvider, ModelOption[]>([
 ]);
 const modelLoadStates = new Map<LLMProvider, ModelLoadState>();
 const providerConnectionRequestIDs = new Map<LLMProvider, number>();
+const localModelInstallEventWindows = new WeakSet<Window>();
 
 let nextMessageID = 1;
 let nextModelLoadRequestID = 1;
@@ -154,8 +160,10 @@ export function bindAssistantChat(host: HTMLElement) {
   const ollamaStopButtons = Array.from(
     host.querySelectorAll('.zai-stop-ollama-button[data-action="stop-ollama"]'),
   ) as HTMLButtonElement[];
+  const ownerWindow = host.ownerDocument?.defaultView ?? null;
 
   syncModelPicker(host);
+  ensureLocalModelInstallEventHandler(ownerWindow);
   ensureModelDropdownOutsideHandler(host.ownerDocument);
   void ensureModelOptionsLoaded(getActiveProvider());
   void ensureProviderConnectionChecked(getActiveProvider());
@@ -291,6 +299,22 @@ export function bindAssistantChat(host: HTMLElement) {
     toggleModelDropdown(modelDropdown);
   });
   modelDropdown?.addEventListener("click", (event) => {
+    const addButton = (
+      event.target as Element | null
+    )?.closest<HTMLButtonElement>(
+      '.zai-model-select-add-button[data-action="add-local-model"]',
+    );
+    if (addButton && modelDropdown.contains(addButton)) {
+      const owner = ownerWindow as unknown as
+        | _ZoteroTypes.MainWindow
+        | undefined;
+
+      closeModelDropdown(modelDropdown);
+      if (owner) openLocalOllamaModelWindow(owner);
+      event.preventDefault();
+      return;
+    }
+
     const optionButton = (
       event.target as Element | null
     )?.closest<HTMLButtonElement>(".zai-model-select-option[data-model-value]");
@@ -304,6 +328,29 @@ export function bindAssistantChat(host: HTMLElement) {
   modelDropdown?.addEventListener("keydown", (event) => {
     handleModelDropdownKeydown(event as KeyboardEvent, modelDropdown);
   });
+}
+
+function ensureLocalModelInstallEventHandler(win: Window | null) {
+  if (!win || localModelInstallEventWindows.has(win)) return;
+
+  localModelInstallEventWindows.add(win);
+  win.addEventListener(LOCAL_OLLAMA_MODEL_INSTALLED_EVENT, (event) => {
+    const detail = (event as CustomEvent<{ model?: unknown }>).detail;
+    const model = typeof detail?.model === "string" ? detail.model.trim() : "";
+    if (!model) return;
+
+    void useInstalledLocalModel(model);
+  });
+}
+
+async function useInstalledLocalModel(model: string) {
+  addon.data.settings.provider = "ollama";
+  savePluginPreference("provider", "ollama");
+  setProviderModel("ollama", model);
+
+  await ensureModelOptionsLoaded("ollama", true);
+  await checkProviderConnection("ollama", true);
+  syncAllModelPickers();
 }
 
 export async function initializeChatPersistence() {
@@ -2027,8 +2074,16 @@ function syncModelDropdown(
     provider,
     models.length,
   );
+  const addNode =
+    provider === "ollama"
+      ? createModelDropdownAddButton(dropdown.ownerDocument)
+      : null;
 
-  options.replaceChildren(...optionNodes, ...(stateNode ? [stateNode] : []));
+  options.replaceChildren(
+    ...optionNodes,
+    ...(stateNode ? [stateNode] : []),
+    ...(addNode ? [addNode] : []),
+  );
   updateModelDropdownDisplay(dropdown, value, provider);
 }
 
@@ -2094,6 +2149,17 @@ function createModelDropdownOption(
   option.setAttribute("role", "option");
   option.setAttribute("aria-selected", String(selected));
   return option;
+}
+
+function createModelDropdownAddButton(doc: Document) {
+  const button = doc.createElementNS(HTML_NS, "button") as HTMLButtonElement;
+  button.className = "zai-model-select-add-button";
+  button.dataset.action = "add-local-model";
+  button.textContent = "Modell hinzufügen...";
+  button.title = "Lokales Ollama-Modell hinzufügen";
+  button.type = "button";
+  button.setAttribute("aria-haspopup", "dialog");
+  return button;
 }
 
 function updateModelDropdownDisplay(
