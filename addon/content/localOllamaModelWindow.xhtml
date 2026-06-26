@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html
+  xmlns="http://www.w3.org/1999/xhtml"
+  windowtype="__addonRef__-local-ollama-model-window"
+>
+  <head>
+    <meta charset="utf-8" />
+    <title>Lokales Modell hinzufügen</title>
+    <link rel="stylesheet" href="localOllamaModelWindow.css" />
+    <script type="application/javascript">
+      <![CDATA[
+        (function () {
+          var didUnload = false;
+
+          function getDialogArguments() {
+            return window.arguments && window.arguments[0]
+              ? window.arguments[0]
+              : {};
+          }
+
+          function getOwnerWindow() {
+            var args = getDialogArguments();
+            return args.owner || window.opener || null;
+          }
+
+          function getPlugin() {
+            var owner = getOwnerWindow();
+            var args = getDialogArguments();
+            var addonInstance = args.addonInstance || "__addonInstance__";
+
+            return owner &&
+              owner.Zotero &&
+              owner.Zotero[addonInstance]
+              ? owner.Zotero[addonInstance]
+              : null;
+          }
+
+          function callPluginHook(name) {
+            var owner = getOwnerWindow();
+            var plugin = getPlugin();
+            var hook = plugin && plugin.hooks && plugin.hooks[name];
+
+            if (typeof hook !== "function") {
+              return false;
+            }
+
+            hook({ owner: owner, window: window });
+            return true;
+          }
+
+          function showLoadError() {
+            var root = document.getElementById(
+              "__addonRef__-local-ollama-model-window-root",
+            );
+            if (!root) {
+              return;
+            }
+
+            var message = document.createElement("p");
+            message.className = "zai-local-model-window-error";
+            message.textContent =
+              "Das Fenster konnte nicht geladen werden.";
+            root.replaceChildren(message);
+          }
+
+          window.addEventListener(
+            "DOMContentLoaded",
+            function () {
+              if (!callPluginHook("onLocalOllamaModelWindowLoad")) {
+                showLoadError();
+              }
+            },
+            { once: true },
+          );
+
+          window.addEventListener(
+            "unload",
+            function () {
+              if (didUnload) {
+                return;
+              }
+
+              didUnload = true;
+              callPluginHook("onLocalOllamaModelWindowUnload");
+            },
+            { once: true },
+          );
+        })();
+      ]]>
+    </script>
+  </head>
+  <body>
+    <main
+      id="__addonRef__-local-ollama-model-window-root"
+      class="zai-local-model-window-root"
+      aria-label="Lokales Ollama-Modell hinzufügen"
+    ></main>
+  </body>
+</html>

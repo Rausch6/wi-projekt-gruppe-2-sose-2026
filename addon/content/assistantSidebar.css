@@ -1190,6 +1190,33 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   font-weight: 600;
 }
 
+.zai-model-select-add-button {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-top-color: color-mix(in srgb, currentColor 14%, transparent);
+  border-radius: 5px;
+  box-sizing: border-box;
+  color: inherit;
+  cursor: pointer;
+  display: block;
+  font: inherit;
+  line-height: 1.25;
+  min-height: 30px;
+  overflow: hidden;
+  padding: 7px 8px 6px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.zai-model-select-add-button:hover,
+.zai-model-select-add-button:focus-visible {
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
 .zai-model-select-state {
   box-sizing: border-box;
   color: var(--text-secondary, #5f6b7a);
