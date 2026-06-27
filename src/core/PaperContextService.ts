@@ -24,6 +24,10 @@ export interface ChunkedPaper {
   chunks: TextChunk[];
 }
 
+export interface VectorContextOptions {
+  contentFocus?: "relevant_chunks" | "abstracts";
+}
+
 type CachedPaper = ChunkedPaper & {
   cacheKey: string;
 };
@@ -269,6 +273,7 @@ export class PaperContextService {
     query: string,
     itemIDs: number[],
     title = "Relevante AuszÃ¼ge aus ausgewÃ¤hlten Papern:",
+    options: VectorContextOptions = {},
   ): Promise<string | null> {
     const uniqueItemIDs = [...new Set(itemIDs.filter(Number.isFinite))].slice(
       0,
@@ -276,9 +281,12 @@ export class PaperContextService {
     );
     if (!uniqueItemIDs.length) return null;
 
+    const resolvedOptions = resolveVectorContextOptions(query, options);
+    const vectorSearchQuery = buildVectorSearchQuery(query, resolvedOptions);
+
     let queryVector: number[] | null = null;
     try {
-      [queryVector] = await embeddingProvider.embedTexts([query], {
+      [queryVector] = await embeddingProvider.embedTexts([vectorSearchQuery], {
         inputType: "query",
       });
     } catch (error) {
@@ -294,7 +302,7 @@ export class PaperContextService {
             queryVector,
             3,
             { zoteroItemId: String(itemID) },
-            query,
+            vectorSearchQuery,
           );
         } catch (error) {
           Zotero.debug(
@@ -342,6 +350,8 @@ export class PaperContextService {
     ).join("\n\n");
     const excerpts = [
       "Nutze die strukturierten Paper-Metadaten fuer korrekte Titel, Autorenschaft, Jahr, Tags und Bibliothekszuordnung. Vermische keine Angaben zwischen unterschiedlichen Zotero-IDs.",
+      "Nenne in deiner Antwort keine Zotero-IDs, ausser der Nutzer fragt explizit danach. Verwende stattdessen Titel und Autorenschaft.",
+      ...formatVectorAnswerGuidance(resolvedOptions),
       "",
       formatContextMetadataBlock(metadata),
       "",
@@ -353,6 +363,7 @@ export class PaperContextService {
       "Beantworte die Nutzerfrage nur anhand der folgenden AuszÃ¼ge aus der lokalen Vektordatenbank.",
       "Wenn die AuszÃ¼ge nicht ausreichen, sage das ausdrÃ¼cklich.",
       "Verweise bei inhaltlichen Aussagen auf die angegebene Quelle.",
+      "Halte die Antwort strukturiert und ueberschaubar. Nutze Titel und Autorenschaft statt interner Zotero-IDs.",
       "",
       title,
       excerpts,
@@ -411,6 +422,61 @@ function formatItemCitation(item: Zotero.Item) {
   const authorLabel = itemData.firstCreator || "Unbekannt";
   const yearLabel = itemData.year ? ` ${itemData.year}` : "";
   return `${authorLabel}${yearLabel}`;
+}
+
+function buildVectorSearchQuery(query: string, options: VectorContextOptions) {
+  if (options.contentFocus !== "abstracts") return query;
+
+  return [
+    "Abstract Kurzfassung Summary Zusammenfassung Introduction Einleitung Overview",
+    "research question contribution method results conclusion findings",
+    query,
+  ].join("\n");
+}
+
+function resolveVectorContextOptions(
+  query: string,
+  options: VectorContextOptions,
+): VectorContextOptions {
+  if (options.contentFocus) return options;
+  return {
+    contentFocus: shouldUseAbstractFocus(query)
+      ? "abstracts"
+      : "relevant_chunks",
+  };
+}
+
+function shouldUseAbstractFocus(query: string) {
+  const prompt = query
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const asksForSummary =
+    /\b(zusammenfassung|zusammenfassen|fasse zusammen|fass zusammen|summary|summarize|abstract|ueberblick|uberblick)\b/.test(
+      prompt,
+    );
+  const asksForExistingPapers =
+    /\b(suche|finde|welche paper|welche artikel|paper.*zu|artikel.*zu|papers.*about|find papers|search papers)\b/.test(
+      prompt,
+    ) &&
+    /\b(bibliothek|library|meine paper|meinen papern|vorhanden|bestehend|zotero)\b/.test(
+      prompt,
+    );
+
+  return asksForSummary || asksForExistingPapers;
+}
+
+function formatVectorAnswerGuidance(options: VectorContextOptions) {
+  if (options.contentFocus !== "abstracts") return [];
+
+  return [
+    "Die Vektorsuche wurde auf Abstracts, Kurzfassungen, Einleitungen und Ueberblicksstellen fokussiert.",
+    "Bei Zusammenfassungen: Gib pro Paper eine kurze, klare Zusammenfassung mit Titel und Autorenschaft.",
+    "Bei Suchanfragen nach vorhandenen Papern: Gib eine ueberschaubare Trefferliste mit Titel, Autorenschaft und kurzem Grund, warum das Paper passt.",
+  ];
 }
 
 async function getContextMetadataForDocuments(docs: ChunkDocument[]) {

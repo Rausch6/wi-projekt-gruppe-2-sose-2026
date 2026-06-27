@@ -966,6 +966,8 @@ function buildMetadataContext(
     "Du bist ein wissenschaftlicher KI-Assistent fÃ¼r Zotero.",
     "Nutze ausschlieÃŸlich die folgenden Paper-Metadaten, um die Nutzerfrage zu beantworten oder passende Paper vorzuschlagen.",
     "Falls in den Metadaten keine passende Information steht, sage das deutlich.",
+    "Nenne in der Antwort keine Zotero-IDs, ausser der Nutzer fragt explizit danach. Verwende Titel und Autorenschaft.",
+    "Antworte strukturiert und ueberschaubar.",
     "",
     "Paper-Metadaten:",
     lines.join("\n"),

@@ -11,6 +11,7 @@ export type PromptContextRouteDecision = {
   route: PromptContextRoute;
   reason: string;
   confidence?: number;
+  contentFocus?: "relevant_chunks" | "abstracts";
   itemID?: number;
   itemIDs?: number[];
   tag?: string;
@@ -75,24 +76,33 @@ const ROUTER_SYSTEM_PROMPT = [
   "",
   "Erlaubte routes:",
   "- none: Keine Bibliotheksdaten noetig; Prompt kann direkt beantwortet werden. Nur fuer allgemeine Fragen ohne Bezug auf Paper/Bibliothek.",
-  "- metadata: Der Nutzer fragt nach Titeln, Autoren, Jahren, Tags, Paperlisten oder Auswahl/Vergleich anhand von Metadaten; nur Metadaten aller Paper mitschicken.",
+  "- metadata: Der Nutzer fragt nach Anzahl, Titeln, Autoren, Jahren, Tags, aeltestem/neuestem Paper, Paperlisten oder Auswahl/Vergleich anhand von Metadaten; nur Metadaten aller Paper mitschicken.",
   "- single_paper: Ein einzelnes konkretes Paper wird benoetigt; gib itemID oder itemIDs mit genau einem Eintrag an.",
   "- filtered_papers: Alle Paper mit bestimmtem Tag oder bestimmter Metadaten-Eigenschaft werden benoetigt; gib tag oder property/value an.",
   "- all_papers: Der Nutzer verlangt explizit alle Paper bzw. eine Gesamtanalyse der ganzen Bibliothek.",
   "",
+  "contentFocus:",
+  '- "relevant_chunks": normale inhaltliche Frage; suche passende Textstellen.',
+  '- "abstracts": der Nutzer will Zusammenfassungen, Abstracts, Ueberblicke oder sucht nach bestehenden Papern zu einem Thema; die Vektorsuche soll bevorzugt Abstract-/Einleitungsstellen liefern.',
+  "",
   "Pflichtregeln:",
-  "- Wenn der aktuelle Prompt 'alle Paper', 'alle Dokumente', 'meine Paper', 'die Bibliothek' oder eine Zusammenfassung/Analyse ueber mehrere Paper verlangt, waehle all_papers.",
-  "- Wenn der aktuelle Prompt nur Titel, Autoren, Jahre, Tags oder eine Liste der Paper verlangt, waehle metadata.",
+  "- Wenn der aktuelle Prompt nach Anzahl der Paper, aeltestem/neuestem Paper, Titeln, Autoren, Jahren, Tags oder einer reinen Paperliste fragt, waehle metadata.",
+  "- Wenn der aktuelle Prompt 'alle Paper', 'alle Dokumente', 'meine Paper', 'die Bibliothek' oder eine Zusammenfassung/Analyse ueber mehrere Paper verlangt, waehle all_papers und contentFocus='abstracts'.",
+  "- Wenn der aktuelle Prompt eine Zusammenfassung eines ausgewaehlten, genannten oder konkreten Papers verlangt, waehle single_paper und contentFocus='abstracts'.",
+  "- Wenn der aktuelle Prompt nach bereits vorhandenen Papern in der Bibliothek zu einem Thema/Inhalt sucht, waehle all_papers und contentFocus='abstracts'.",
   "- Wenn der aktuelle Prompt 'Zusammenfassung aller Paper' oder 'fasse alle Paper zusammen' enthaelt, waehle immer all_papers.",
   "- Waehle none niemals, wenn der aktuelle Prompt Paper, Zotero, Bibliothek, Dokumente, Quellen oder Metadaten erwaehnt.",
   "",
   "Beispiele:",
   'Prompt: "Gib mir die Titel der Paper" -> {"route":"metadata","reason":"Titel sind Metadaten","requestedFields":["title"]}',
-  'Prompt: "Gib mir eine Zusammenfassung aller Paper" -> {"route":"all_papers","reason":"Zusammenfassung aller Paper braucht Textauszuege aus allen Papern"}',
-  'Prompt: "Fasse das Paper von Smith 2020 zusammen" -> {"route":"single_paper","reason":"Ein konkretes Paper wird angefragt"}',
+  'Prompt: "Wie viele Paper habe ich?" -> {"route":"metadata","reason":"Anzahl kann aus Metadaten bestimmt werden","requestedFields":["title"]}',
+  'Prompt: "Welches ist das aelteste Paper?" -> {"route":"metadata","reason":"Alter kann aus Jahres-Metadaten bestimmt werden","requestedFields":["title","firstCreator","year"]}',
+  'Prompt: "Gib mir eine Zusammenfassung aller Paper" -> {"route":"all_papers","reason":"Zusammenfassung aller Paper braucht Abstracts aus allen Papern","contentFocus":"abstracts"}',
+  'Prompt: "Fasse das Paper von Smith 2020 zusammen" -> {"route":"single_paper","reason":"Ein konkretes Paper wird angefragt","contentFocus":"abstracts"}',
+  'Prompt: "Welche Paper habe ich zu RAG?" -> {"route":"all_papers","reason":"Bibliothekssuche nach vorhandenen Papern zu einem Thema","contentFocus":"abstracts"}',
   "",
   "Schema:",
-  '{"route":"none|metadata|single_paper|filtered_papers|all_papers","reason":"kurz","confidence":0.0,"itemID":123,"itemIDs":[123],"tag":"...","property":"title|firstCreator|year|itemType|tag","value":"...","requestedFields":["title","firstCreator","year","itemType","tags"]}',
+  '{"route":"none|metadata|single_paper|filtered_papers|all_papers","reason":"kurz","confidence":0.0,"contentFocus":"relevant_chunks|abstracts","itemID":123,"itemIDs":[123],"tag":"...","property":"title|firstCreator|year|itemType|tag","value":"...","requestedFields":["title","firstCreator","year","itemType","tags"]}',
 ].join("\n");
 
 export async function decidePromptContextRoute({
@@ -128,7 +138,10 @@ export async function decidePromptContextRoute({
   });
 
   const content = typeof result?.content === "string" ? result.content : "";
-  return normalizeDecision(parseDecision(content));
+  return applyPromptHeuristics(
+    normalizeDecision(parseDecision(content)),
+    prompt,
+  );
 }
 
 function formatCandidates(candidates: PromptContextRouterCandidate[]) {
@@ -181,6 +194,7 @@ function normalizeDecision(
     ...decision,
     route,
     reason: typeof decision.reason === "string" ? decision.reason : "",
+    contentFocus: normalizeContentFocus(decision.contentFocus),
     itemIDs: Array.isArray(decision.itemIDs)
       ? decision.itemIDs.filter((id) => Number.isFinite(id))
       : undefined,
@@ -199,6 +213,116 @@ function normalizeRoute(value: unknown): PromptContextRoute {
     return value;
   }
   return "metadata";
+}
+
+function normalizeContentFocus(
+  value: PromptContextRouteDecision["contentFocus"],
+) {
+  return value === "abstracts" ? "abstracts" : "relevant_chunks";
+}
+
+function applyPromptHeuristics(
+  decision: PromptContextRouteDecision,
+  prompt: string,
+): PromptContextRouteDecision {
+  const normalizedPrompt = normalizePromptText(prompt);
+
+  if (isMetadataOnlyPrompt(normalizedPrompt)) {
+    return {
+      ...decision,
+      route: "metadata",
+      reason: appendReason(
+        decision.reason,
+        "Heuristik: Anfrage ist mit Metadaten loesbar.",
+      ),
+      contentFocus: "relevant_chunks",
+      requestedFields: inferMetadataFields(normalizedPrompt),
+    };
+  }
+
+  if (isSummaryPrompt(normalizedPrompt)) {
+    return {
+      ...decision,
+      route:
+        decision.route === "single_paper" ||
+        decision.route === "filtered_papers"
+          ? decision.route
+          : "all_papers",
+      reason: appendReason(
+        decision.reason,
+        "Heuristik: Zusammenfassung soll Abstract-orientierten Kontext nutzen.",
+      ),
+      contentFocus: "abstracts",
+    };
+  }
+
+  if (isLibrarySearchPrompt(normalizedPrompt)) {
+    return {
+      ...decision,
+      route:
+        decision.route === "filtered_papers" ? "filtered_papers" : "all_papers",
+      reason: appendReason(
+        decision.reason,
+        "Heuristik: Bibliothekssuche soll Abstract-orientierten Kontext nutzen.",
+      ),
+      contentFocus: "abstracts",
+    };
+  }
+
+  return decision;
+}
+
+function normalizePromptText(prompt: string) {
+  return prompt
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isMetadataOnlyPrompt(prompt: string) {
+  if (isSummaryPrompt(prompt) || isLibrarySearchPrompt(prompt)) return false;
+  return /\b(wie viele|anzahl|count|titel|title|autor|author|jahr|year|tag|tags|alteste|aelteste|oldest|neueste|newest|liste|list)\b/.test(
+    prompt,
+  );
+}
+
+function isSummaryPrompt(prompt: string) {
+  return /\b(zusammenfassung|zusammenfassen|fasse zusammen|fass zusammen|summary|summarize|abstract|ueberblick|uberblick)\b/.test(
+    prompt,
+  );
+}
+
+function isLibrarySearchPrompt(prompt: string) {
+  const asksForExistingPapers =
+    /\b(suche|finde|welche paper|welche artikel|paper.*zu|artikel.*zu|papers.*about|find papers|search papers)\b/.test(
+      prompt,
+    );
+  const mentionsLibrary =
+    /\b(bibliothek|library|meine paper|meinen papern|vorhanden|bestehend|zotero)\b/.test(
+      prompt,
+    );
+  return asksForExistingPapers && mentionsLibrary;
+}
+
+function inferMetadataFields(prompt: string): MetadataField[] {
+  const fields = new Set<MetadataField>();
+  if (/\b(titel|title|liste|list|anzahl|count|wie viele)\b/.test(prompt)) {
+    fields.add("title");
+  }
+  if (/\b(autor|author)\b/.test(prompt)) fields.add("firstCreator");
+  if (/\b(jahr|year|alteste|aelteste|oldest|neueste|newest)\b/.test(prompt)) {
+    fields.add("year");
+    fields.add("title");
+    fields.add("firstCreator");
+  }
+  if (/\b(tag|tags)\b/.test(prompt)) fields.add("tags");
+  return fields.size ? [...fields] : DEFAULT_REQUESTED_FIELDS;
+}
+
+function appendReason(reason: string, addition: string) {
+  return reason ? `${reason} ${addition}` : addition;
 }
 
 function normalizeRequestedFields(
