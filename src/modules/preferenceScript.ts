@@ -108,7 +108,7 @@ function syncRuntimeSettings(window: Window) {
     getElement<HTMLInputElement>(window, "ollama-model")?.value.trim() ||
     OLLAMA_DEFAULT_MODEL;
   const maxItemsValue =
-    getElement<HTMLInputElement>(window, "max-items")?.value ?? "20";
+    getElement<HTMLInputElement>(window, "max-items")?.value ?? "200";
   const autoDeleteOldChats =
     getElement<HTMLInputElement>(window, "auto-delete-old-chats")?.checked ??
     true;
@@ -125,7 +125,7 @@ function syncRuntimeSettings(window: Window) {
     embeddingModel,
     ollamaBaseUrl,
     ollamaModel,
-    maxItems: Number.parseInt(maxItemsValue, 10) || 20,
+    maxItems: Number.parseInt(maxItemsValue, 10) || 200,
     autoDeleteOldChats,
   };
   addon.api.configureAI();

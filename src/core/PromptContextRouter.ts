@@ -39,6 +39,15 @@ export type PromptContextRouterCandidate = {
   title: string;
   firstCreator: string;
   year: string;
+  publicationDate: string;
+  publicationTitle: string;
+  publisher: string;
+  doi: string;
+  isbn: string;
+  url: string;
+  abstractNote: string;
+  dateAdded: string;
+  dateModified: string;
   itemType: string;
   tags: string[];
   libraryName: string;
@@ -138,10 +147,14 @@ export async function decidePromptContextRoute({
   });
 
   const content = typeof result?.content === "string" ? result.content : "";
-  return applyPromptHeuristics(
-    normalizeDecision(parseDecision(content)),
-    prompt,
-  );
+  let decision: PromptContextRouteDecision;
+  try {
+    decision = normalizeDecision(parseDecision(content));
+  } catch (error) {
+    decision = buildHeuristicDecision(prompt, error);
+  }
+
+  return applyPromptHeuristics(decision, prompt);
 }
 
 function formatCandidates(candidates: PromptContextRouterCandidate[]) {
@@ -154,6 +167,21 @@ function formatCandidates(candidates: PromptContextRouterCandidate[]) {
         `title="${candidate.title}"`,
         `author="${candidate.firstCreator}"`,
         candidate.year ? `year="${candidate.year}"` : "",
+        candidate.publicationDate
+          ? `publicationDate="${candidate.publicationDate}"`
+          : "",
+        candidate.publicationTitle
+          ? `publication="${candidate.publicationTitle}"`
+          : "",
+        candidate.publisher ? `publisher="${candidate.publisher}"` : "",
+        candidate.doi ? `doi="${candidate.doi}"` : "",
+        candidate.isbn ? `isbn="${candidate.isbn}"` : "",
+        candidate.url ? `url="${candidate.url}"` : "",
+        candidate.abstractNote ? `hasAbstract="true"` : "",
+        candidate.dateAdded ? `dateAdded="${candidate.dateAdded}"` : "",
+        candidate.dateModified
+          ? `dateModified="${candidate.dateModified}"`
+          : "",
         `type="${candidate.itemType}"`,
         candidate.tags.length ? `tags="${candidate.tags.join(", ")}"` : "",
         `library="${candidate.libraryName}"`,
@@ -272,6 +300,43 @@ function applyPromptHeuristics(
   return decision;
 }
 
+function buildHeuristicDecision(
+  prompt: string,
+  error: unknown,
+): PromptContextRouteDecision {
+  const normalizedPrompt = normalizePromptText(prompt);
+
+  if (isMetadataOnlyPrompt(normalizedPrompt)) {
+    return normalizeDecision({
+      route: "metadata",
+      reason: `Router lieferte kein valides JSON; Heuristik nutzt Metadaten. ${String(error)}`,
+      confidence: 0.7,
+      requestedFields: inferMetadataFields(normalizedPrompt),
+    });
+  }
+
+  if (
+    isSummaryPrompt(normalizedPrompt) ||
+    isLibrarySearchPrompt(normalizedPrompt)
+  ) {
+    return normalizeDecision({
+      route: "all_papers",
+      reason: `Router lieferte kein valides JSON; Heuristik nutzt Abstract-orientierte Bibliothekssuche. ${String(error)}`,
+      confidence: 0.7,
+      contentFocus: "abstracts",
+    });
+  }
+
+  return normalizeDecision({
+    route: mentionsPaperContext(normalizedPrompt) ? "all_papers" : "none",
+    reason: `Router lieferte kein valides JSON; Heuristik-Fallback. ${String(error)}`,
+    confidence: 0.4,
+    contentFocus: mentionsPaperContext(normalizedPrompt)
+      ? "abstracts"
+      : "relevant_chunks",
+  });
+}
+
 function normalizePromptText(prompt: string) {
   return prompt
     .toLowerCase()
@@ -296,14 +361,26 @@ function isSummaryPrompt(prompt: string) {
 
 function isLibrarySearchPrompt(prompt: string) {
   const asksForExistingPapers =
-    /\b(suche|finde|welche paper|welche artikel|paper.*zu|artikel.*zu|papers.*about|find papers|search papers)\b/.test(
+    /\b(suche|finde|welche paper|welche artikel|paper.*zu|artikel.*zu|welches paper|welcher artikel|am ehesten passen|passen wurde|passen wuerde|passend|geeignet|papers.*about|find papers|search papers)\b/.test(
       prompt,
     );
   const mentionsLibrary =
     /\b(bibliothek|library|meine paper|meinen papern|vorhanden|bestehend|zotero)\b/.test(
       prompt,
     );
-  return asksForExistingPapers && mentionsLibrary;
+  const asksForPaperRecommendation =
+    /\b(welches paper|welcher artikel|welche paper|welche artikel|paper.*passen|artikel.*passen|am ehesten passen|passend|geeignet)\b/.test(
+      prompt,
+    );
+  return (
+    asksForExistingPapers && (mentionsLibrary || asksForPaperRecommendation)
+  );
+}
+
+function mentionsPaperContext(prompt: string) {
+  return /\b(paper|artikel|dokument|quelle|bibliothek|library|zotero|publication|publikation)\b/.test(
+    prompt,
+  );
 }
 
 function inferMetadataFields(prompt: string): MetadataField[] {

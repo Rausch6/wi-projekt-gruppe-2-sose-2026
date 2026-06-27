@@ -130,13 +130,15 @@ export type PromptContextRouteDebug = {
   prompt: string;
   provider: LLMProvider;
   model: string;
+  status: "routed" | "skipped" | "fallback";
   decision: PromptContextRouteDecision;
   candidateCount: number;
   selectedItemIDs: number[];
   contextMode: string;
   routerUsesChatHistory: false;
-  routerMessageCount: 2;
+  routerMessageCount: number;
   createdAt: string;
+  error?: string;
 };
 
 export type AssistantRequestDebug = {
@@ -421,6 +423,7 @@ export async function sendChatPrompt(prompt: string) {
   }
 
   if (simulationEnabled) {
+    recordPromptContextRouteSkipped(content, "simulation");
     pendingSimulationPrompts.push({
       id: userMessage.id,
       content: userMessage.content,
@@ -770,6 +773,10 @@ async function createPaperContextMessage(prompt: string) {
     (provider === "kisski" && addon.data.settings.sendPaperContextToKisski);
 
   if (!shouldIncludePaper) {
+    recordPromptContextRouteSkipped(
+      prompt,
+      "paper-context-disabled-for-provider",
+    );
     return null;
   }
 
@@ -814,6 +821,7 @@ async function createPaperContextMessage(prompt: string) {
     Zotero.debug(
       `[PromptContextRouter] Entscheidung fehlgeschlagen, nutze bisherigen Kontextpfad: ${error}`,
     );
+    recordPromptContextRouteFallback(prompt, error);
   }
 
   return createLegacyPaperContextMessage(prompt, reference);
@@ -856,10 +864,15 @@ async function buildContextFromRouteDecision(
 
     case "filtered_papers": {
       const itemIDs = filterCandidateItemIDs(decision, candidates);
-      if (!itemIDs.length) return buildMetadataContext(candidates);
+      const contextItemIDs = itemIDs.length
+        ? itemIDs
+        : decision.contentFocus === "abstracts"
+          ? candidates.map((candidate) => candidate.itemID)
+          : [];
+      if (!contextItemIDs.length) return buildMetadataContext(candidates);
       return PaperContextService.buildVectorContextForItems(
         prompt,
-        itemIDs,
+        contextItemIDs,
         "Relevante AuszÃ¼ge aus den gefilterten Papern:",
       );
     }
@@ -897,7 +910,7 @@ async function buildSinglePaperContext(
 }
 
 async function getPromptRouterCandidates() {
-  const maxItems = Math.max(1, addon.data.settings.maxItems || 20);
+  const maxItems = clampCandidateLimit(addon.data.settings.maxItems);
   const candidates: RagItemCandidate[] = [];
 
   for (const scope of LibraryScopeManager.listLibraryScopes()) {
@@ -912,7 +925,26 @@ async function getPromptRouterCandidates() {
     candidates.push(...scopedCandidates);
   }
 
-  return candidates;
+  return candidates.sort(sortRagCandidatesByRecency);
+}
+
+function sortRagCandidatesByRecency(
+  first: RagItemCandidate,
+  second: RagItemCandidate,
+) {
+  return getCandidateTimestamp(second) - getCandidateTimestamp(first);
+}
+
+function clampCandidateLimit(value: number) {
+  if (!Number.isFinite(value)) return 200;
+  return Math.min(1000, Math.max(1, Math.floor(value)));
+}
+
+function getCandidateTimestamp(candidate: RagItemCandidate) {
+  const parsed = Date.parse(
+    candidate.dateModified || candidate.dateAdded || "",
+  );
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function toPromptRouterCandidate(
@@ -923,6 +955,15 @@ function toPromptRouterCandidate(
     title: candidate.title,
     firstCreator: candidate.creators,
     year: candidate.year,
+    publicationDate: candidate.publicationDate,
+    publicationTitle: candidate.publicationTitle,
+    publisher: candidate.publisher,
+    doi: candidate.doi,
+    isbn: candidate.isbn,
+    url: candidate.url,
+    abstractNote: candidate.abstractNote,
+    dateAdded: candidate.dateAdded,
+    dateModified: candidate.dateModified,
     itemType: candidate.itemType,
     tags: candidate.tags,
     libraryName: candidate.library.name,
@@ -943,24 +984,9 @@ function buildMetadataContext(
     return "Die Bibliothek des Nutzers enthÃ¤lt keine auswertbaren Paper-Metadaten.";
   }
 
-  const lines = candidates.map((candidate) => {
-    const parts = [`[Zotero-ID: ${candidate.itemID}]`];
-    if (fields.includes("title")) parts.push(`"${candidate.title}"`);
-    if (fields.includes("firstCreator")) {
-      parts.push(`Autor: ${candidate.creators}`);
-    }
-    if (fields.includes("year") && candidate.year) {
-      parts.push(`Jahr: ${candidate.year}`);
-    }
-    if (fields.includes("itemType")) {
-      parts.push(`Typ: ${candidate.itemType}`);
-    }
-    if (fields.includes("tags") && candidate.tags.length) {
-      parts.push(`Tags: ${candidate.tags.join(", ")}`);
-    }
-    parts.push(`Bibliothek: ${candidate.library.name}`);
-    return parts.join(" | ");
-  });
+  const lines = candidates.map((candidate) =>
+    formatCandidateMetadata(candidate, fields),
+  );
 
   return [
     "Du bist ein wissenschaftlicher KI-Assistent fÃ¼r Zotero.",
@@ -970,8 +996,52 @@ function buildMetadataContext(
     "Antworte strukturiert und ueberschaubar.",
     "",
     "Paper-Metadaten:",
+    "<paper-metadata>",
     lines.join("\n"),
+    "</paper-metadata>",
   ].join("\n");
+}
+
+function formatCandidateMetadata(
+  candidate: RagItemCandidate,
+  fields: PromptContextRouteDecision["requestedFields"],
+) {
+  const include = (field: NonNullable<typeof fields>[number]) =>
+    !fields?.length || fields.includes(field);
+  const lines = [
+    `[PAPER Zotero-ID=${candidate.itemID}]`,
+    `Item-Key: ${normalizeMetadataValue(candidate.itemKey, "unbekannt")}`,
+    `Bibliothek: ${normalizeMetadataValue(candidate.library.name, "Unbekannte Bibliothek")} (Library-ID: ${candidate.library.libraryID})`,
+    `Titel: ${normalizeMetadataValue(candidate.title, "Ohne Titel")}`,
+    `Autorenschaft: ${normalizeMetadataValue(candidate.creators, "Unbekannte Autorenschaft")}`,
+    `Veröffentlichungsdatum: ${normalizeMetadataValue(candidate.publicationDate, "Unbekannt")}`,
+    `Jahr: ${normalizeMetadataValue(candidate.year, "Unbekannt")}`,
+    `Publikation/Journal: ${normalizeMetadataValue(candidate.publicationTitle, "Unbekannt")}`,
+    `Verlag: ${normalizeMetadataValue(candidate.publisher, "Unbekannt")}`,
+    `DOI: ${normalizeMetadataValue(candidate.doi, "Nicht vorhanden")}`,
+    `ISBN: ${normalizeMetadataValue(candidate.isbn, "Nicht vorhanden")}`,
+    `URL: ${normalizeMetadataValue(candidate.url, "Nicht vorhanden")}`,
+    `Abstract vorhanden: ${normalizeMetadataValue(candidate.abstractNote) ? "Ja" : "Nein"}`,
+    `Typ: ${normalizeMetadataValue(candidate.itemType, "unknown")}`,
+    `Tags: ${candidate.tags.length ? candidate.tags.map((tag) => normalizeMetadataValue(tag)).join(", ") : "Keine Tags"}`,
+    `Zotero hinzugefügt: ${normalizeMetadataValue(candidate.dateAdded, "Unbekannt")}`,
+    `Zotero geändert: ${normalizeMetadataValue(candidate.dateModified, "Unbekannt")}`,
+  ];
+
+  if (include("tags")) {
+    lines.push(
+      `Hinweis: Tags koennen fuer thematische Filter und Gruppierungen genutzt werden.`,
+    );
+  }
+
+  return [...lines, "[/PAPER]"].join("\n");
+}
+
+function normalizeMetadataValue(value: unknown, fallback = "") {
+  const normalized = String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return normalized || fallback;
 }
 
 function filterCandidateItemIDs(
@@ -1032,6 +1102,7 @@ function recordPromptContextRouteDebug({
     prompt,
     provider,
     model,
+    status: "routed",
     decision,
     candidateCount: candidates.length,
     selectedItemIDs: getDecisionItemIDs(decision, candidates),
@@ -1039,6 +1110,57 @@ function recordPromptContextRouteDebug({
     routerUsesChatHistory: false,
     routerMessageCount: 2,
     createdAt: new Date().toISOString(),
+  };
+
+  Zotero.debug(
+    `[PromptContextRouter] Debug: ${JSON.stringify(lastPromptContextRouteDebug)}`,
+  );
+}
+
+function recordPromptContextRouteSkipped(prompt: string, reason: string) {
+  lastPromptContextRouteDebug = {
+    prompt,
+    provider: addon.data.settings.contextRouterProvider,
+    model: getRouterModel(addon.data.settings.contextRouterProvider),
+    status: "skipped",
+    decision: {
+      route: "none",
+      reason,
+      confidence: 1,
+      requestedFields: [],
+    },
+    candidateCount: 0,
+    selectedItemIDs: [],
+    contextMode: "skipped",
+    routerUsesChatHistory: false,
+    routerMessageCount: 0,
+    createdAt: new Date().toISOString(),
+  };
+
+  Zotero.debug(
+    `[PromptContextRouter] Debug: ${JSON.stringify(lastPromptContextRouteDebug)}`,
+  );
+}
+
+function recordPromptContextRouteFallback(prompt: string, error: unknown) {
+  lastPromptContextRouteDebug = {
+    prompt,
+    provider: addon.data.settings.contextRouterProvider,
+    model: getRouterModel(addon.data.settings.contextRouterProvider),
+    status: "fallback",
+    decision: {
+      route: "metadata",
+      reason: "Routerentscheidung fehlgeschlagen; Legacy-Kontextpfad genutzt.",
+      confidence: 0,
+      requestedFields: [],
+    },
+    candidateCount: 0,
+    selectedItemIDs: [],
+    contextMode: "fallback",
+    routerUsesChatHistory: false,
+    routerMessageCount: 0,
+    createdAt: new Date().toISOString(),
+    error: String(error),
   };
 
   Zotero.debug(
@@ -1067,7 +1189,12 @@ function getDecisionItemIDs(
   }
 
   if (decision.route === "filtered_papers") {
-    return filterCandidateItemIDs(decision, candidates);
+    const itemIDs = filterCandidateItemIDs(decision, candidates);
+    if (itemIDs.length) return itemIDs;
+    if (decision.contentFocus === "abstracts") {
+      return candidates.map((candidate) => candidate.itemID);
+    }
+    return [];
   }
 
   if (decision.route === "all_papers") {
@@ -1083,6 +1210,7 @@ export function getLastPromptContextRouteDebug() {
         ...lastPromptContextRouteDebug,
         decision: { ...lastPromptContextRouteDebug.decision },
         selectedItemIDs: [...lastPromptContextRouteDebug.selectedItemIDs],
+        error: lastPromptContextRouteDebug.error,
       }
     : null;
 }

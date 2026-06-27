@@ -192,7 +192,7 @@ class Addon {
         embeddingModel: EMBEDDING_DEFAULT_MODEL,
         ollamaBaseUrl: "http://localhost:11434",
         ollamaModel: "qwen2.5:3b",
-        maxItems: 20,
+        maxItems: 200,
         autoDeleteOldChats: true,
       },
       runtime: {

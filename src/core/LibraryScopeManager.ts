@@ -20,6 +20,15 @@ export interface RagItemCandidate {
   title: string;
   creators: string;
   year: string;
+  publicationDate: string;
+  publicationTitle: string;
+  publisher: string;
+  doi: string;
+  isbn: string;
+  url: string;
+  abstractNote: string;
+  dateAdded: string;
+  dateModified: string;
   itemType: string;
   tags: string[];
   collectionIDs: number[];
@@ -70,11 +79,13 @@ export class LibraryScopeManager {
     for (const itemID of itemIDs) {
       if (limit && candidates.length >= limit) break;
 
-      const item = await Zotero.Items.getAsync(itemID);
+      const item = await loadItemCompletely(
+        await Zotero.Items.getAsync(itemID),
+      );
       if (!isIndexableRegularItem(item)) continue;
       if (!query.includeWithoutPdf && !(await hasPdfAttachment(item))) continue;
 
-      candidates.push(createRagItemCandidate(scope, item));
+      candidates.push(await createRagItemCandidate(scope, item));
     }
 
     return candidates;
@@ -164,25 +175,163 @@ async function hasPdfAttachment(item: Zotero.Item) {
   return false;
 }
 
-function createRagItemCandidate(
+async function createRagItemCandidate(
   library: LibraryScope,
   item: Zotero.Item,
-): RagItemCandidate {
+): Promise<RagItemCandidate> {
   return {
     library,
     itemID: item.id,
     itemKey: item.key,
-    title: getSafeItemField(item, "title", "Ohne Titel"),
-    creators: getSafeItemField(
-      item,
-      "firstCreator",
-      "Unbekannte Autorenschaft",
-    ),
+    title: await getSafeTitle(item),
+    creators: getSafeCreators(item),
     year: getSafeItemField(item, "year", ""),
+    publicationDate: getSafeItemField(item, "date", ""),
+    publicationTitle: getSafeItemField(item, "publicationTitle", ""),
+    publisher: getSafeItemField(item, "publisher", ""),
+    doi: getSafeItemField(item, "DOI", ""),
+    isbn: getSafeItemField(item, "ISBN", ""),
+    url: getSafeItemField(item, "url", ""),
+    abstractNote: getSafeItemField(item, "abstractNote", ""),
+    dateAdded: getSafeItemField(item, "dateAdded", ""),
+    dateModified: getSafeItemField(item, "dateModified", ""),
     itemType: getSafeItemType(item),
     tags: getSafeTags(item),
     collectionIDs: getSafeCollections(item),
   };
+}
+
+async function getSafeTitle(item: Zotero.Item) {
+  item = await loadItemCompletely(item);
+  const parentTitle = await getParentItemTitle(item);
+  if (parentTitle) return parentTitle;
+
+  const title = getSafeItemField(item, "title", "");
+  if (title && !isGenericAttachmentTitle(title)) return title;
+
+  const attachmentTitle = await getBestAttachmentTitle(item);
+  if (attachmentTitle) return attachmentTitle;
+
+  try {
+    const displayTitle = (
+      item as Zotero.Item & { getDisplayTitle?: () => string }
+    ).getDisplayTitle?.();
+    if (displayTitle) return displayTitle;
+  } catch {
+    // Fall back to a stable placeholder below.
+  }
+
+  return "Ohne Titel";
+}
+
+async function getBestAttachmentTitle(item: Zotero.Item) {
+  try {
+    for (const attachmentID of item.getAttachments()) {
+      const attachment = await loadItemCompletely(
+        await Zotero.Items.getAsync(attachmentID),
+      );
+      if (!attachment?.isAttachment()) continue;
+
+      const attachmentTitle =
+        getSafeItemField(attachment, "title", "") ||
+        (
+          attachment as Zotero.Item & { getFilename?: () => string }
+        ).getFilename?.() ||
+        "";
+      if (isGenericAttachmentTitle(attachmentTitle)) continue;
+      const normalizedTitle = normalizeAttachmentTitle(attachmentTitle);
+      if (normalizedTitle) return normalizedTitle;
+    }
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Attachment-Titel fuer RAG-Kandidat ${item.id} konnte nicht gelesen werden: ${error}`,
+    );
+  }
+
+  return "";
+}
+
+async function getParentItemTitle(item: Zotero.Item) {
+  if (!item.isAttachment() || !item.parentID) return "";
+
+  try {
+    const parent = await loadItemCompletely(
+      await Zotero.Items.getAsync(item.parentID),
+    );
+    const parentTitle = getSafeItemField(parent, "title", "");
+    if (parentTitle && !isGenericAttachmentTitle(parentTitle))
+      return parentTitle;
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Parent-Titel fuer Attachment ${item.id} konnte nicht gelesen werden: ${error}`,
+    );
+  }
+
+  return "";
+}
+
+async function loadItemCompletely(item: Zotero.Item) {
+  try {
+    await item.loadAllData(true);
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Item ${item.id} konnte nicht vollstaendig nachgeladen werden: ${error}`,
+    );
+  }
+
+  return item;
+}
+
+function normalizeAttachmentTitle(title: string) {
+  return title
+    .replace(/\.pdf$/i, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isGenericAttachmentTitle(title: string) {
+  const normalized = title
+    .toLowerCase()
+    .replace(/\.pdf$/i, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return [
+    "",
+    "pdf",
+    "full text",
+    "full text pdf",
+    "fulltext",
+    "fulltext pdf",
+    "submitted version",
+    "accepted version",
+    "publisher version",
+  ].includes(normalized);
+}
+
+function getSafeCreators(item: Zotero.Item) {
+  try {
+    const creators = item
+      .getCreators()
+      .map((creator) => {
+        const name = [creator.firstName, creator.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+        return name || (creator as unknown as { name?: string }).name || "";
+      })
+      .filter(Boolean);
+
+    if (creators.length) return creators.join("; ");
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Creator konnten fÃƒÂ¼r RAG-Kandidat ${item.id} nicht gelesen werden: ${error}`,
+    );
+  }
+
+  return getSafeItemField(item, "firstCreator", "Unbekannte Autorenschaft");
 }
 
 function getSafeItemField(item: Zotero.Item, field: string, fallback: string) {

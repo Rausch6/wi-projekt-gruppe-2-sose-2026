@@ -40,6 +40,15 @@ interface ContextPaperMetadata {
   title: string;
   creators: string;
   year: string;
+  publicationDate: string;
+  publicationTitle: string;
+  publisher: string;
+  doi: string;
+  isbn: string;
+  url: string;
+  abstractNote: string;
+  dateAdded: string;
+  dateModified: string;
   itemType: string;
   tags: string[];
 }
@@ -295,7 +304,7 @@ export class PaperContextService {
       );
     }
 
-    const hitGroups = await Promise.all(
+    let hitGroups = await Promise.all(
       uniqueItemIDs.map(async (itemID) => {
         try {
           return await vectorStore.searchSimilar(
@@ -313,11 +322,20 @@ export class PaperContextService {
       }),
     );
 
-    const hits = hitGroups.flat().slice(0, 30);
+    let hits = hitGroups.flat().slice(0, 30);
     const metadata = await getContextMetadataForItemIDs(uniqueItemIDs);
     const metadataByItemID = new Map(
       metadata.map((entry) => [entry.itemID, entry]),
     );
+
+    if (!hits.length && resolvedOptions.contentFocus === "abstracts") {
+      hitGroups = await searchVectorContextWithoutKeywordTerm(
+        queryVector,
+        query,
+        uniqueItemIDs,
+      );
+      hits = hitGroups.flat().slice(0, 30);
+    }
 
     if (!hits.length) {
       if (!metadata.length) return null;
@@ -325,9 +343,13 @@ export class PaperContextService {
       return [
         "Du bist ein wissenschaftlicher KI-Assistent fuer die Literaturverwaltung Zotero.",
         "Fuer die Anfrage wurden Paper ausgewaehlt, aber es wurden keine passenden Textauszuege in der lokalen Vektordatenbank gefunden.",
-        "Nutze die folgenden strukturierten Metadaten nur fuer bibliographische Antworten. Behaupte keine inhaltlichen Details, die nicht in den Metadaten stehen.",
+        resolvedOptions.contentFocus === "abstracts"
+          ? "Nutze die folgenden strukturierten Metadaten und Zotero-Abstracts, um passende Paper vorzuschlagen. Wenn keine Abstracts vorhanden sind, sage das deutlich."
+          : "Nutze die folgenden strukturierten Metadaten nur fuer bibliographische Antworten. Behaupte keine inhaltlichen Details, die nicht in den Metadaten stehen.",
         "",
         formatContextMetadataBlock(metadata),
+        "",
+        formatAbstractNotesBlock(metadata),
       ].join("\n");
     }
 
@@ -434,6 +456,30 @@ function buildVectorSearchQuery(query: string, options: VectorContextOptions) {
   ].join("\n");
 }
 
+async function searchVectorContextWithoutKeywordTerm(
+  queryVector: number[] | null,
+  query: string,
+  itemIDs: number[],
+) {
+  return Promise.all(
+    itemIDs.map(async (itemID) => {
+      try {
+        return await vectorStore.searchSimilar(
+          queryVector,
+          3,
+          { zoteroItemId: String(itemID) },
+          queryVector ? undefined : query,
+        );
+      } catch (error) {
+        Zotero.debug(
+          `[PaperContextService] Abstract-Retry-Suche fuer Item ${itemID} fehlgeschlagen: ${error}`,
+        );
+        return [];
+      }
+    }),
+  );
+}
+
 function resolveVectorContextOptions(
   query: string,
   options: VectorContextOptions,
@@ -502,7 +548,7 @@ async function getContextMetadataForItemID(
   let item: Zotero.Item | null = null;
 
   try {
-    item = await Zotero.Items.getAsync(itemID);
+    item = await loadItemCompletely(await Zotero.Items.getAsync(itemID));
   } catch (error) {
     Zotero.debug(
       `ZAIA: Metadaten fuer Item ${itemID} konnten nicht geladen werden: ${error}`,
@@ -519,9 +565,18 @@ async function getContextMetadataForItemID(
     itemKey: item.key,
     libraryID: item.libraryID,
     libraryName: getSafeLibraryName(item.libraryID),
-    title: itemData.title,
-    creators: itemData.firstCreator,
+    title: await getSafeMetadataTitle(item, itemData.title),
+    creators: getSafeMetadataCreators(item),
     year: itemData.year,
+    publicationDate: getSafeMetadataField(item, "date", ""),
+    publicationTitle: getSafeMetadataField(item, "publicationTitle", ""),
+    publisher: getSafeMetadataField(item, "publisher", ""),
+    doi: getSafeMetadataField(item, "DOI", ""),
+    isbn: getSafeMetadataField(item, "ISBN", ""),
+    url: getSafeMetadataField(item, "url", ""),
+    abstractNote: getSafeMetadataField(item, "abstractNote", ""),
+    dateAdded: getSafeMetadataField(item, "dateAdded", ""),
+    dateModified: getSafeMetadataField(item, "dateModified", ""),
     itemType: itemData.itemType,
     tags: getSafeTags(item),
   };
@@ -540,6 +595,33 @@ function formatContextMetadataBlock(metadata: ContextPaperMetadata[]) {
   ].join("\n");
 }
 
+function formatAbstractNotesBlock(metadata: ContextPaperMetadata[]) {
+  const abstracts = metadata.filter((entry) =>
+    normalizeMetadataValue(entry.abstractNote),
+  );
+
+  if (!abstracts.length) {
+    return "Zotero-Abstracts: Keine Abstracts in den Zotero-Metadaten vorhanden.";
+  }
+
+  return [
+    "Zotero-Abstracts:",
+    "<paper-abstracts>",
+    ...abstracts.map(formatSingleAbstractNote),
+    "</paper-abstracts>",
+  ].join("\n");
+}
+
+function formatSingleAbstractNote(metadata: ContextPaperMetadata) {
+  return [
+    `[ABSTRACT Zotero-ID=${metadata.itemID}]`,
+    `Titel: ${normalizeMetadataValue(metadata.title, "Ohne Titel")}`,
+    `Autorenschaft: ${normalizeMetadataValue(metadata.creators, "Unbekannte Autorenschaft")}`,
+    `Abstract: ${truncateMetadataValue(metadata.abstractNote, 1800)}`,
+    "[/ABSTRACT]",
+  ].join("\n");
+}
+
 function formatSingleContextMetadata(metadata: ContextPaperMetadata) {
   return [
     `[PAPER Zotero-ID=${metadata.itemID}]`,
@@ -547,9 +629,18 @@ function formatSingleContextMetadata(metadata: ContextPaperMetadata) {
     `Bibliothek: ${normalizeMetadataValue(metadata.libraryName, "Unbekannte Bibliothek")} (Library-ID: ${metadata.libraryID})`,
     `Titel: ${normalizeMetadataValue(metadata.title, "Ohne Titel")}`,
     `Autorenschaft: ${normalizeMetadataValue(metadata.creators, "Unbekannte Autorenschaft")}`,
+    `Veröffentlichungsdatum: ${normalizeMetadataValue(metadata.publicationDate, "Unbekannt")}`,
     `Jahr: ${normalizeMetadataValue(metadata.year, "Unbekannt")}`,
+    `Publikation/Journal: ${normalizeMetadataValue(metadata.publicationTitle, "Unbekannt")}`,
+    `Verlag: ${normalizeMetadataValue(metadata.publisher, "Unbekannt")}`,
+    `DOI: ${normalizeMetadataValue(metadata.doi, "Nicht vorhanden")}`,
+    `ISBN: ${normalizeMetadataValue(metadata.isbn, "Nicht vorhanden")}`,
+    `URL: ${normalizeMetadataValue(metadata.url, "Nicht vorhanden")}`,
+    `Abstract vorhanden: ${normalizeMetadataValue(metadata.abstractNote) ? "Ja" : "Nein"}`,
     `Typ: ${normalizeMetadataValue(metadata.itemType, "unknown")}`,
     `Tags: ${metadata.tags.length ? metadata.tags.map((tag) => normalizeMetadataValue(tag)).join(", ") : "Keine Tags"}`,
+    `Zotero hinzugefügt: ${normalizeMetadataValue(metadata.dateAdded, "Unbekannt")}`,
+    `Zotero geändert: ${normalizeMetadataValue(metadata.dateModified, "Unbekannt")}`,
     "[/PAPER]",
   ].join("\n");
 }
@@ -574,6 +665,12 @@ function normalizeMetadataValue(value: unknown, fallback = "") {
   return normalized || fallback;
 }
 
+function truncateMetadataValue(value: unknown, maxLength: number) {
+  const normalized = normalizeMetadataValue(value);
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, maxLength - 1).trim()}…`;
+}
+
 function getSafeLibraryName(libraryID: number) {
   try {
     return Zotero.Libraries.getName(libraryID);
@@ -583,6 +680,155 @@ function getSafeLibraryName(libraryID: number) {
     );
     return "Unbekannte Bibliothek";
   }
+}
+
+function getSafeMetadataField(
+  item: Zotero.Item,
+  field: string,
+  fallback: string,
+) {
+  try {
+    return item.getField(field) || fallback;
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Metadatenfeld "${field}" fuer Item ${item.id} konnte nicht gelesen werden: ${error}`,
+    );
+    return fallback;
+  }
+}
+
+async function getSafeMetadataTitle(item: Zotero.Item, fallbackTitle: string) {
+  item = await loadItemCompletely(item);
+  const parentTitle = await getParentItemTitle(item);
+  if (parentTitle) return parentTitle;
+
+  const title = getSafeMetadataField(item, "title", "");
+  if (title && !isGenericAttachmentTitle(title)) return title;
+
+  const attachmentTitle = await getBestAttachmentTitle(item);
+  if (attachmentTitle) return attachmentTitle;
+
+  try {
+    const displayTitle = (
+      item as Zotero.Item & { getDisplayTitle?: () => string }
+    ).getDisplayTitle?.();
+    if (displayTitle) return displayTitle;
+  } catch {
+    // Fall back to ItemManager data below.
+  }
+
+  return normalizeMetadataValue(fallbackTitle, "Ohne Titel");
+}
+
+async function getBestAttachmentTitle(item: Zotero.Item) {
+  try {
+    for (const attachmentID of item.getAttachments()) {
+      const attachment = await loadItemCompletely(
+        await Zotero.Items.getAsync(attachmentID),
+      );
+      if (!attachment?.isAttachment()) continue;
+
+      const attachmentTitle =
+        getSafeMetadataField(attachment, "title", "") ||
+        (
+          attachment as Zotero.Item & { getFilename?: () => string }
+        ).getFilename?.() ||
+        "";
+      if (isGenericAttachmentTitle(attachmentTitle)) continue;
+      const normalizedTitle = normalizeAttachmentTitle(attachmentTitle);
+      if (normalizedTitle) return normalizedTitle;
+    }
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Attachment-Titel fuer Item ${item.id} konnte nicht gelesen werden: ${error}`,
+    );
+  }
+
+  return "";
+}
+
+async function getParentItemTitle(item: Zotero.Item) {
+  if (!item.isAttachment() || !item.parentID) return "";
+
+  try {
+    const parent = await loadItemCompletely(
+      await Zotero.Items.getAsync(item.parentID),
+    );
+    const parentTitle = getSafeMetadataField(parent, "title", "");
+    if (parentTitle && !isGenericAttachmentTitle(parentTitle))
+      return parentTitle;
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Parent-Titel fuer Attachment ${item.id} konnte nicht gelesen werden: ${error}`,
+    );
+  }
+
+  return "";
+}
+
+async function loadItemCompletely(item: Zotero.Item) {
+  try {
+    await item.loadAllData(true);
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Item ${item.id} konnte nicht vollstaendig nachgeladen werden: ${error}`,
+    );
+  }
+
+  return item;
+}
+
+function normalizeAttachmentTitle(title: string) {
+  return title
+    .replace(/\.pdf$/i, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isGenericAttachmentTitle(title: string) {
+  const normalized = title
+    .toLowerCase()
+    .replace(/\.pdf$/i, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return [
+    "",
+    "pdf",
+    "full text",
+    "full text pdf",
+    "fulltext",
+    "fulltext pdf",
+    "submitted version",
+    "accepted version",
+    "publisher version",
+  ].includes(normalized);
+}
+
+function getSafeMetadataCreators(item: Zotero.Item) {
+  try {
+    const creators = item
+      .getCreators()
+      .map((creator) => {
+        const name = [creator.firstName, creator.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+        return name || (creator as unknown as { name?: string }).name || "";
+      })
+      .filter(Boolean);
+
+    if (creators.length) return creators.join("; ");
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Creator fuer Item ${item.id} konnten nicht gelesen werden: ${error}`,
+    );
+  }
+
+  const itemData = ItemManager.extractItemData(item);
+  return itemData.firstCreator || "Unbekannte Autorenschaft";
 }
 
 function getSafeTags(item: Zotero.Item) {
