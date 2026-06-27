@@ -31,8 +31,12 @@ import {
   clearChat,
   createChat,
   deleteChat,
+  formatLastAssistantRequestDebug,
+  formatLastPromptContextRouteDebug,
   getActiveChatID,
   getChatMessages,
+  getLastAssistantRequestDebug,
+  getLastPromptContextRouteDebug,
   listChats,
   loadChat,
   sendChatPrompt,
@@ -74,6 +78,7 @@ export type PluginSettings = {
   baseUrl: string;
   model: string;
   sendPaperContextToKisski: boolean;
+  contextRouterProvider: LLMProvider;
   embeddingSearchEnabled: boolean;
   embeddingBaseUrl: string;
   embeddingModel: string;
@@ -135,6 +140,16 @@ class Addon {
       setFavorite: typeof setChatFavorite;
     };
     chatSimulation: typeof chatSimulation;
+    chatDebug: {
+      getLastRequest: typeof getLastAssistantRequestDebug;
+      formatLastRequest: typeof formatLastAssistantRequestDebug;
+      logLastRequest: () => string;
+    };
+    contextRouterDebug: {
+      getLastDecision: typeof getLastPromptContextRouteDebug;
+      formatLastDecision: typeof formatLastPromptContextRouteDebug;
+      logLastDecision: () => string;
+    };
     paperDebug: {
       logSelectedChunks: (itemID?: number) => Promise<string>;
       showSelectedChunks: (itemID?: number) => Promise<string>;
@@ -171,6 +186,7 @@ class Addon {
         baseUrl: KISSKI_DEFAULT_BASE_URL,
         model: KISSKI_DEFAULT_MODEL,
         sendPaperContextToKisski: true,
+        contextRouterProvider: "ollama",
         embeddingSearchEnabled: true,
         embeddingBaseUrl: EMBEDDING_DEFAULT_BASE_URL,
         embeddingModel: EMBEDDING_DEFAULT_MODEL,
@@ -243,6 +259,24 @@ class Addon {
         setFavorite: setChatFavorite,
       },
       chatSimulation,
+      chatDebug: {
+        getLastRequest: getLastAssistantRequestDebug,
+        formatLastRequest: formatLastAssistantRequestDebug,
+        logLastRequest: () => {
+          const report = formatLastAssistantRequestDebug();
+          logToZoteroConsole(report);
+          return report;
+        },
+      },
+      contextRouterDebug: {
+        getLastDecision: getLastPromptContextRouteDebug,
+        formatLastDecision: formatLastPromptContextRouteDebug,
+        logLastDecision: () => {
+          const report = formatLastPromptContextRouteDebug();
+          logToZoteroConsole(report);
+          return report;
+        },
+      },
       paperDebug: {
         logSelectedChunks: logSelectedPaperChunks,
         showSelectedChunks: showSelectedPaperChunks,

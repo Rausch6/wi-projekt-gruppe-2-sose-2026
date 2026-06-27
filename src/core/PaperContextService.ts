@@ -1,7 +1,7 @@
 import { ItemManager } from "./ItemManager";
 import { EmbeddingSearchService } from "./EmbeddingSearchService";
 import { PdfExtractor } from "./PdfExtractor";
-import {chunkPaperText,estimateTokens,type TextChunk,} from "./TextChunker";
+import { chunkPaperText, estimateTokens, type TextChunk } from "./TextChunker";
 import { vectorStore, type ChunkDocument } from "./OramaService";
 import { embeddingProvider } from "../ai/EmbeddingProvider.js";
 
@@ -78,7 +78,7 @@ export class PaperContextService {
     const item = await resolveReferencedItem(reference);
     const paper = await getCachedPaper(item);
     if (!paper) return null;
-    
+
     let queryVector: number[] | null = null;
     try {
       [queryVector] = await embeddingProvider.embedTexts([query], {
@@ -88,9 +88,16 @@ export class PaperContextService {
       // --- DEBUG VECTOR ---
       if (queryVector) {
         const vecLength = queryVector.length;
-        const vecPreview = queryVector.slice(0, 5).map(n => n.toFixed(4)).join(", ");
-        Zotero.debug(`[PaperContextService] Vektorisierung erfolgreich! Die Frage wurde in einen Vektor mit ${vecLength} Dimensionen konvertiert.`);
-        Zotero.debug(`[PaperContextService] Vektor-Vorschau (erste 5 Werte): [${vecPreview}, ...]`);
+        const vecPreview = queryVector
+          .slice(0, 5)
+          .map((n) => n.toFixed(4))
+          .join(", ");
+        Zotero.debug(
+          `[PaperContextService] Vektorisierung erfolgreich! Die Frage wurde in einen Vektor mit ${vecLength} Dimensionen konvertiert.`,
+        );
+        Zotero.debug(
+          `[PaperContextService] Vektor-Vorschau (erste 5 Werte): [${vecPreview}, ...]`,
+        );
       }
       // --------------------
     } catch (error) {
@@ -101,10 +108,17 @@ export class PaperContextService {
 
     const itemIdStr = item.id.toString();
 
-    Zotero.debug(`[PaperContextService] Starte dokumentbezogene Suche für Item ${itemIdStr} (Hybrid/Fulltext)`);
-    const searchResults = await vectorStore.searchSimilar(queryVector, 5, {
-      zoteroItemId: itemIdStr,
-    }, query);
+    Zotero.debug(
+      `[PaperContextService] Starte dokumentbezogene Suche für Item ${itemIdStr} (Hybrid/Fulltext)`,
+    );
+    const searchResults = await vectorStore.searchSimilar(
+      queryVector,
+      5,
+      {
+        zoteroItemId: itemIdStr,
+      },
+      query,
+    );
 
     const relevantHits = searchResults.map(
       (hit) => hit.document as unknown as ChunkDocument,
@@ -123,8 +137,14 @@ export class PaperContextService {
       };
     });
 
-    Zotero.debug(`[PaperContextService] Suche für Paper erfolgreich. Folgende Chunks werden genutzt:`);
-    chunks.forEach((c) => Zotero.debug(` -> [${c.id}] (Seite ${c.pageStart}): ${c.text.substring(0, 100)}...`));
+    Zotero.debug(
+      `[PaperContextService] Suche für Paper erfolgreich. Folgende Chunks werden genutzt:`,
+    );
+    chunks.forEach((c) =>
+      Zotero.debug(
+        ` -> [${c.id}] (Seite ${c.pageStart}): ${c.text.substring(0, 100)}...`,
+      ),
+    );
 
     return {
       attachmentID: paper.attachmentID,
@@ -150,9 +170,16 @@ export class PaperContextService {
       // --- DEBUG VECTOR ---
       if (queryVector) {
         const vecLength = queryVector.length;
-        const vecPreview = queryVector.slice(0, 5).map(n => n.toFixed(4)).join(", ");
-        Zotero.debug(`[PaperContextService] Globale Vektorisierung erfolgreich! Die Frage wurde in einen Vektor mit ${vecLength} Dimensionen konvertiert.`);
-        Zotero.debug(`[PaperContextService] Globale Vektor-Vorschau (erste 5 Werte): [${vecPreview}, ...]`);
+        const vecPreview = queryVector
+          .slice(0, 5)
+          .map((n) => n.toFixed(4))
+          .join(", ");
+        Zotero.debug(
+          `[PaperContextService] Globale Vektorisierung erfolgreich! Die Frage wurde in einen Vektor mit ${vecLength} Dimensionen konvertiert.`,
+        );
+        Zotero.debug(
+          `[PaperContextService] Globale Vektor-Vorschau (erste 5 Werte): [${vecPreview}, ...]`,
+        );
       }
       // --------------------
     } catch (error) {
@@ -162,8 +189,15 @@ export class PaperContextService {
     }
 
     try {
-      Zotero.debug(`[PaperContextService] Starte bibliotheksweite Suche (Hybrid/Fulltext)`);
-      searchResults = await vectorStore.searchSimilar(queryVector, 5, undefined, query);
+      Zotero.debug(
+        `[PaperContextService] Starte bibliotheksweite Suche (Hybrid/Fulltext)`,
+      );
+      searchResults = await vectorStore.searchSimilar(
+        queryVector,
+        5,
+        undefined,
+        query,
+      );
     } catch (error) {
       Zotero.debug(
         `[PaperContextService] Globale Orama-Suche fehlgeschlagen: ${error}`,
@@ -171,14 +205,16 @@ export class PaperContextService {
       return null;
     }
 
-    const relevantHits = searchResults.map(hit => hit.document as unknown as ChunkDocument);
+    const relevantHits = searchResults.map(
+      (hit) => hit.document as unknown as ChunkDocument,
+    );
 
     const excerptsArray = await Promise.all(
       relevantHits.map(async (doc) => {
         const itemID = parseInt(doc.zoteroItemId, 10);
         const item = await ItemManager.getSelectedRegularItem(itemID);
         const pageLabel = doc.pageNumber ? `, Seite ${doc.pageNumber}` : "";
-        
+
         let citationKey = `Zotero-ID: ${doc.zoteroItemId}`;
         if (item) {
           const itemData = ItemManager.extractItemData(item);
@@ -188,11 +224,13 @@ export class PaperContextService {
         }
 
         return `[${citationKey}${pageLabel}]\n${doc.content}`;
-      })
+      }),
     );
 
     const excerpts = excerptsArray.join("\n\n");
-    Zotero.debug(`[PaperContextService] Globale Vektor-Suche erfolgreich. Folgende Chunks werden an das LLM gesendet:\n${excerpts}`);
+    Zotero.debug(
+      `[PaperContextService] Globale Vektor-Suche erfolgreich. Folgende Chunks werden an das LLM gesendet:\n${excerpts}`,
+    );
 
     return [
       "Du bist ein wissenschaftlicher KI-Assistent für die Literaturverwaltung Zotero.",
@@ -205,12 +243,88 @@ export class PaperContextService {
       excerpts,
     ].join("\n");
   }
+
+  static async buildVectorContextForItems(
+    query: string,
+    itemIDs: number[],
+    title = "Relevante AuszÃ¼ge aus ausgewÃ¤hlten Papern:",
+  ): Promise<string | null> {
+    const uniqueItemIDs = [...new Set(itemIDs.filter(Number.isFinite))].slice(
+      0,
+      20,
+    );
+    if (!uniqueItemIDs.length) return null;
+
+    let queryVector: number[] | null = null;
+    try {
+      [queryVector] = await embeddingProvider.embedTexts([query], {
+        inputType: "query",
+      });
+    } catch (error) {
+      Zotero.debug(
+        `[PaperContextService] Routing-Embedding fehlgeschlagen, Keyword-Fallback aktiv: ${error}`,
+      );
+    }
+
+    const hitGroups = await Promise.all(
+      uniqueItemIDs.map(async (itemID) => {
+        try {
+          return await vectorStore.searchSimilar(
+            queryVector,
+            3,
+            { zoteroItemId: String(itemID) },
+            query,
+          );
+        } catch (error) {
+          Zotero.debug(
+            `[PaperContextService] Routing-Suche fÃ¼r Item ${itemID} fehlgeschlagen: ${error}`,
+          );
+          return [];
+        }
+      }),
+    );
+
+    const hits = hitGroups.flat().slice(0, 30);
+    if (!hits.length) return null;
+
+    const excerpts = (
+      await Promise.all(
+        hits.map(async (hit) => {
+          const doc = hit.document as unknown as ChunkDocument;
+          const itemID = Number.parseInt(doc.zoteroItemId, 10);
+          const item = Number.isFinite(itemID)
+            ? await Zotero.Items.getAsync(itemID)
+            : null;
+          const citation = item?.isRegularItem()
+            ? formatItemCitation(item)
+            : `Zotero-ID: ${doc.zoteroItemId}`;
+          const pageLabel = doc.pageNumber ? `, Seite ${doc.pageNumber}` : "";
+          return `[${citation}${pageLabel}]\n${doc.content}`;
+        }),
+      )
+    ).join("\n\n");
+
+    return [
+      "Du bist ein wissenschaftlicher KI-Assistent fÃ¼r die Literaturverwaltung Zotero.",
+      "Beantworte die Nutzerfrage nur anhand der folgenden AuszÃ¼ge aus der lokalen Vektordatenbank.",
+      "Wenn die AuszÃ¼ge nicht ausreichen, sage das ausdrÃ¼cklich.",
+      "Verweise bei inhaltlichen Aussagen auf die angegebene Quelle.",
+      "",
+      title,
+      excerpts,
+    ].join("\n");
+  }
+
   /**
    * Stellt einen komprimierten Kontext mit Bibliotheks-Metadaten für das LLM bereit.
    * Das Query-Rewriting-Modul kann 'requestedFields' nutzen, um unnötige Metadaten herauszufiltern.
    */
   static async buildLibraryMetadataContext(
-    requestedFields: Array<"title" | "firstCreator" | "year" | "itemType"> = ["title", "firstCreator", "year"]
+    requestedFields: Array<"title" | "firstCreator" | "year" | "itemType"> = [
+      "title",
+      "firstCreator",
+      "year",
+    ],
   ): Promise<string> {
     const items = await ItemManager.getAllLibraryItemsMetadata();
 
@@ -238,7 +352,7 @@ export class PaperContextService {
     return [
       "Hier sind die gewünschten Metadaten der Paper in der Bibliothek:",
       lines.join("\n"),
-      "Nutze diese Liste für deine Antwort."
+      "Nutze diese Liste für deine Antwort.",
     ].join("\n");
   }
 
@@ -246,6 +360,13 @@ export class PaperContextService {
     paperCache.clear();
     EmbeddingSearchService.clearCache();
   }
+}
+
+function formatItemCitation(item: Zotero.Item) {
+  const itemData = ItemManager.extractItemData(item);
+  const authorLabel = itemData.firstCreator || "Unbekannt";
+  const yearLabel = itemData.year ? ` ${itemData.year}` : "";
+  return `${authorLabel}${yearLabel}`;
 }
 
 async function resolveReferencedItem(reference: PaperReference) {

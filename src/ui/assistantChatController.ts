@@ -1,16 +1,24 @@
 import { ChatRepository } from "../core/ChatRepository";
 import { ItemManager } from "../core/ItemManager";
 import {
+  LibraryScopeManager,
+  type RagItemCandidate,
+} from "../core/LibraryScopeManager";
+import {
   PaperContextService,
   type PaperReference,
 } from "../core/PaperContextService";
+import {
+  decidePromptContextRoute,
+  type PromptContextRouteDecision,
+  type PromptContextRouterCandidate,
+} from "../core/PromptContextRouter";
 import { CreateChatInput, StoredChat } from "../core/chatTypes";
 import { renderMarkdownContent } from "./markdownRenderer";
 import type { LLMProvider } from "../addon";
 import { EMBEDDING_DEFAULT_MODEL } from "../ai/EmbeddingProvider.js";
 import { OLLAMA_DEFAULT_MODEL } from "../ai/providers/OllamaProvider.js";
 import { KISSKI_MODEL_OPTIONS } from "../ai/providers/KisskiProvider.js";
-import { OLLAMA_DEFAULT_MODEL } from "../ai/providers/OllamaProvider.js";
 import {
   createCheckingProviderConnectionResult,
   createProviderConnectionResult,
@@ -115,6 +123,30 @@ let activeAssistantResponse: ActiveAssistantResponse | null = null;
 let ollamaSetupLaunchRunning = false;
 let ollamaStartRunning = false;
 let ollamaStopRunning = false;
+let lastPromptContextRouteDebug: PromptContextRouteDebug | null = null;
+let lastAssistantRequestDebug: AssistantRequestDebug | null = null;
+
+export type PromptContextRouteDebug = {
+  prompt: string;
+  provider: LLMProvider;
+  model: string;
+  decision: PromptContextRouteDecision;
+  candidateCount: number;
+  selectedItemIDs: number[];
+  contextMode: string;
+  routerUsesChatHistory: false;
+  routerMessageCount: 2;
+  createdAt: string;
+};
+
+export type AssistantRequestDebug = {
+  provider: LLMProvider;
+  model: string;
+  transport: "stream" | "buffered";
+  messageCount: number;
+  messages: RequestMessage[];
+  createdAt: string;
+};
 
 export function bindAssistantChat(host: HTMLElement) {
   hosts.add(host);
@@ -418,10 +450,14 @@ export async function sendChatPrompt(prompt: string) {
 
   try {
     const requestMessages = await createRequestMessages(content);
-    Zotero.debug(`[assistantChatController] Sende Anfrage an LLM. Anzahl Nachrichten: ${requestMessages.length}.`);
-    const systemMsg = requestMessages.find(m => m.role === 'system');
+    Zotero.debug(
+      `[assistantChatController] Sende Anfrage an LLM. Anzahl Nachrichten: ${requestMessages.length}.`,
+    );
+    const systemMsg = requestMessages.find((m) => m.role === "system");
     if (systemMsg) {
-      Zotero.debug(`[assistantChatController] System-Context Vorschau:\n${systemMsg.content.substring(0, 500)}...`);
+      Zotero.debug(
+        `[assistantChatController] System-Context Vorschau:\n${systemMsg.content.substring(0, 500)}...`,
+      );
     }
 
     const assistantMessage = await requestAssistantResponse(
@@ -631,6 +667,7 @@ async function requestStreamingAssistantResponse(
   requestID: number,
 ) {
   let assistantMessage: AssistantChatMessage | null = null;
+  recordAssistantRequestDebug(requestMessages, "stream");
 
   for await (const event of addon.api.ai.chatStream(requestMessages, {
     providerId: getActiveProvider(),
@@ -667,6 +704,7 @@ async function requestBufferedAssistantResponse(
   requestMessages: RequestMessage[],
   requestID: number,
 ) {
+  recordAssistantRequestDebug(requestMessages, "buffered");
   const result = (await addon.api.ai.chat(requestMessages, {
     providerId: getActiveProvider(),
     model: getActiveModel(),
@@ -735,7 +773,56 @@ async function createPaperContextMessage(prompt: string) {
     return null;
   }
 
-  const reference = getActivePaperReference();
+  const reference = await getActivePaperReference();
+  const candidates = await getPromptRouterCandidates();
+
+  try {
+    const decision = await decidePromptContextRoute({
+      provider: addon.data.settings.contextRouterProvider,
+      model: getRouterModel(addon.data.settings.contextRouterProvider),
+      prompt,
+      candidates: candidates.map(toPromptRouterCandidate),
+      chat: (messages, options) => {
+        configureProviderForRouting(options.providerId);
+        return addon.api.ai.chat(messages, options) as Promise<{
+          content?: unknown;
+        }>;
+      },
+    });
+
+    Zotero.debug(
+      `[PromptContextRouter] Route=${decision.route}, Grund=${decision.reason || "keine Angabe"}`,
+    );
+
+    const routedContext = await buildContextFromRouteDecision(
+      decision,
+      prompt,
+      candidates,
+      reference,
+    );
+    recordPromptContextRouteDebug({
+      prompt,
+      provider: addon.data.settings.contextRouterProvider,
+      model: getRouterModel(addon.data.settings.contextRouterProvider),
+      decision,
+      candidates,
+      contextMode: getContextMode(decision, routedContext),
+    });
+
+    if (routedContext !== undefined) return routedContext;
+  } catch (error) {
+    Zotero.debug(
+      `[PromptContextRouter] Entscheidung fehlgeschlagen, nutze bisherigen Kontextpfad: ${error}`,
+    );
+  }
+
+  return createLegacyPaperContextMessage(prompt, reference);
+}
+
+async function createLegacyPaperContextMessage(
+  prompt: string,
+  reference: PaperReference | null,
+) {
   if (!reference) {
     const globalContext = await PaperContextService.buildGlobalContext(prompt);
     return globalContext;
@@ -751,26 +838,347 @@ async function createPaperContextMessage(prompt: string) {
   return context.systemMessage;
 }
 
-function getActivePaperReference(): PaperReference | null {
-  const selectedItems = ItemManager.filterItems();
-  if (selectedItems.length > 0) {
-    Zotero.debug(`[assistantChatController] Paper-Referenz erkannt (On-the-fly markiert): ItemKey ${selectedItems[0].key}`);
+async function buildContextFromRouteDecision(
+  decision: PromptContextRouteDecision,
+  prompt: string,
+  candidates: RagItemCandidate[],
+  reference: PaperReference | null,
+): Promise<string | null | undefined> {
+  switch (decision.route) {
+    case "none":
+      return null;
+
+    case "metadata":
+      return buildMetadataContext(candidates, decision.requestedFields);
+
+    case "single_paper":
+      return buildSinglePaperContext(decision, prompt, reference);
+
+    case "filtered_papers": {
+      const itemIDs = filterCandidateItemIDs(decision, candidates);
+      if (!itemIDs.length) return buildMetadataContext(candidates);
+      return PaperContextService.buildVectorContextForItems(
+        prompt,
+        itemIDs,
+        "Relevante AuszÃ¼ge aus den gefilterten Papern:",
+      );
+    }
+
+    case "all_papers":
+      return PaperContextService.buildVectorContextForItems(
+        prompt,
+        candidates.map((candidate) => candidate.itemID),
+        "Relevante AuszÃ¼ge aus allen Papern:",
+      );
+
+    default:
+      return undefined;
+  }
+}
+
+async function buildSinglePaperContext(
+  decision: PromptContextRouteDecision,
+  prompt: string,
+  reference: PaperReference | null,
+) {
+  const itemID = decision.itemID ?? decision.itemIDs?.[0];
+  if (typeof itemID === "number" && Number.isFinite(itemID)) {
+    const context = await PaperContextService.buildVectorContextForItems(
+      prompt,
+      [itemID],
+      "Relevante AuszÃ¼ge aus dem ausgewÃ¤hlten Paper:",
+    );
+    if (context) return context;
+  }
+
+  if (!reference) return null;
+  const context = await PaperContextService.buildContext(reference, prompt);
+  return context?.systemMessage ?? null;
+}
+
+async function getPromptRouterCandidates() {
+  const maxItems = Math.max(1, addon.data.settings.maxItems || 20);
+  const candidates: RagItemCandidate[] = [];
+
+  for (const scope of LibraryScopeManager.listLibraryScopes()) {
+    if (candidates.length >= maxItems) break;
+
+    const remaining = maxItems - candidates.length;
+    const scopedCandidates = await LibraryScopeManager.listRagItemCandidates({
+      libraryID: scope.libraryID,
+      includeWithoutPdf: true,
+      limit: remaining,
+    });
+    candidates.push(...scopedCandidates);
+  }
+
+  return candidates;
+}
+
+function toPromptRouterCandidate(
+  candidate: RagItemCandidate,
+): PromptContextRouterCandidate {
+  return {
+    itemID: candidate.itemID,
+    title: candidate.title,
+    firstCreator: candidate.creators,
+    year: candidate.year,
+    itemType: candidate.itemType,
+    tags: candidate.tags,
+    libraryName: candidate.library.name,
+  };
+}
+
+function buildMetadataContext(
+  candidates: RagItemCandidate[],
+  fields: PromptContextRouteDecision["requestedFields"] = [
+    "title",
+    "firstCreator",
+    "year",
+    "itemType",
+    "tags",
+  ],
+) {
+  if (!candidates.length) {
+    return "Die Bibliothek des Nutzers enthÃ¤lt keine auswertbaren Paper-Metadaten.";
+  }
+
+  const lines = candidates.map((candidate) => {
+    const parts = [`[Zotero-ID: ${candidate.itemID}]`];
+    if (fields.includes("title")) parts.push(`"${candidate.title}"`);
+    if (fields.includes("firstCreator")) {
+      parts.push(`Autor: ${candidate.creators}`);
+    }
+    if (fields.includes("year") && candidate.year) {
+      parts.push(`Jahr: ${candidate.year}`);
+    }
+    if (fields.includes("itemType")) {
+      parts.push(`Typ: ${candidate.itemType}`);
+    }
+    if (fields.includes("tags") && candidate.tags.length) {
+      parts.push(`Tags: ${candidate.tags.join(", ")}`);
+    }
+    parts.push(`Bibliothek: ${candidate.library.name}`);
+    return parts.join(" | ");
+  });
+
+  return [
+    "Du bist ein wissenschaftlicher KI-Assistent fÃ¼r Zotero.",
+    "Nutze ausschlieÃŸlich die folgenden Paper-Metadaten, um die Nutzerfrage zu beantworten oder passende Paper vorzuschlagen.",
+    "Falls in den Metadaten keine passende Information steht, sage das deutlich.",
+    "",
+    "Paper-Metadaten:",
+    lines.join("\n"),
+  ].join("\n");
+}
+
+function filterCandidateItemIDs(
+  decision: PromptContextRouteDecision,
+  candidates: RagItemCandidate[],
+) {
+  const explicitIDs = decision.itemIDs?.filter(Number.isFinite) ?? [];
+  if (explicitIDs.length) return explicitIDs;
+
+  const tag = normalizeFilterText(decision.tag);
+  const property = decision.property;
+  const value = normalizeFilterText(decision.value);
+
+  return candidates
+    .filter((candidate) => {
+      if (tag) {
+        return candidate.tags.some((candidateTag) =>
+          normalizeFilterText(candidateTag).includes(tag),
+        );
+      }
+
+      if (!property || !value) return false;
+      if (property === "tag") {
+        return candidate.tags.some((candidateTag) =>
+          normalizeFilterText(candidateTag).includes(value),
+        );
+      }
+
+      const candidateValue =
+        property === "firstCreator"
+          ? candidate.creators
+          : String(candidate[property] ?? "");
+      return normalizeFilterText(candidateValue).includes(value);
+    })
+    .map((candidate) => candidate.itemID);
+}
+
+function normalizeFilterText(value: unknown) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function recordPromptContextRouteDebug({
+  prompt,
+  provider,
+  model,
+  decision,
+  candidates,
+  contextMode,
+}: {
+  prompt: string;
+  provider: LLMProvider;
+  model: string;
+  decision: PromptContextRouteDecision;
+  candidates: RagItemCandidate[];
+  contextMode: string;
+}) {
+  lastPromptContextRouteDebug = {
+    prompt,
+    provider,
+    model,
+    decision,
+    candidateCount: candidates.length,
+    selectedItemIDs: getDecisionItemIDs(decision, candidates),
+    contextMode,
+    routerUsesChatHistory: false,
+    routerMessageCount: 2,
+    createdAt: new Date().toISOString(),
+  };
+
+  Zotero.debug(
+    `[PromptContextRouter] Debug: ${JSON.stringify(lastPromptContextRouteDebug)}`,
+  );
+}
+
+function getContextMode(
+  decision: PromptContextRouteDecision,
+  context: string | null | undefined,
+) {
+  if (context === undefined) return "fallback";
+  if (context === null) return "no-context";
+  return decision.route;
+}
+
+function getDecisionItemIDs(
+  decision: PromptContextRouteDecision,
+  candidates: RagItemCandidate[],
+) {
+  if (decision.route === "single_paper") {
+    const itemID = decision.itemID ?? decision.itemIDs?.[0];
+    return typeof itemID === "number" && Number.isFinite(itemID)
+      ? [itemID]
+      : [];
+  }
+
+  if (decision.route === "filtered_papers") {
+    return filterCandidateItemIDs(decision, candidates);
+  }
+
+  if (decision.route === "all_papers") {
+    return candidates.map((candidate) => candidate.itemID);
+  }
+
+  return [];
+}
+
+export function getLastPromptContextRouteDebug() {
+  return lastPromptContextRouteDebug
+    ? {
+        ...lastPromptContextRouteDebug,
+        decision: { ...lastPromptContextRouteDebug.decision },
+        selectedItemIDs: [...lastPromptContextRouteDebug.selectedItemIDs],
+      }
+    : null;
+}
+
+export function formatLastPromptContextRouteDebug() {
+  const debug = getLastPromptContextRouteDebug();
+  if (!debug) return "Noch keine Prompt-Kontext-Entscheidung vorhanden.";
+
+  return JSON.stringify(debug, null, 2);
+}
+
+function recordAssistantRequestDebug(
+  requestMessages: RequestMessage[],
+  transport: AssistantRequestDebug["transport"],
+) {
+  lastAssistantRequestDebug = {
+    provider: getActiveProvider(),
+    model: getActiveModel(),
+    transport,
+    messageCount: requestMessages.length,
+    messages: requestMessages.map((message) => ({ ...message })),
+    createdAt: new Date().toISOString(),
+  };
+
+  Zotero.debug(
+    `[assistantChatController] Finaler KI-Request gespeichert (${transport}, ${requestMessages.length} Nachrichten).`,
+  );
+}
+
+export function getLastAssistantRequestDebug() {
+  return lastAssistantRequestDebug
+    ? {
+        ...lastAssistantRequestDebug,
+        messages: lastAssistantRequestDebug.messages.map((message) => ({
+          ...message,
+        })),
+      }
+    : null;
+}
+
+export function formatLastAssistantRequestDebug() {
+  const debug = getLastAssistantRequestDebug();
+  if (!debug) return "Noch kein KI-Request vorhanden.";
+
+  return JSON.stringify(debug, null, 2);
+}
+
+function configureProviderForRouting(provider: LLMProvider) {
+  addon.api.ai.configureProvider(
+    provider,
+    provider === "ollama"
+      ? {
+          baseUrl: addon.data.settings.ollamaBaseUrl,
+          model: getRouterModel(provider),
+        }
+      : {
+          apiKey: addon.data.settings.apiKey,
+          baseUrl: addon.data.settings.baseUrl,
+          model: getRouterModel(provider),
+        },
+  );
+}
+
+function getRouterModel(provider: LLMProvider) {
+  if (provider === "ollama") {
+    const model = addon.data.settings.ollamaModel;
+    return isLocalEmbeddingModel(model) ? OLLAMA_DEFAULT_MODEL : model;
+  }
+
+  return addon.data.settings.model;
+}
+
+async function getActivePaperReference(): Promise<PaperReference | null> {
+  const selectedItem = await ItemManager.getSelectedRegularItem();
+  if (selectedItem) {
+    Zotero.debug(
+      `[assistantChatController] Paper-Referenz erkannt (On-the-fly markiert): ItemKey ${selectedItem.key}`,
+    );
     return {
-      libraryID: selectedItems[0].libraryID,
-      itemKey: selectedItems[0].key,
+      libraryID: selectedItem.libraryID,
+      itemKey: selectedItem.key,
     };
   }
 
   const chat = getActiveChatSummary();
   if (chat?.zoteroLibraryID && chat.zoteroItemKey) {
-    Zotero.debug(`[assistantChatController] Paper-Referenz erkannt (Aus Chat-Verlauf): ItemKey ${chat.zoteroItemKey}`);
+    Zotero.debug(
+      `[assistantChatController] Paper-Referenz erkannt (Aus Chat-Verlauf): ItemKey ${chat.zoteroItemKey}`,
+    );
     return {
       libraryID: chat.zoteroLibraryID,
       itemKey: chat.zoteroItemKey,
     };
   }
 
-  Zotero.debug(`[assistantChatController] Kein Paper markiert -> Bibliotheksweite Suche`);
+  Zotero.debug(
+    `[assistantChatController] Kein Paper markiert -> Bibliotheksweite Suche`,
+  );
   return null;
 }
 

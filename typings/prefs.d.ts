@@ -12,6 +12,7 @@ declare namespace _ZoteroTypes {
       "baseUrl": string;
       "model": string;
       "sendPaperContextToKisski": boolean;
+      "contextRouterProvider": string;
       "embeddingSearchEnabled": boolean;
       "embeddingBaseUrl": string;
       "embeddingModel": string;

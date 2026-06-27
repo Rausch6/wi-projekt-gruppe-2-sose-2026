@@ -172,16 +172,64 @@ function createRagItemCandidate(
     library,
     itemID: item.id,
     itemKey: item.key,
-    title: item.getField("title") || "Ohne Titel",
-    creators: item.getField("firstCreator") || "Unbekannte Autorenschaft",
-    year: item.getField("year") || "",
-    itemType: Zotero.ItemTypes.getName(item.itemTypeID),
-    tags: item
+    title: getSafeItemField(item, "title", "Ohne Titel"),
+    creators: getSafeItemField(
+      item,
+      "firstCreator",
+      "Unbekannte Autorenschaft",
+    ),
+    year: getSafeItemField(item, "year", ""),
+    itemType: getSafeItemType(item),
+    tags: getSafeTags(item),
+    collectionIDs: getSafeCollections(item),
+  };
+}
+
+function getSafeItemField(item: Zotero.Item, field: string, fallback: string) {
+  try {
+    return item.getField(field) || fallback;
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Feld "${field}" konnte fÃ¼r RAG-Kandidat ${item.id} nicht gelesen werden: ${error}`,
+    );
+    return fallback;
+  }
+}
+
+function getSafeItemType(item: Zotero.Item) {
+  try {
+    return Zotero.ItemTypes.getName(item.itemTypeID);
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Item-Type konnte fÃ¼r RAG-Kandidat ${item.id} nicht gelesen werden: ${error}`,
+    );
+    return "unknown";
+  }
+}
+
+function getSafeTags(item: Zotero.Item) {
+  try {
+    return item
       .getTags()
       .map((entry) => entry.tag)
-      .filter(Boolean),
-    collectionIDs: item.getCollections(),
-  };
+      .filter(Boolean);
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Tags konnten fÃ¼r RAG-Kandidat ${item.id} nicht gelesen werden: ${error}`,
+    );
+    return [];
+  }
+}
+
+function getSafeCollections(item: Zotero.Item) {
+  try {
+    return item.getCollections();
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Collections konnten fÃ¼r RAG-Kandidat ${item.id} nicht gelesen werden: ${error}`,
+    );
+    return [];
+  }
 }
 
 function normalizeLimit(limit?: number) {

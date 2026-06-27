@@ -10,7 +10,6 @@ import {
 import {
   OLLAMA_DEFAULT_BASE_URL,
   OLLAMA_DEFAULT_MODEL,
-  OLLAMA_INSTALL_COMMANDS,
 } from "../ai/providers/OllamaProvider.js";
 
 const OLLAMA_INSTALL_COMMANDS = {
@@ -23,6 +22,7 @@ const FIELD_NAMES = [
   "base-url",
   "model",
   "send-paper-context-to-kisski",
+  "context-router-provider",
   "embedding-search-enabled",
   "embedding-base-url",
   "embedding-model",
@@ -87,6 +87,11 @@ function syncRuntimeSettings(window: Window) {
   const sendPaperContextToKisski =
     getElement<HTMLInputElement>(window, "send-paper-context-to-kisski")
       ?.checked ?? true;
+  const contextRouterProviderValue =
+    getElement<HTMLSelectElement>(window, "context-router-provider")?.value ??
+    "ollama";
+  const contextRouterProvider =
+    contextRouterProviderValue === "kisski" ? "kisski" : "ollama";
   const embeddingSearchEnabled =
     getElement<HTMLInputElement>(window, "embedding-search-enabled")?.checked ??
     true;
@@ -114,6 +119,7 @@ function syncRuntimeSettings(window: Window) {
     baseUrl,
     model,
     sendPaperContextToKisski,
+    contextRouterProvider,
     embeddingSearchEnabled,
     embeddingBaseUrl,
     embeddingModel,
