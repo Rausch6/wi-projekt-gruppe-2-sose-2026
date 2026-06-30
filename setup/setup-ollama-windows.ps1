@@ -1,6 +1,7 @@
 $ErrorActionPreference = "Stop"
 
-$Model = "qwen2.5:3b"
+$ChatModel = "qwen2.5:3b"
+$EmbeddingModel = "bge-m3:latest"
 $BaseUrl = "http://localhost:11434"
 $InstallCommand = "irm https://ollama.com/install.ps1 | iex"
 
@@ -81,9 +82,45 @@ function Get-InstalledModels {
   }
 }
 
+function Ensure-ModelInstalled {
+  param(
+    [string]$Model,
+    [string]$Label
+  )
+
+  $installedModels = Get-InstalledModels
+  if ($installedModels -contains $Model) {
+    Write-Step "$Label already installed"
+    Write-Host $Model
+    return
+  }
+
+  Write-Step "$Label $Model is not installed"
+  Write-Host "This download can take a while and may use several GB of disk space."
+  if (-not (Confirm-Step "Download $Model now?")) {
+    throw "$Label download cancelled by user."
+  }
+
+  Write-Step "Downloading $Model"
+  & $ollamaPath pull $Model
+}
+
+function Assert-ModelInstalled {
+  param(
+    [string]$Model,
+    [string]$Label
+  )
+
+  Write-Step "Verifying $Label"
+  $installedModels = Get-InstalledModels
+  if ($installedModels -notcontains $Model) {
+    throw "$Label $Model was not found after download."
+  }
+}
+
 Write-Host "ZAIA Ollama Setup - Windows 11" -ForegroundColor Green
-Write-Host "This setup installs Ollama, starts the local service, and downloads $Model."
-Write-Host "ZAIA expects Ollama at $BaseUrl with model $Model."
+Write-Host "This setup installs Ollama, starts the local service, and downloads $ChatModel and $EmbeddingModel."
+Write-Host "ZAIA expects Ollama at $BaseUrl with chat model $ChatModel and embedding model $EmbeddingModel."
 
 $ollamaPath = Find-Ollama
 if (-not $ollamaPath) {
@@ -117,32 +154,18 @@ if (-not (Wait-ForOllamaApi)) {
   throw "Ollama service did not become reachable at $BaseUrl."
 }
 
-$installedModels = Get-InstalledModels
-if ($installedModels -contains $Model) {
-  Write-Step "Model already installed"
-  Write-Host $Model
-} else {
-  Write-Step "Model $Model is not installed"
-  Write-Host "This download can take a while and may use several GB of disk space."
-  if (-not (Confirm-Step "Download $Model now?")) {
-    throw "Model download cancelled by user."
-  }
+Ensure-ModelInstalled -Model $ChatModel -Label "Chat model"
+Ensure-ModelInstalled -Model $EmbeddingModel -Label "Embedding model"
 
-  Write-Step "Downloading $Model"
-  & $ollamaPath pull $Model
-}
-
-Write-Step "Verifying local model"
-$installedModels = Get-InstalledModels
-if ($installedModels -notcontains $Model) {
-  throw "Model $Model was not found after download."
-}
+Assert-ModelInstalled -Model $ChatModel -Label "chat model"
+Assert-ModelInstalled -Model $EmbeddingModel -Label "embedding model"
 
 Write-Step "ZAIA local LLM configuration"
-Write-Host "Base URL: $BaseUrl"
-Write-Host "Model:    $Model"
+Write-Host "Base URL:        $BaseUrl"
+Write-Host "Chat model:      $ChatModel"
+Write-Host "Embedding model: $EmbeddingModel"
 Write-Host ""
 Write-Host "The plugin defaults already match these values."
-Write-Host "If you changed Zotero preferences manually, set Ollama base URL to $BaseUrl and model to $Model."
+Write-Host "If you changed Zotero preferences manually, set Ollama base URL to $BaseUrl, model to $ChatModel, and embedding model to $EmbeddingModel."
 Write-Host ""
 Write-Host "Done."
