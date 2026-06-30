@@ -1,4 +1,5 @@
 import type { LLMProvider } from "../addon";
+import type { MetadataFieldSelection } from "./MetadataFieldSelection";
 
 export type PromptContextRoute =
   | "none"
@@ -58,6 +59,7 @@ export type PromptContextRouterOptions = {
   model: string;
   prompt: string;
   candidates: PromptContextRouterCandidate[];
+  metadataFields?: MetadataFieldSelection[];
   chat: (
     messages: RouterMessage[],
     options: {
@@ -97,7 +99,8 @@ const ROUTER_SYSTEM_PROMPT = [
   "Pflichtregeln:",
   "- Wenn der aktuelle Prompt nach Anzahl der Paper, aeltestem/neuestem Paper, Titeln, Autoren, Jahren, Tags oder einer reinen Paperliste fragt, waehle metadata.",
   "- Wenn der aktuelle Prompt 'alle Paper', 'alle Dokumente', 'meine Paper', 'die Bibliothek' oder eine Zusammenfassung/Analyse ueber mehrere Paper verlangt, waehle all_papers und contentFocus='abstracts'.",
-  "- Wenn der aktuelle Prompt eine Zusammenfassung eines ausgewaehlten, genannten oder konkreten Papers verlangt, waehle single_paper und contentFocus='abstracts'.",
+  "- Waehle single_paper nur, wenn der aktuelle Prompt eindeutig ein einzelnes konkretes Paper meint, z.B. 'dieses Paper', 'das ausgewaehlte Paper', einen konkreten Titel oder Autor/Jahr. Eine aktive Zotero-Auswahl allein ist kein Grund fuer single_paper.",
+  "- Wenn der aktuelle Prompt eine Zusammenfassung eines eindeutig ausgewaehlten, genannten oder konkreten Papers verlangt, waehle single_paper und contentFocus='abstracts'.",
   "- Wenn der aktuelle Prompt nach bereits vorhandenen Papern in der Bibliothek zu einem Thema/Inhalt sucht, waehle all_papers und contentFocus='abstracts'.",
   "- Wenn der aktuelle Prompt 'Zusammenfassung aller Paper' oder 'fasse alle Paper zusammen' enthaelt, waehle immer all_papers.",
   "- Waehle none niemals, wenn der aktuelle Prompt Paper, Zotero, Bibliothek, Dokumente, Quellen oder Metadaten erwaehnt.",
@@ -119,6 +122,7 @@ export async function decidePromptContextRoute({
   model,
   prompt,
   candidates,
+  metadataFields,
   chat,
 }: PromptContextRouterOptions): Promise<PromptContextRouteDecision> {
   const messages: RouterMessage[] = [
@@ -134,7 +138,7 @@ export async function decidePromptContextRoute({
         "AKTUELLER_NUTZERPROMPT_ENDE",
         "",
         "Verfuegbare Paper-Metadaten:",
-        formatCandidates(candidates),
+        formatCandidates(candidates, metadataFields),
       ].join("\n"),
     },
   ];
@@ -157,7 +161,10 @@ export async function decidePromptContextRoute({
   return applyPromptHeuristics(decision, prompt);
 }
 
-function formatCandidates(candidates: PromptContextRouterCandidate[]) {
+function formatCandidates(
+  candidates: PromptContextRouterCandidate[],
+  fields: MetadataFieldSelection[] = ["title", "creators", "publicationDate"],
+) {
   if (!candidates.length) return "Keine Paper-Metadaten verfuegbar.";
 
   return candidates
@@ -165,25 +172,13 @@ function formatCandidates(candidates: PromptContextRouterCandidate[]) {
       [
         `- itemID=${candidate.itemID}`,
         `title="${candidate.title}"`,
-        `author="${candidate.firstCreator}"`,
-        candidate.year ? `year="${candidate.year}"` : "",
-        candidate.publicationDate
+        fields.includes("creators") ? `author="${candidate.firstCreator}"` : "",
+        fields.includes("publicationDate") && candidate.publicationDate
           ? `publicationDate="${candidate.publicationDate}"`
           : "",
-        candidate.publicationTitle
-          ? `publication="${candidate.publicationTitle}"`
+        fields.includes("tags") && candidate.tags.length
+          ? `tags="${candidate.tags.join(", ")}"`
           : "",
-        candidate.publisher ? `publisher="${candidate.publisher}"` : "",
-        candidate.doi ? `doi="${candidate.doi}"` : "",
-        candidate.isbn ? `isbn="${candidate.isbn}"` : "",
-        candidate.url ? `url="${candidate.url}"` : "",
-        candidate.abstractNote ? `hasAbstract="true"` : "",
-        candidate.dateAdded ? `dateAdded="${candidate.dateAdded}"` : "",
-        candidate.dateModified
-          ? `dateModified="${candidate.dateModified}"`
-          : "",
-        `type="${candidate.itemType}"`,
-        candidate.tags.length ? `tags="${candidate.tags.join(", ")}"` : "",
         `library="${candidate.libraryName}"`,
       ]
         .filter(Boolean)
@@ -254,6 +249,7 @@ function applyPromptHeuristics(
   prompt: string,
 ): PromptContextRouteDecision {
   const normalizedPrompt = normalizePromptText(prompt);
+  const hasSinglePaperIntent = isSpecificSinglePaperPrompt(normalizedPrompt);
 
   if (isMetadataOnlyPrompt(normalizedPrompt)) {
     return {
@@ -272,7 +268,7 @@ function applyPromptHeuristics(
     return {
       ...decision,
       route:
-        decision.route === "single_paper" ||
+        (decision.route === "single_paper" && hasSinglePaperIntent) ||
         decision.route === "filtered_papers"
           ? decision.route
           : "all_papers",
@@ -294,6 +290,19 @@ function applyPromptHeuristics(
         "Heuristik: Bibliothekssuche soll Abstract-orientierten Kontext nutzen.",
       ),
       contentFocus: "abstracts",
+    };
+  }
+
+  if (decision.route === "single_paper" && !hasSinglePaperIntent) {
+    return {
+      ...decision,
+      route: mentionsPaperContext(normalizedPrompt) ? "all_papers" : "none",
+      reason: appendReason(
+        decision.reason,
+        "Heuristik: single_paper verworfen, weil der aktuelle Prompt kein einzelnes konkretes Paper referenziert.",
+      ),
+      itemID: undefined,
+      itemIDs: undefined,
     };
   }
 
@@ -374,6 +383,25 @@ function isLibrarySearchPrompt(prompt: string) {
     );
   return (
     asksForExistingPapers && (mentionsLibrary || asksForPaperRecommendation)
+  );
+}
+
+function isSpecificSinglePaperPrompt(prompt: string) {
+  return (
+    /\b(dieses|diese|diesem|diesen)\s+(paper|artikel|dokument|quelle|publikation)\b/.test(
+      prompt,
+    ) ||
+    /\b(ausgewaehlte[ns]?|ausgewahlte[ns]?|markierte[ns]?|aktuelle[ns]?)\s+(paper|artikel|dokument|quelle|publikation)\b/.test(
+      prompt,
+    ) ||
+    /\b(in|aus|zu)\s+(diesem|dieser|dieses|dem|der)\s+(paper|artikel|dokument|quelle|publikation)\b/.test(
+      prompt,
+    ) ||
+    /\b(paper|artikel|publikation)\s+(von|mit dem titel|namens)\b/.test(
+      prompt,
+    ) ||
+    /["'„“][^"'„“]{8,}["'„“]/.test(prompt) ||
+    /\b[a-z][a-z-]+ \d{4}\b/.test(prompt)
   );
 }
 

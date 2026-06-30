@@ -11,4 +11,5 @@ pref("embeddingModel", "bge-m3:latest");
 pref("ollamaBaseUrl", "http://localhost:11434");
 pref("ollamaModel", "qwen2.5:3b");
 pref("maxItems", 200);
+pref("metadataFieldSelection", "title_author_date");
 pref("autoDeleteOldChats", true);

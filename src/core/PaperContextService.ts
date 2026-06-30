@@ -4,10 +4,16 @@ import { PdfExtractor } from "./PdfExtractor";
 import { chunkPaperText, estimateTokens, type TextChunk } from "./TextChunker";
 import { vectorStore, type ChunkDocument } from "./OramaService";
 import { embeddingProvider } from "../ai/EmbeddingProvider.js";
+import { config } from "../../package.json";
+import {
+  getMetadataFieldsForPreset,
+  type MetadataFieldSelection,
+} from "./MetadataFieldSelection";
 
 export interface PaperReference {
   libraryID: number;
   itemKey: string;
+  itemID?: number;
 }
 
 export interface PaperContext {
@@ -26,6 +32,7 @@ export interface ChunkedPaper {
 
 export interface VectorContextOptions {
   contentFocus?: "relevant_chunks" | "abstracts";
+  metadataFields?: MetadataFieldSelection[];
 }
 
 type CachedPaper = ChunkedPaper & {
@@ -256,7 +263,7 @@ export class PaperContextService {
     );
 
     const excerpts = [
-      "Nutze die strukturierten Paper-Metadaten fuer Titel, Autorenschaft, Jahr, Tags und Bibliothekszuordnung. Vermische keine Angaben zwischen unterschiedlichen Zotero-IDs.",
+      "Nutze die strukturierten Paper-Metadaten fuer korrekte bibliographische Angaben. Vermische keine Angaben zwischen unterschiedlichen Zotero-IDs.",
       "",
       formatContextMetadataBlock(metadata),
       "",
@@ -291,6 +298,7 @@ export class PaperContextService {
     if (!uniqueItemIDs.length) return null;
 
     const resolvedOptions = resolveVectorContextOptions(query, options);
+    const metadataFields = resolveMetadataFields(resolvedOptions);
     const vectorSearchQuery = buildVectorSearchQuery(query, resolvedOptions);
 
     let queryVector: number[] | null = null;
@@ -347,7 +355,7 @@ export class PaperContextService {
           ? "Nutze die folgenden strukturierten Metadaten und Zotero-Abstracts, um passende Paper vorzuschlagen. Wenn keine Abstracts vorhanden sind, sage das deutlich."
           : "Nutze die folgenden strukturierten Metadaten nur fuer bibliographische Antworten. Behaupte keine inhaltlichen Details, die nicht in den Metadaten stehen.",
         "",
-        formatContextMetadataBlock(metadata),
+        formatContextMetadataBlock(metadata, metadataFields),
         "",
         formatAbstractNotesBlock(metadata),
       ].join("\n");
@@ -371,11 +379,11 @@ export class PaperContextService {
       )
     ).join("\n\n");
     const excerpts = [
-      "Nutze die strukturierten Paper-Metadaten fuer korrekte Titel, Autorenschaft, Jahr, Tags und Bibliothekszuordnung. Vermische keine Angaben zwischen unterschiedlichen Zotero-IDs.",
+      "Nutze die strukturierten Paper-Metadaten fuer korrekte bibliographische Angaben. Vermische keine Angaben zwischen unterschiedlichen Zotero-IDs.",
       "Nenne in deiner Antwort keine Zotero-IDs, ausser der Nutzer fragt explizit danach. Verwende stattdessen Titel und Autorenschaft.",
       ...formatVectorAnswerGuidance(resolvedOptions),
       "",
-      formatContextMetadataBlock(metadata),
+      formatContextMetadataBlock(metadata, metadataFields),
       "",
       textExcerpts,
     ].join("\n");
@@ -489,7 +497,24 @@ function resolveVectorContextOptions(
     contentFocus: shouldUseAbstractFocus(query)
       ? "abstracts"
       : "relevant_chunks",
+    metadataFields: options.metadataFields,
   };
+}
+
+function resolveMetadataFields(options: VectorContextOptions = {}) {
+  if (options.metadataFields?.length) return options.metadataFields;
+
+  let preset = "title_author_date";
+  try {
+    const storedPreset = Zotero.Prefs.get(
+      `${config.prefsPrefix}.metadataFieldSelection`,
+    );
+    if (typeof storedPreset === "string") preset = storedPreset;
+  } catch {
+    // Preference fallback below.
+  }
+
+  return getMetadataFieldsForPreset(preset);
 }
 
 function shouldUseAbstractFocus(query: string) {
@@ -582,7 +607,10 @@ async function getContextMetadataForItemID(
   };
 }
 
-function formatContextMetadataBlock(metadata: ContextPaperMetadata[]) {
+function formatContextMetadataBlock(
+  metadata: ContextPaperMetadata[],
+  fields = resolveMetadataFields(),
+) {
   if (!metadata.length) {
     return "Paper-Metadaten: Keine Metadaten verfuegbar.";
   }
@@ -590,7 +618,7 @@ function formatContextMetadataBlock(metadata: ContextPaperMetadata[]) {
   return [
     "Paper-Metadaten:",
     "<paper-metadata>",
-    ...metadata.map(formatSingleContextMetadata),
+    ...metadata.map((entry) => formatSingleContextMetadata(entry, fields)),
     "</paper-metadata>",
   ].join("\n");
 }
@@ -622,7 +650,36 @@ function formatSingleAbstractNote(metadata: ContextPaperMetadata) {
   ].join("\n");
 }
 
-function formatSingleContextMetadata(metadata: ContextPaperMetadata) {
+function formatSingleContextMetadata(
+  metadata: ContextPaperMetadata,
+  fields: MetadataFieldSelection[],
+) {
+  const lines = [
+    `[PAPER Zotero-ID=${metadata.itemID}]`,
+    `Titel: ${normalizeMetadataValue(metadata.title, "Ohne Titel")}`,
+  ];
+
+  if (fields.includes("creators")) {
+    lines.push(
+      `Autorenschaft: ${normalizeMetadataValue(metadata.creators, "Unbekannte Autorenschaft")}`,
+    );
+  }
+  if (fields.includes("publicationDate")) {
+    lines.push(
+      `Veröffentlichungsdatum: ${normalizeMetadataValue(metadata.publicationDate, "Unbekannt")}`,
+    );
+  }
+  if (fields.includes("tags")) {
+    lines.push(
+      `Tags: ${metadata.tags.length ? metadata.tags.map((tag) => normalizeMetadataValue(tag)).join(", ") : "Keine Tags"}`,
+    );
+  }
+
+  lines.push("[/PAPER]");
+  return lines.join("\n");
+}
+
+function formatSingleContextMetadataFull(metadata: ContextPaperMetadata) {
   return [
     `[PAPER Zotero-ID=${metadata.itemID}]`,
     `Item-Key: ${normalizeMetadataValue(metadata.itemKey, "unbekannt")}`,

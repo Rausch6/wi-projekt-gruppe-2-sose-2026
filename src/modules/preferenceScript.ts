@@ -127,6 +127,7 @@ function syncRuntimeSettings(window: Window) {
     ollamaModel,
     maxItems: Number.parseInt(maxItemsValue, 10) || 200,
     autoDeleteOldChats,
+    metadataFieldSelection: addon.data.settings.metadataFieldSelection,
   };
   addon.api.configureAI();
   addon.api.configureEmbeddings();

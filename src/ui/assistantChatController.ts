@@ -13,6 +13,11 @@ import {
   type PromptContextRouteDecision,
   type PromptContextRouterCandidate,
 } from "../core/PromptContextRouter";
+import {
+  getMetadataFieldsForPreset,
+  normalizeMetadataFieldSelectionPreset,
+  type MetadataFieldSelection,
+} from "../core/MetadataFieldSelection";
 import { CreateChatInput, StoredChat } from "../core/chatTypes";
 import { renderMarkdownContent } from "./markdownRenderer";
 import type { LLMProvider } from "../addon";
@@ -174,6 +179,9 @@ export function bindAssistantChat(host: HTMLElement) {
   const modelPickerToggle = host.querySelector<HTMLButtonElement>(
     ".zai-model-picker-toggle",
   );
+  const metadataSelect = host.querySelector<HTMLSelectElement>(
+    ".zai-metadata-select",
+  );
   const providerButtons = Array.from(
     host.querySelectorAll(".zai-provider-toggle-button[data-provider]"),
   ) as HTMLButtonElement[];
@@ -198,6 +206,7 @@ export function bindAssistantChat(host: HTMLElement) {
   const ownerWindow = host.ownerDocument?.defaultView ?? null;
 
   syncModelPicker(host);
+  syncMetadataFieldSelect(host);
   ensureLocalModelInstallEventHandler(ownerWindow);
   ensureModelDropdownOutsideHandler(host.ownerDocument);
   void ensureModelOptionsLoaded(getActiveProvider());
@@ -362,6 +371,12 @@ export function bindAssistantChat(host: HTMLElement) {
   });
   modelDropdown?.addEventListener("keydown", (event) => {
     handleModelDropdownKeydown(event as KeyboardEvent, modelDropdown);
+  });
+  metadataSelect?.addEventListener("change", () => {
+    const preset = normalizeMetadataFieldSelectionPreset(metadataSelect.value);
+    addon.data.settings.metadataFieldSelection = preset;
+    savePluginPreference("metadataFieldSelection", preset);
+    syncAllMetadataFieldSelects();
   });
 }
 
@@ -740,6 +755,10 @@ function getActiveModel(provider: LLMProvider = getActiveProvider()) {
   return isLocalEmbeddingModel(model) ? OLLAMA_DEFAULT_MODEL : model;
 }
 
+function getSelectedMetadataFields() {
+  return getMetadataFieldsForPreset(addon.data.settings.metadataFieldSelection);
+}
+
 async function createRequestMessages(prompt: string) {
   const requestMessages: RequestMessage[] = [];
   const paperContext = await createPaperContextMessage(prompt);
@@ -789,6 +808,7 @@ async function createPaperContextMessage(prompt: string) {
       model: getRouterModel(addon.data.settings.contextRouterProvider),
       prompt,
       candidates: candidates.map(toPromptRouterCandidate),
+      metadataFields: getSelectedMetadataFields(),
       chat: (messages, options) => {
         configureProviderForRouting(options.providerId);
         return addon.api.ai.chat(messages, options) as Promise<{
@@ -857,7 +877,7 @@ async function buildContextFromRouteDecision(
       return null;
 
     case "metadata":
-      return buildMetadataContext(candidates, decision.requestedFields);
+      return buildMetadataContext(candidates, getSelectedMetadataFields());
 
     case "single_paper":
       return buildSinglePaperContext(decision, prompt, reference);
@@ -894,7 +914,10 @@ async function buildSinglePaperContext(
   prompt: string,
   reference: PaperReference | null,
 ) {
-  const itemID = decision.itemID ?? decision.itemIDs?.[0];
+  const decisionItemID = decision.itemID ?? decision.itemIDs?.[0];
+  const itemID = shouldUseSelectedPaperForPrompt(prompt)
+    ? (reference?.itemID ?? decisionItemID)
+    : (decisionItemID ?? reference?.itemID);
   if (typeof itemID === "number" && Number.isFinite(itemID)) {
     const context = await PaperContextService.buildVectorContextForItems(
       prompt,
@@ -907,6 +930,27 @@ async function buildSinglePaperContext(
   if (!reference) return null;
   const context = await PaperContextService.buildContext(reference, prompt);
   return context?.systemMessage ?? null;
+}
+
+function shouldUseSelectedPaperForPrompt(prompt: string) {
+  const normalizedPrompt = prompt
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return (
+    /\b(dieses|diese|diesem|diesen)\s+(paper|artikel|dokument|quelle|publikation)\b/.test(
+      normalizedPrompt,
+    ) ||
+    /\b(ausgewaehlte[ns]?|ausgewahlte[ns]?|markierte[ns]?|aktuelle[ns]?)\s+(paper|artikel|dokument|quelle|publikation)\b/.test(
+      normalizedPrompt,
+    ) ||
+    /\b(in|aus|zu)\s+(diesem|dieser|dieses)\s+(paper|artikel|dokument|quelle|publikation)\b/.test(
+      normalizedPrompt,
+    )
+  );
 }
 
 async function getPromptRouterCandidates() {
@@ -972,13 +1016,7 @@ function toPromptRouterCandidate(
 
 function buildMetadataContext(
   candidates: RagItemCandidate[],
-  fields: PromptContextRouteDecision["requestedFields"] = [
-    "title",
-    "firstCreator",
-    "year",
-    "itemType",
-    "tags",
-  ],
+  fields: MetadataFieldSelection[] = getSelectedMetadataFields(),
 ) {
   if (!candidates.length) {
     return "Die Bibliothek des Nutzers enthÃ¤lt keine auswertbaren Paper-Metadaten.";
@@ -992,7 +1030,7 @@ function buildMetadataContext(
     "Du bist ein wissenschaftlicher KI-Assistent fÃ¼r Zotero.",
     "Nutze ausschlieÃŸlich die folgenden Paper-Metadaten, um die Nutzerfrage zu beantworten oder passende Paper vorzuschlagen.",
     "Falls in den Metadaten keine passende Information steht, sage das deutlich.",
-    "Nenne in der Antwort keine Zotero-IDs, ausser der Nutzer fragt explizit danach. Verwende Titel und Autorenschaft.",
+    "Nenne in der Antwort keine Zotero-IDs, ausser der Nutzer fragt explizit danach. Verwende die vorhandenen bibliographischen Angaben.",
     "Antworte strukturiert und ueberschaubar.",
     "",
     "Paper-Metadaten:",
@@ -1003,6 +1041,34 @@ function buildMetadataContext(
 }
 
 function formatCandidateMetadata(
+  candidate: RagItemCandidate,
+  fields: MetadataFieldSelection[],
+) {
+  const lines = [
+    `[PAPER Zotero-ID=${candidate.itemID}]`,
+    `Titel: ${normalizeMetadataValue(candidate.title, "Ohne Titel")}`,
+  ];
+
+  if (fields.includes("creators")) {
+    lines.push(
+      `Autorenschaft: ${normalizeMetadataValue(candidate.creators, "Unbekannte Autorenschaft")}`,
+    );
+  }
+  if (fields.includes("publicationDate")) {
+    lines.push(
+      `Veröffentlichungsdatum: ${normalizeMetadataValue(candidate.publicationDate, "Unbekannt")}`,
+    );
+  }
+  if (fields.includes("tags")) {
+    lines.push(
+      `Tags: ${candidate.tags.length ? candidate.tags.map((tag) => normalizeMetadataValue(tag)).join(", ") : "Keine Tags"}`,
+    );
+  }
+
+  return [...lines, "[/PAPER]"].join("\n");
+}
+
+function formatCandidateMetadataFull(
   candidate: RagItemCandidate,
   fields: PromptContextRouteDecision["requestedFields"],
 ) {
@@ -1292,6 +1358,7 @@ async function getActivePaperReference(): Promise<PaperReference | null> {
     return {
       libraryID: selectedItem.libraryID,
       itemKey: selectedItem.key,
+      itemID: selectedItem.id,
     };
   }
 
@@ -2308,6 +2375,12 @@ function syncAllModelPickers() {
   }
 }
 
+function syncAllMetadataFieldSelects() {
+  for (const host of [...hosts]) {
+    syncMetadataFieldSelect(host);
+  }
+}
+
 function syncModelPicker(host: HTMLElement) {
   const provider = getActiveProvider();
   const picker = host.querySelector<HTMLElement>(".zai-model-picker");
@@ -2317,6 +2390,15 @@ function syncModelPicker(host: HTMLElement) {
   syncModelDropdown(
     host.querySelector<HTMLElement>(".zai-model-select-wrap"),
     provider,
+  );
+}
+
+function syncMetadataFieldSelect(host: HTMLElement) {
+  const select = host.querySelector<HTMLSelectElement>(".zai-metadata-select");
+  if (!select) return;
+
+  select.value = normalizeMetadataFieldSelectionPreset(
+    addon.data.settings.metadataFieldSelection,
   );
 }
 

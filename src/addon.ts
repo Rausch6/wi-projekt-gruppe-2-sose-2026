@@ -25,6 +25,7 @@ import {
 } from "./core/EmbeddingSearchService";
 import { ItemManager } from "./core/ItemManager";
 import { LibraryScopeManager } from "./core/LibraryScopeManager";
+import type { MetadataFieldSelectionPreset } from "./core/MetadataFieldSelection";
 import hooks from "./hooks";
 import {
   chatSimulation,
@@ -83,6 +84,7 @@ export type PluginSettings = {
   embeddingBaseUrl: string;
   embeddingModel: string;
   maxItems: number;
+  metadataFieldSelection: MetadataFieldSelectionPreset;
   ollamaBaseUrl: string;
   ollamaModel: string;
   autoDeleteOldChats: boolean;
@@ -193,6 +195,7 @@ class Addon {
         ollamaBaseUrl: "http://localhost:11434",
         ollamaModel: "qwen2.5:3b",
         maxItems: 200,
+        metadataFieldSelection: "title_author_date",
         autoDeleteOldChats: true,
       },
       runtime: {
