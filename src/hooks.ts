@@ -13,6 +13,7 @@ import { getString, initLocale } from "./utils/locale";
 import { registerPreferencesPane } from "./modules/preferences";
 import { registerPrefsScripts } from "./modules/preferenceScript";
 import { createCheckingProviderConnectionResult } from "./ai/providerConnectionStatus";
+import { createCheckingEmbeddingConnectionResult } from "./ai/embeddingConnectionStatus";
 import {
   closeChatDatabase,
   initializeChatDatabase,
@@ -113,6 +114,7 @@ async function onStartup() {
   }
 
 
+  void checkEmbeddingConnectionOnStartup();
   void checkActiveProviderConnectionOnStartup();
   await initializeChatDatabase();
   await cleanupOldChatsOnStartup();
@@ -168,6 +170,17 @@ async function checkActiveProviderConnectionOnStartup() {
 
   try {
     await addon.api.checkProviderConnection(provider);
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+  }
+}
+
+async function checkEmbeddingConnectionOnStartup() {
+  addon.data.runtime.embeddingConnection =
+    createCheckingEmbeddingConnectionResult();
+
+  try {
+    await addon.api.checkEmbeddingConnection();
   } catch (error) {
     Zotero.logError(error instanceof Error ? error : new Error(String(error)));
   }

@@ -7,15 +7,15 @@ import {
 import { CreateChatInput, StoredChat } from "../core/chatTypes";
 import { renderMarkdownContent } from "./markdownRenderer";
 import type { LLMProvider } from "../addon";
-import { EMBEDDING_DEFAULT_MODEL } from "../ai/EmbeddingProvider.js";
+import { REQUIRED_EMBEDDING_MODEL } from "../ai/EmbeddingProvider.js";
 import { OLLAMA_DEFAULT_MODEL } from "../ai/providers/OllamaProvider.js";
 import { KISSKI_MODEL_OPTIONS } from "../ai/providers/KisskiProvider.js";
-import { OLLAMA_DEFAULT_MODEL } from "../ai/providers/OllamaProvider.js";
 import {
   createCheckingProviderConnectionResult,
   createProviderConnectionResult,
   type ProviderConnectionResult,
 } from "../ai/providerConnectionStatus";
+import { createCheckingEmbeddingConnectionResult } from "../ai/embeddingConnectionStatus";
 import { getString } from "../utils/locale";
 import {
   LOCAL_OLLAMA_MODEL_INSTALLED_EVENT,
@@ -103,6 +103,7 @@ const localModelInstallEventWindows = new WeakSet<Window>();
 let nextMessageID = 1;
 let nextModelLoadRequestID = 1;
 let nextProviderConnectionRequestID = 1;
+let nextEmbeddingConnectionRequestID = 1;
 let activeChatID: string | null = null;
 let showAllChats = false;
 let chatSummariesLoaded = false;
@@ -1844,6 +1845,7 @@ function setActiveProvider(provider: LLMProvider) {
     savePluginPreference("provider", provider);
     addon.api.configureAI();
     addon.api.configureEmbeddings();
+    void checkEmbeddingConnection(true);
   }
 
   syncAllModelPickers();
@@ -1885,6 +1887,33 @@ async function checkProviderConnection(provider: LLMProvider, force: boolean) {
   } catch (error) {
     Zotero.logError(error instanceof Error ? error : new Error(String(error)));
     return addon.data.runtime.providerConnections[provider];
+  } finally {
+    renderAllHosts();
+  }
+}
+
+async function checkEmbeddingConnection(force: boolean) {
+  const currentConnection = addon.data.runtime.embeddingConnection;
+  if (!force && currentConnection.status !== "unknown") {
+    return currentConnection;
+  }
+
+  const requestID = nextEmbeddingConnectionRequestID++;
+  addon.data.runtime.embeddingConnection =
+    createCheckingEmbeddingConnectionResult();
+  renderAllHosts();
+
+  try {
+    const result = await addon.api.checkEmbeddingConnection();
+    if (requestID !== nextEmbeddingConnectionRequestID - 1) {
+      return result;
+    }
+
+    addon.data.runtime.embeddingConnection = result;
+    return result;
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+    return addon.data.runtime.embeddingConnection;
   } finally {
     renderAllHosts();
   }
@@ -2072,7 +2101,7 @@ function isLocalEmbeddingModel(model: string) {
   if (!value) return false;
 
   return (
-    value === EMBEDDING_DEFAULT_MODEL.toLowerCase() ||
+    value === REQUIRED_EMBEDDING_MODEL.toLowerCase() ||
     /(^|[-_/.:])embed(?:ding)?($|[-_/.:])/i.test(value)
   );
 }
