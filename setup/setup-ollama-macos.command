@@ -1,7 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-MODEL="qwen2.5:3b"
+CHAT_MODEL="qwen2.5:3b"
+EMBEDDING_MODEL="bge-m3:latest"
 BASE_URL="http://localhost:11434"
 INSTALL_COMMAND="curl -fsSL https://ollama.com/install.sh | sh"
 
@@ -85,10 +86,42 @@ installed_models() {
   "$OLLAMA_PATH" list 2>/dev/null | awk 'NR > 1 { print $1 }' || true
 }
 
+ensure_model_installed() {
+  local model="$1"
+  local label="$2"
+
+  if installed_models | grep -Fxq "$model"; then
+    step "$label already installed"
+    echo "$model"
+    return 0
+  fi
+
+  step "$label $model is not installed"
+  echo "This download can take a while and may use several GB of disk space."
+  if ! confirm "Download $model now?"; then
+    echo "$label download cancelled by user."
+    exit 1
+  fi
+
+  step "Downloading $model"
+  "$OLLAMA_PATH" pull "$model"
+}
+
+verify_model_installed() {
+  local model="$1"
+  local label="$2"
+
+  step "Verifying $label"
+  if ! installed_models | grep -Fxq "$model"; then
+    echo "$label $model was not found after download."
+    exit 1
+  fi
+}
+
 clear
 echo "ZAIA Ollama Setup - macOS"
-echo "This setup installs Ollama, starts the local service, and downloads $MODEL."
-echo "ZAIA expects Ollama at $BASE_URL with model $MODEL."
+echo "This setup installs Ollama, starts the local service, and downloads $CHAT_MODEL and $EMBEDDING_MODEL."
+echo "ZAIA expects Ollama at $BASE_URL with chat model $CHAT_MODEL and embedding model $EMBEDDING_MODEL."
 
 OLLAMA_PATH="$(find_ollama || true)"
 if [ -z "$OLLAMA_PATH" ]; then
@@ -122,33 +155,19 @@ if ! wait_for_api; then
   exit 1
 fi
 
-if installed_models | grep -Fxq "$MODEL"; then
-  step "Model already installed"
-  echo "$MODEL"
-else
-  step "Model $MODEL is not installed"
-  echo "This download can take a while and may use several GB of disk space."
-  if ! confirm "Download $MODEL now?"; then
-    echo "Model download cancelled by user."
-    exit 1
-  fi
+ensure_model_installed "$CHAT_MODEL" "Chat model"
+ensure_model_installed "$EMBEDDING_MODEL" "Embedding model"
 
-  step "Downloading $MODEL"
-  "$OLLAMA_PATH" pull "$MODEL"
-fi
-
-step "Verifying local model"
-if ! installed_models | grep -Fxq "$MODEL"; then
-  echo "Model $MODEL was not found after download."
-  exit 1
-fi
+verify_model_installed "$CHAT_MODEL" "chat model"
+verify_model_installed "$EMBEDDING_MODEL" "embedding model"
 
 step "ZAIA local LLM configuration"
-echo "Base URL: $BASE_URL"
-echo "Model:    $MODEL"
+echo "Base URL:        $BASE_URL"
+echo "Chat model:      $CHAT_MODEL"
+echo "Embedding model: $EMBEDDING_MODEL"
 echo ""
 echo "The plugin defaults already match these values."
-echo "If you changed Zotero preferences manually, set Ollama base URL to $BASE_URL and model to $MODEL."
+echo "If you changed Zotero preferences manually, set Ollama base URL to $BASE_URL, model to $CHAT_MODEL, and embedding model to $EMBEDDING_MODEL."
 echo ""
 echo "Done."
 echo ""

@@ -15,7 +15,10 @@ import {
   createProviderConnectionResult,
   type ProviderConnectionResult,
 } from "../ai/providerConnectionStatus";
-import { createCheckingEmbeddingConnectionResult } from "../ai/embeddingConnectionStatus";
+import {
+  createCheckingEmbeddingConnectionResult,
+  type EmbeddingConnectionResult,
+} from "../ai/embeddingConnectionStatus";
 import { getString } from "../utils/locale";
 import {
   LOCAL_OLLAMA_MODEL_INSTALLED_EVENT,
@@ -149,6 +152,11 @@ export function bindAssistantChat(host: HTMLElement) {
       '.zai-provider-setup-button[data-action="check-provider"][data-provider]',
     ),
   ) as HTMLButtonElement[];
+  const embeddingCheckButtons = Array.from(
+    host.querySelectorAll(
+      '.zai-provider-setup-button[data-action="check-embedding"]',
+    ),
+  ) as HTMLButtonElement[];
   const ollamaSetupLaunchButtons = Array.from(
     host.querySelectorAll(
       '.zai-provider-setup-button[data-action="launch-ollama-setup"]',
@@ -178,7 +186,7 @@ export function bindAssistantChat(host: HTMLElement) {
   const sendCurrentPrompt = () => {
     hosts.add(host);
     const prompt = textarea?.value.trim() ?? "";
-    if (!prompt || requestRunning || !isActiveProviderReady()) return;
+    if (!prompt || requestRunning || !isChatReady()) return;
 
     if (textarea) textarea.value = "";
     void sendChatPrompt(prompt).catch(() => {
@@ -275,6 +283,12 @@ export function bindAssistantChat(host: HTMLElement) {
       );
     });
   }
+  for (const embeddingCheckButton of embeddingCheckButtons) {
+    embeddingCheckButton.addEventListener("click", () => {
+      hosts.add(host);
+      void checkEmbeddingConnection(true);
+    });
+  }
   for (const ollamaSetupLaunchButton of ollamaSetupLaunchButtons) {
     ollamaSetupLaunchButton.addEventListener("click", () => {
       hosts.add(host);
@@ -368,8 +382,8 @@ export async function sendChatPrompt(prompt: string) {
   if (!content) {
     throw new Error("Der Prompt darf nicht leer sein.");
   }
-  if (!isActiveProviderReady()) {
-    throw new Error(getString("sidebar-active-provider-not-connected-error"));
+  if (!isChatReady()) {
+    throw new Error(getChatReadinessErrorText());
   }
 
   const chat = await ensureActiveChat(content);
@@ -691,6 +705,21 @@ function isActiveProviderReady() {
   return isProviderConnectionReady(
     addon.data.runtime.providerConnections[getActiveProvider()],
   );
+}
+
+function isEmbeddingReady() {
+  return isEmbeddingConnectionReady(addon.data.runtime.embeddingConnection);
+}
+
+function isChatReady() {
+  return isActiveProviderReady() && isEmbeddingReady();
+}
+
+function getChatReadinessErrorText() {
+  if (!isEmbeddingReady()) {
+    return getString("sidebar-active-embedding-not-connected-error");
+  }
+  return getString("sidebar-active-provider-not-connected-error");
 }
 
 function getActiveModel(provider: LLMProvider = getActiveProvider()) {
@@ -1135,6 +1164,8 @@ function renderHost(host: HTMLElement) {
   const main = host.querySelector<HTMLElement>(".zai-main");
   const top = host.querySelector<HTMLElement>(".zai-top");
   const welcome = host.querySelector<HTMLElement>(".zai-welcome");
+  const modelPicker = host.querySelector<HTMLElement>(".zai-model-picker");
+  const footer = host.querySelector<HTMLElement>(".zai-footer");
   const messageList = host.querySelector<HTMLElement>(".zai-messages");
   const chatList = host.querySelector<HTMLElement>(".zai-chat-list");
   const chatListActions = host.querySelector<HTMLElement>(
@@ -1172,15 +1203,28 @@ function renderHost(host: HTMLElement) {
   const activeProvider = getActiveProvider();
   const providerConnection =
     addon.data.runtime.providerConnections[activeProvider];
+  const embeddingConnection = addon.data.runtime.embeddingConnection;
+  const showEmbeddingSetup =
+    Boolean(host.querySelector<HTMLElement>(".zai-embedding-setup")) &&
+    shouldShowEmbeddingSetup(embeddingConnection);
   const providerReady = isProviderConnectionReady(providerConnection);
-  const showProviderSetup = shouldShowProviderSetup(providerConnection);
-  const showWelcome = !activeChatID && !showProviderSetup;
-  const showChat = !showWelcome && !showProviderSetup;
+  const embeddingReady = isEmbeddingConnectionReady(embeddingConnection);
+  const chatReady = providerReady && embeddingReady && !showEmbeddingSetup;
+  const showProviderSetup =
+    !showEmbeddingSetup && shouldShowProviderSetup(providerConnection);
+  const showWelcome = !activeChatID && !showEmbeddingSetup && !showProviderSetup;
+  const showChat = !showWelcome && !showEmbeddingSetup && !showProviderSetup;
   top?.classList.toggle("zai-top-chat-active", showChat);
-  main.classList.toggle("zai-main-empty", showWelcome || showProviderSetup);
+  main.classList.toggle(
+    "zai-main-empty",
+    showWelcome || showEmbeddingSetup || showProviderSetup,
+  );
   main.classList.toggle("zai-main-chat-active", showChat);
+  modelPicker?.toggleAttribute("hidden", showEmbeddingSetup);
+  footer?.toggleAttribute("hidden", showEmbeddingSetup);
   welcome?.toggleAttribute("hidden", !showWelcome);
-  syncProviderSetup(host, activeProvider, providerConnection);
+  syncEmbeddingSetup(host, showEmbeddingSetup, embeddingConnection);
+  syncProviderSetup(host, activeProvider, providerConnection, showProviderSetup);
   messageList.toggleAttribute("hidden", !showChat);
   chatList?.toggleAttribute("hidden", !showWelcome);
   const showSeeAll = showWelcome && chatSummaries.length > 3;
@@ -1245,11 +1289,11 @@ function renderHost(host: HTMLElement) {
     messageList.append(createActivityElement(host, activeActivity));
   }
 
-  if (sendButton) syncSendButton(sendButton, providerReady);
-  if (textarea) textarea.disabled = requestRunning || !providerReady;
+  if (sendButton) syncSendButton(sendButton, chatReady);
+  if (textarea) textarea.disabled = requestRunning || !chatReady;
 
   if (status) {
-    const statusText = getComposerStatusText(providerReady);
+    const statusText = getComposerStatusText(chatReady);
     status.textContent = statusText;
     status.toggleAttribute("hidden", !statusText);
     status.classList.toggle("zai-chat-status-simulation", simulationEnabled);
@@ -1264,10 +1308,18 @@ function shouldShowProviderSetup(
   return !isProviderConnectionReady(connection);
 }
 
+function shouldShowEmbeddingSetup(connection: EmbeddingConnectionResult) {
+  return !isEmbeddingConnectionReady(connection);
+}
+
 function isProviderConnectionReady(
   connection: ProviderConnectionResult | undefined,
 ) {
   return connection?.status === "ready";
+}
+
+function isEmbeddingConnectionReady(connection: EmbeddingConnectionResult) {
+  return connection.status === "ready";
 }
 
 function getComposerStatusText(providerReady: boolean) {
@@ -1303,11 +1355,11 @@ function syncProviderSetup(
   host: HTMLElement,
   provider: LLMProvider,
   connection: ProviderConnectionResult | undefined,
+  showSetup: boolean,
 ) {
   const setup = host.querySelector<HTMLElement>(".zai-provider-setup");
   if (!setup) return;
 
-  const showSetup = shouldShowProviderSetup(connection);
   setup.toggleAttribute("hidden", !showSetup);
 
   setup
@@ -1367,6 +1419,100 @@ function syncProviderSetup(
       status.textContent = text;
       status.toggleAttribute("hidden", !text);
     });
+}
+
+function syncEmbeddingSetup(
+  host: HTMLElement,
+  showSetup: boolean,
+  connection: EmbeddingConnectionResult,
+) {
+  const setup = host.querySelector<HTMLElement>(".zai-embedding-setup");
+  if (!setup) return;
+
+  setup.toggleAttribute("hidden", !showSetup);
+  setup.dataset.status = connection.status;
+
+  setup
+    .querySelectorAll<HTMLButtonElement>(
+      '.zai-provider-setup-button[data-action="check-embedding"]',
+    )
+    .forEach((button) => {
+      const isChecking = connection.status === "checking";
+      button.disabled = isChecking;
+      button.textContent = isChecking
+        ? getString("sidebar-checking-embedding")
+        : getString("sidebar-check-embedding");
+    });
+
+  setup
+    .querySelectorAll<HTMLButtonElement>(
+      '.zai-provider-setup-button[data-action="launch-ollama-setup"]',
+    )
+    .forEach((button) => {
+      button.disabled = ollamaSetupLaunchRunning;
+      button.textContent = ollamaSetupLaunchRunning
+        ? getString("sidebar-launching-ollama-setup")
+        : getString("sidebar-launch-ollama-setup");
+    });
+
+  setup
+    .querySelectorAll<HTMLButtonElement>(
+      '.zai-provider-setup-button[data-action="start-ollama"]',
+    )
+    .forEach((button) => {
+      button.disabled = ollamaStartRunning;
+      button.textContent = ollamaStartRunning
+        ? getString("sidebar-starting-ollama")
+        : getString("sidebar-start-ollama");
+    });
+
+  const status = setup.querySelector<HTMLElement>(
+    ".zai-embedding-setup-status",
+  );
+  if (status) {
+    const text = showSetup ? getEmbeddingConnectionStatusText(connection) : "";
+    status.textContent = text;
+    status.toggleAttribute("hidden", !text);
+  }
+}
+
+function getEmbeddingConnectionStatusText(connection: EmbeddingConnectionResult) {
+  if (ollamaStartRunning) return getString("sidebar-starting-ollama");
+  if (ollamaSetupLaunchRunning) {
+    return getString("sidebar-launching-ollama-setup");
+  }
+  if (connection.status === "unknown") {
+    return getString("sidebar-embedding-connection-not-checked");
+  }
+  if (connection.status === "checking") {
+    return getString("sidebar-checking-embedding");
+  }
+  if (connection.status === "ready") return "";
+
+  if (connection.status === "missing-config") {
+    if (connection.issue === "base-url-missing") {
+      return getString("sidebar-embedding-base-url-missing");
+    }
+    if (connection.issue === "model-missing") {
+      return getString("sidebar-embedding-model-missing");
+    }
+    return getString("sidebar-embedding-config-incomplete");
+  }
+
+  if (connection.status === "missing-model") {
+    return getString("sidebar-embedding-model-not-installed", {
+      args: { model: connection.model ?? REQUIRED_EMBEDDING_MODEL },
+    });
+  }
+
+  if (connection.status === "unreachable") {
+    return getString("sidebar-embedding-unreachable");
+  }
+
+  if (connection.issue === "invalid-response") {
+    return getString("sidebar-embedding-invalid-response");
+  }
+  return getString("sidebar-embedding-check-failed");
 }
 
 function getProviderConnectionStatusText(
@@ -1927,6 +2073,7 @@ async function launchOllamaSetup() {
 
   try {
     await addon.api.launchOllamaSetup();
+    void refreshOllamaDependentConnections();
   } catch (error) {
     Zotero.logError(error instanceof Error ? error : new Error(String(error)));
     const currentConnection = addon.data.runtime.providerConnections.ollama;
@@ -1953,7 +2100,7 @@ async function startOllama() {
 
   try {
     await addon.api.startOllama();
-    await waitForOllamaConnection();
+    await refreshOllamaDependentConnections();
   } catch (error) {
     Zotero.logError(error instanceof Error ? error : new Error(String(error)));
     const currentConnection = addon.data.runtime.providerConnections.ollama;
@@ -1972,6 +2119,11 @@ async function startOllama() {
   }
 }
 
+async function refreshOllamaDependentConnections() {
+  await waitForOllamaConnection();
+  await checkEmbeddingConnection(true);
+}
+
 async function stopOllama() {
   if (ollamaStopRunning) return;
 
@@ -1982,6 +2134,7 @@ async function stopOllama() {
     await addon.api.stopOllama();
     await delay(1_000);
     await checkProviderConnection("ollama", true);
+    await checkEmbeddingConnection(true);
   } catch (error) {
     Zotero.logError(error instanceof Error ? error : new Error(String(error)));
     const currentConnection = addon.data.runtime.providerConnections.ollama;

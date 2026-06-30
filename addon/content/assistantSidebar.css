@@ -448,11 +448,15 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
 }
 
 .zai-active-chat-bar[hidden],
+.zai-footer[hidden],
 .zai-chat-list[hidden],
 .zai-chat-list-actions[hidden],
+.zai-model-picker[hidden],
 .zai-see-all[hidden],
 .zai-stop-ollama-button[hidden],
 .zai-welcome[hidden],
+.zai-embedding-setup[hidden],
+.zai-embedding-setup-status[hidden],
 .zai-provider-setup[hidden],
 .zai-provider-setup-panel[hidden],
 .zai-provider-setup-status[hidden],
@@ -598,7 +602,8 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   margin: 0;
 }
 
-.zai-provider-setup {
+.zai-provider-setup,
+.zai-embedding-setup {
   box-sizing: border-box;
   display: grid;
   gap: 12px;
@@ -708,7 +713,8 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   background: color-mix(in srgb, currentColor 12%, transparent);
 }
 
-.zai-provider-setup-status {
+.zai-provider-setup-status,
+.zai-embedding-setup-status {
   color: var(--text-secondary, #5f6b7a);
   font-size: 12px;
   line-height: 1.4;
