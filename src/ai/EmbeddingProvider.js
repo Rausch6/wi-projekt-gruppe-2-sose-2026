@@ -10,7 +10,8 @@ import {
 
 export const EMBEDDING_PROVIDER_ID = "local-embeddings";
 export const EMBEDDING_DEFAULT_BASE_URL = "http://localhost:11434";
-export const EMBEDDING_DEFAULT_MODEL = "bge-m3:latest";
+export const REQUIRED_EMBEDDING_MODEL = "bge-m3:latest";
+export const EMBEDDING_DEFAULT_MODEL = REQUIRED_EMBEDDING_MODEL;
 export const EMBEDDING_DEFAULT_TIMEOUT = 120_000;
 
 export class EmbeddingProvider {

@@ -7,14 +7,20 @@ import {
   type ProviderConnectionState,
 } from "./ai/providerConnectionStatus";
 import {
+  createEmbeddingConnectionResult,
+  type EmbeddingConnectionResult,
+} from "./ai/embeddingConnectionStatus";
+import {
   EMBEDDING_DEFAULT_BASE_URL,
   EMBEDDING_DEFAULT_MODEL,
+  REQUIRED_EMBEDDING_MODEL,
   embeddingProvider,
 } from "./ai/EmbeddingProvider.js";
 import {
   KISSKI_DEFAULT_BASE_URL,
   KISSKI_DEFAULT_MODEL,
 } from "./ai/providers/KisskiProvider.js";
+import { OllamaProvider } from "./ai/providers/OllamaProvider.js";
 import {
   PaperContextService,
   type ChunkedPaper,
@@ -100,6 +106,7 @@ class Addon {
     runtime: {
       isAnalyzing: boolean;
       lastError?: string;
+      embeddingConnection: EmbeddingConnectionResult;
       providerConnections: ProviderConnectionState;
     };
     locale?: {
@@ -119,6 +126,7 @@ class Addon {
     checkProviderConnection: (
       provider?: LLMProvider,
     ) => Promise<ProviderConnectionResult>;
+    checkEmbeddingConnection: () => Promise<EmbeddingConnectionResult>;
     launchOllamaSetup: typeof launchOllamaSetup;
     startOllama: () => ReturnType<typeof startOllama>;
     stopOllama: () => ReturnType<typeof stopOllama>;
@@ -200,6 +208,7 @@ class Addon {
       },
       runtime: {
         isAnalyzing: false,
+        embeddingConnection: createEmbeddingConnectionResult("unknown"),
         providerConnections: {},
       },
     };
@@ -227,6 +236,7 @@ class Addon {
       },
       checkProviderConnection: (provider = this.data.settings.provider) =>
         this.checkProviderConnection(provider),
+      checkEmbeddingConnection: () => this.checkEmbeddingConnection(),
       launchOllamaSetup,
       startOllama: () => startOllama(this.data.settings.ollamaBaseUrl),
       stopOllama: () => stopOllama(this.data.settings.ollamaBaseUrl),
@@ -388,6 +398,62 @@ class Addon {
     }
   }
 
+  private async checkEmbeddingConnection(): Promise<EmbeddingConnectionResult> {
+    const baseUrl = this.data.settings.embeddingBaseUrl.trim();
+    const model = REQUIRED_EMBEDDING_MODEL;
+
+    if (!baseUrl) {
+      const result = createEmbeddingConnectionResult("missing-config", {
+        issue: "base-url-missing",
+        model,
+        message: "Embedding base URL is missing.",
+      });
+      this.data.runtime.embeddingConnection = result;
+      return result;
+    }
+
+    const provider = new OllamaProvider({
+      baseUrl,
+      model,
+      timeout: 30_000,
+    });
+
+    try {
+      const models = await provider.listModels();
+      if (!hasModel(models, model)) {
+        const result = createEmbeddingConnectionResult("missing-model", {
+          issue: "model-not-installed",
+          model,
+          baseUrl,
+          message: `Ollama is reachable, but the embedding model ${model} is not installed.`,
+        });
+        this.data.runtime.embeddingConnection = result;
+        return result;
+      }
+
+      const result = createEmbeddingConnectionResult("ready", {
+        model,
+        baseUrl,
+        message: "Embedding model is ready.",
+      });
+      this.data.runtime.embeddingConnection = result;
+      return result;
+    } catch (error) {
+      const result = createEmbeddingConnectionResult(
+        getEmbeddingConnectionFailureStatus(error),
+        {
+          issue: getEmbeddingConnectionFailureIssue(error),
+          model,
+          baseUrl,
+          error: getErrorMessage(error),
+          message: "No communication with Ollama embeddings.",
+        },
+      );
+      this.data.runtime.embeddingConnection = result;
+      return result;
+    }
+  }
+
   private getMissingProviderConfigResult(provider: LLMProvider) {
     const baseUrl = this.getConfiguredProviderBaseUrl(provider);
     const model = this.getConfiguredProviderModel(provider);
@@ -448,6 +514,18 @@ function getConnectionFailureStatus(error: unknown) {
 }
 
 function getConnectionFailureIssue(error: unknown) {
+  const name = getErrorName(error);
+  return name === "AIProviderResponseError"
+    ? "invalid-response"
+    : "provider-unreachable";
+}
+
+function getEmbeddingConnectionFailureStatus(error: unknown) {
+  const name = getErrorName(error);
+  return name === "AIProviderResponseError" ? "error" : "unreachable";
+}
+
+function getEmbeddingConnectionFailureIssue(error: unknown) {
   const name = getErrorName(error);
   return name === "AIProviderResponseError"
     ? "invalid-response"

@@ -15,6 +15,7 @@ Ollama, starts the local service, and downloads:
 
 ```text
 qwen2.5:3b
+bge-m3:latest
 ```
 
 ## macOS
@@ -36,8 +37,9 @@ chmod +x setup/setup-ollama-macos.command
 The plugin already uses the same local configuration:
 
 ```text
-Ollama base URL: http://localhost:11434
-Ollama model:    qwen2.5:3b
+Ollama base URL:  http://localhost:11434
+Ollama model:     qwen2.5:3b
+Embedding model:  bge-m3:latest
 ```
 
 If you changed these values in Zotero preferences, set them back to the values

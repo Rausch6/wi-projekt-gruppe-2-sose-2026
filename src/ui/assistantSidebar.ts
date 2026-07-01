@@ -4,6 +4,7 @@ import { openPreferencesPane } from "../modules/preferences";
 import { ASSISTANT_POPOUT_REQUEST_EVENT } from "./assistantPopoutEvents";
 import type { LLMProvider } from "../addon";
 import { METADATA_FIELD_SELECTION_OPTIONS } from "../core/MetadataFieldSelection";
+import { REQUIRED_EMBEDDING_MODEL } from "../ai/EmbeddingProvider.js";
 import { getString } from "../utils/locale";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
@@ -150,10 +151,11 @@ function createSidebar(doc: Document, options: AssistantSidebarRenderOptions) {
     "Dein Zotero AI Assistent für Fragen, Zusammenfassungen und Recherche in deiner Bibliothek.",
   );
   welcome.append(welcomeLogo, welcomeTitle, welcomeText);
+  const embeddingSetup = createEmbeddingSetup(doc);
   const providerSetup = createProviderSetup(doc);
   const messages = createHtmlElement(doc, "div", "zai-messages");
   messages.setAttribute("aria-live", "polite");
-  main.append(welcome, providerSetup, messages);
+  main.append(welcome, embeddingSetup, providerSetup, messages);
 
   const footer = createHtmlElement(doc, "footer", "zai-footer");
   const composer = createHtmlElement(doc, "div", "zai-composer");
@@ -318,6 +320,39 @@ function createProviderSetup(doc: Document) {
   return setup;
 }
 
+function createEmbeddingSetup(doc: Document) {
+  const setup = createHtmlElement(doc, "section", "zai-embedding-setup");
+  setup.hidden = true;
+  setup.setAttribute("aria-live", "polite");
+
+  const panel = createHtmlElement(doc, "div", "zai-provider-setup-panel");
+  panel.append(
+    createHtmlElement(
+      doc,
+      "h2",
+      "zai-provider-setup-title",
+      getString("sidebar-embedding-setup-title"),
+    ),
+    createHtmlElement(
+      doc,
+      "p",
+      "zai-provider-setup-description",
+      getString("sidebar-embedding-setup-description", {
+        args: { model: REQUIRED_EMBEDDING_MODEL },
+      }),
+    ),
+    createInstructionList(doc, [
+      createEmbeddingInstallStep(doc, createLocalSetupButton(doc)),
+      createEmbeddingStartStep(doc),
+    ]),
+    createEmbeddingSetupActions(doc),
+    createEmbeddingSetupStatus(doc),
+  );
+
+  setup.append(panel);
+  return setup;
+}
+
 function createCloudSetup(doc: Document) {
   const panel = createProviderSetupPanel(
     doc,
@@ -438,6 +473,17 @@ function createLocalInstallStep(doc: Document, button: HTMLButtonElement) {
   return fragment;
 }
 
+function createEmbeddingInstallStep(doc: Document, button: HTMLButtonElement) {
+  const fragment = doc.createDocumentFragment();
+  fragment.append(
+    getString("sidebar-embedding-setup-step-install", {
+      args: { model: REQUIRED_EMBEDDING_MODEL },
+    }),
+  );
+  appendInlineSetupButton(fragment, button);
+  return fragment;
+}
+
 function createLocalSetupButton(doc: Document) {
   const button = createButton(
     doc,
@@ -460,6 +506,20 @@ function createLocalStartStep(doc: Document) {
   button.dataset.action = "start-ollama";
 
   fragment.append(getString("sidebar-local-setup-step-start"));
+  appendInlineSetupButton(fragment, button);
+  return fragment;
+}
+
+function createEmbeddingStartStep(doc: Document) {
+  const fragment = doc.createDocumentFragment();
+  const button = createButton(
+    doc,
+    "zai-provider-setup-button zai-provider-setup-inline-button",
+    getString("sidebar-start-ollama"),
+  );
+  button.dataset.action = "start-ollama";
+
+  fragment.append(getString("sidebar-embedding-setup-step-start"));
   appendInlineSetupButton(fragment, button);
   return fragment;
 }
@@ -493,9 +553,27 @@ function createProviderSetupActions(
   return row;
 }
 
+function createEmbeddingSetupActions(doc: Document) {
+  const row = createHtmlElement(doc, "div", "zai-provider-setup-actions");
+  const button = createButton(
+    doc,
+    "zai-provider-setup-button",
+    getString("sidebar-check-embedding"),
+  );
+  button.dataset.action = "check-embedding";
+  row.append(button);
+  return row;
+}
+
 function createProviderSetupStatus(doc: Document, provider: LLMProvider) {
   const status = createHtmlElement(doc, "p", "zai-provider-setup-status");
   status.dataset.provider = provider;
+  status.hidden = true;
+  return status;
+}
+
+function createEmbeddingSetupStatus(doc: Document) {
+  const status = createHtmlElement(doc, "p", "zai-embedding-setup-status");
   status.hidden = true;
   return status;
 }
