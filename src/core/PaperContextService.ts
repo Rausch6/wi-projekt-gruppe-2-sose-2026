@@ -4,10 +4,16 @@ import { PdfExtractor } from "./PdfExtractor";
 import { chunkPaperText, estimateTokens, type TextChunk } from "./TextChunker";
 import { vectorStore, type ChunkDocument } from "./OramaService";
 import { embeddingProvider } from "../ai/EmbeddingProvider.js";
+import { config } from "../../package.json";
+import {
+  getMetadataFieldsForPreset,
+  type MetadataFieldSelection,
+} from "./MetadataFieldSelection";
 
 export interface PaperReference {
   libraryID: number;
   itemKey: string;
+  itemID?: number;
 }
 
 export interface PaperContext {
@@ -24,9 +30,35 @@ export interface ChunkedPaper {
   chunks: TextChunk[];
 }
 
+export interface VectorContextOptions {
+  contentFocus?: "relevant_chunks" | "abstracts";
+  metadataFields?: MetadataFieldSelection[];
+}
+
 type CachedPaper = ChunkedPaper & {
   cacheKey: string;
 };
+
+interface ContextPaperMetadata {
+  itemID: number;
+  itemKey: string;
+  libraryID: number;
+  libraryName: string;
+  title: string;
+  creators: string;
+  year: string;
+  publicationDate: string;
+  publicationTitle: string;
+  publisher: string;
+  doi: string;
+  isbn: string;
+  url: string;
+  abstractNote: string;
+  dateAdded: string;
+  dateModified: string;
+  itemType: string;
+  tags: string[];
+}
 
 const paperCache = new Map<string, CachedPaper>();
 
@@ -214,30 +246,34 @@ export class PaperContextService {
       (hit) => hit.document as unknown as ChunkDocument,
     );
 
+    const metadata = await getContextMetadataForDocuments(relevantHits);
+    const metadataByItemID = new Map(
+      metadata.map((entry) => [entry.itemID, entry]),
+    );
+
     const excerptsArray = await Promise.all(
       relevantHits.map(async (doc) => {
         const itemID = parseInt(doc.zoteroItemId, 10);
-        const item = await ItemManager.getSelectedRegularItem(itemID);
-        const sourceLabel =
-          doc.sourceType === "abstract"
-            ? ", Abstract"
-            : doc.pageNumber
-              ? `, Seite ${doc.pageNumber}`
-              : "";
+        const metadata = Number.isFinite(itemID)
+          ? metadataByItemID.get(itemID)
+          : undefined;
+        const pageLabel = doc.pageNumber ? `, Seite ${doc.pageNumber}` : "";
+        const citation = formatMetadataCitation(
+          metadata,
+          `Zotero-ID: ${doc.zoteroItemId}`,
+        );
 
-        let citationKey = `Zotero-ID: ${doc.zoteroItemId}`;
-        if (item) {
-          const itemData = ItemManager.extractItemData(item);
-          const authorLabel = itemData.firstCreator || "Unbekannt";
-          const yearLabel = itemData.year ? ` ${itemData.year}` : "";
-          citationKey = `${authorLabel}${yearLabel}`;
-        }
-
-        return `[${citationKey}${sourceLabel}]\n${doc.content}`;
+        return `[${citation}${pageLabel}; Zotero-ID: ${doc.zoteroItemId}]\n${doc.content}`;
       }),
     );
 
-    const excerpts = excerptsArray.join("\n\n");
+    const excerpts = [
+      "Nutze die strukturierten Paper-Metadaten fuer korrekte bibliographische Angaben. Vermische keine Angaben zwischen unterschiedlichen Zotero-IDs.",
+      "",
+      formatContextMetadataBlock(metadata),
+      "",
+      excerptsArray.join("\n\n"),
+    ].join("\n");
     Zotero.debug(
       `[PaperContextService] Globale Vektor-Suche erfolgreich. Folgende Chunks werden an das LLM gesendet:\n${excerpts}`,
     );
@@ -253,6 +289,122 @@ export class PaperContextService {
       excerpts,
     ].join("\n");
   }
+
+  static async buildVectorContextForItems(
+    query: string,
+    itemIDs: number[],
+    title = "Relevante AuszÃ¼ge aus ausgewÃ¤hlten Papern:",
+    options: VectorContextOptions = {},
+  ): Promise<string | null> {
+    const uniqueItemIDs = [...new Set(itemIDs.filter(Number.isFinite))].slice(
+      0,
+      20,
+    );
+    if (!uniqueItemIDs.length) return null;
+
+    const resolvedOptions = resolveVectorContextOptions(query, options);
+    const metadataFields = resolveMetadataFields(resolvedOptions);
+    const vectorSearchQuery = buildVectorSearchQuery(query, resolvedOptions);
+
+    let queryVector: number[] | null = null;
+    try {
+      [queryVector] = await embeddingProvider.embedTexts([vectorSearchQuery], {
+        inputType: "query",
+      });
+    } catch (error) {
+      Zotero.debug(
+        `[PaperContextService] Routing-Embedding fehlgeschlagen, Keyword-Fallback aktiv: ${error}`,
+      );
+    }
+
+    let hitGroups = await Promise.all(
+      uniqueItemIDs.map(async (itemID) => {
+        try {
+          return await vectorStore.searchSimilar(
+            queryVector,
+            3,
+            { zoteroItemId: String(itemID) },
+            vectorSearchQuery,
+          );
+        } catch (error) {
+          Zotero.debug(
+            `[PaperContextService] Routing-Suche fÃ¼r Item ${itemID} fehlgeschlagen: ${error}`,
+          );
+          return [];
+        }
+      }),
+    );
+
+    let hits = hitGroups.flat().slice(0, 30);
+    const metadata = await getContextMetadataForItemIDs(uniqueItemIDs);
+    const metadataByItemID = new Map(
+      metadata.map((entry) => [entry.itemID, entry]),
+    );
+
+    if (!hits.length && resolvedOptions.contentFocus === "abstracts") {
+      hitGroups = await searchVectorContextWithoutKeywordTerm(
+        queryVector,
+        query,
+        uniqueItemIDs,
+      );
+      hits = hitGroups.flat().slice(0, 30);
+    }
+
+    if (!hits.length) {
+      if (!metadata.length) return null;
+
+      return [
+        "Du bist ein wissenschaftlicher KI-Assistent fuer die Literaturverwaltung Zotero.",
+        "Fuer die Anfrage wurden Paper ausgewaehlt, aber es wurden keine passenden Textauszuege in der lokalen Vektordatenbank gefunden.",
+        resolvedOptions.contentFocus === "abstracts"
+          ? "Nutze die folgenden strukturierten Metadaten und Zotero-Abstracts, um passende Paper vorzuschlagen. Wenn keine Abstracts vorhanden sind, sage das deutlich."
+          : "Nutze die folgenden strukturierten Metadaten nur fuer bibliographische Antworten. Behaupte keine inhaltlichen Details, die nicht in den Metadaten stehen.",
+        "",
+        formatContextMetadataBlock(metadata, metadataFields),
+        "",
+        formatAbstractNotesBlock(metadata),
+      ].join("\n");
+    }
+
+    const textExcerpts = (
+      await Promise.all(
+        hits.map(async (hit) => {
+          const doc = hit.document as unknown as ChunkDocument;
+          const itemID = Number.parseInt(doc.zoteroItemId, 10);
+          const metadata = Number.isFinite(itemID)
+            ? metadataByItemID.get(itemID)
+            : undefined;
+          const citation = formatMetadataCitation(
+            metadata,
+            `Zotero-ID: ${doc.zoteroItemId}`,
+          );
+          const pageLabel = doc.pageNumber ? `, Seite ${doc.pageNumber}` : "";
+          return `[${citation}${pageLabel}; Zotero-ID: ${doc.zoteroItemId}]\n${doc.content}`;
+        }),
+      )
+    ).join("\n\n");
+    const excerpts = [
+      "Nutze die strukturierten Paper-Metadaten fuer korrekte bibliographische Angaben. Vermische keine Angaben zwischen unterschiedlichen Zotero-IDs.",
+      "Nenne in deiner Antwort keine Zotero-IDs, ausser der Nutzer fragt explizit danach. Verwende stattdessen Titel und Autorenschaft.",
+      ...formatVectorAnswerGuidance(resolvedOptions),
+      "",
+      formatContextMetadataBlock(metadata, metadataFields),
+      "",
+      textExcerpts,
+    ].join("\n");
+
+    return [
+      "Du bist ein wissenschaftlicher KI-Assistent fÃ¼r die Literaturverwaltung Zotero.",
+      "Beantworte die Nutzerfrage nur anhand der folgenden AuszÃ¼ge aus der lokalen Vektordatenbank.",
+      "Wenn die AuszÃ¼ge nicht ausreichen, sage das ausdrÃ¼cklich.",
+      "Verweise bei inhaltlichen Aussagen auf die angegebene Quelle.",
+      "Halte die Antwort strukturiert und ueberschaubar. Nutze Titel und Autorenschaft statt interner Zotero-IDs.",
+      "",
+      title,
+      excerpts,
+    ].join("\n");
+  }
+
   /**
    * Stellt einen komprimierten Kontext mit Bibliotheks-Metadaten für das LLM bereit.
    * Das Query-Rewriting-Modul kann 'requestedFields' nutzen, um unnötige Metadaten herauszufiltern.
@@ -300,6 +452,461 @@ export class PaperContextService {
   }
 }
 
+function formatItemCitation(item: Zotero.Item) {
+  const itemData = ItemManager.extractItemData(item);
+  const authorLabel = itemData.firstCreator || "Unbekannt";
+  const yearLabel = itemData.year ? ` ${itemData.year}` : "";
+  return `${authorLabel}${yearLabel}`;
+}
+
+function buildVectorSearchQuery(query: string, options: VectorContextOptions) {
+  if (options.contentFocus !== "abstracts") return query;
+
+  return [
+    "Abstract Kurzfassung Summary Zusammenfassung Introduction Einleitung Overview",
+    "research question contribution method results conclusion findings",
+    query,
+  ].join("\n");
+}
+
+async function searchVectorContextWithoutKeywordTerm(
+  queryVector: number[] | null,
+  query: string,
+  itemIDs: number[],
+) {
+  return Promise.all(
+    itemIDs.map(async (itemID) => {
+      try {
+        return await vectorStore.searchSimilar(
+          queryVector,
+          3,
+          { zoteroItemId: String(itemID) },
+          queryVector ? undefined : query,
+        );
+      } catch (error) {
+        Zotero.debug(
+          `[PaperContextService] Abstract-Retry-Suche fuer Item ${itemID} fehlgeschlagen: ${error}`,
+        );
+        return [];
+      }
+    }),
+  );
+}
+
+function resolveVectorContextOptions(
+  query: string,
+  options: VectorContextOptions,
+): VectorContextOptions {
+  if (options.contentFocus) return options;
+  return {
+    contentFocus: shouldUseAbstractFocus(query)
+      ? "abstracts"
+      : "relevant_chunks",
+    metadataFields: options.metadataFields,
+  };
+}
+
+function resolveMetadataFields(options: VectorContextOptions = {}) {
+  if (options.metadataFields?.length) return options.metadataFields;
+
+  let preset = "title_author_date";
+  try {
+    const storedPreset = Zotero.Prefs.get(
+      `${config.prefsPrefix}.metadataFieldSelection`,
+    );
+    if (typeof storedPreset === "string") preset = storedPreset;
+  } catch {
+    // Preference fallback below.
+  }
+
+  return getMetadataFieldsForPreset(preset);
+}
+
+function shouldUseAbstractFocus(query: string) {
+  const prompt = query
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const asksForSummary =
+    /\b(zusammenfassung|zusammenfassen|fasse zusammen|fass zusammen|summary|summarize|abstract|ueberblick|uberblick)\b/.test(
+      prompt,
+    );
+  const asksForExistingPapers =
+    /\b(suche|finde|welche paper|welche artikel|paper.*zu|artikel.*zu|papers.*about|find papers|search papers)\b/.test(
+      prompt,
+    ) &&
+    /\b(bibliothek|library|meine paper|meinen papern|vorhanden|bestehend|zotero)\b/.test(
+      prompt,
+    );
+
+  return asksForSummary || asksForExistingPapers;
+}
+
+function formatVectorAnswerGuidance(options: VectorContextOptions) {
+  if (options.contentFocus !== "abstracts") return [];
+
+  return [
+    "Die Vektorsuche wurde auf Abstracts, Kurzfassungen, Einleitungen und Ueberblicksstellen fokussiert.",
+    "Bei Zusammenfassungen: Gib pro Paper eine kurze, klare Zusammenfassung mit Titel und Autorenschaft.",
+    "Bei Suchanfragen nach vorhandenen Papern: Gib eine ueberschaubare Trefferliste mit Titel, Autorenschaft und kurzem Grund, warum das Paper passt.",
+  ];
+}
+
+async function getContextMetadataForDocuments(docs: ChunkDocument[]) {
+  const itemIDs = docs
+    .map((doc) => Number.parseInt(doc.zoteroItemId, 10))
+    .filter(Number.isFinite);
+  return getContextMetadataForItemIDs(itemIDs);
+}
+
+async function getContextMetadataForItemIDs(itemIDs: number[]) {
+  const uniqueItemIDs = [...new Set(itemIDs.filter(Number.isFinite))];
+  const metadata = await Promise.all(
+    uniqueItemIDs.map((itemID) => getContextMetadataForItemID(itemID)),
+  );
+  return metadata.filter(
+    (entry): entry is ContextPaperMetadata => entry !== null,
+  );
+}
+
+async function getContextMetadataForItemID(
+  itemID: number,
+): Promise<ContextPaperMetadata | null> {
+  let item: Zotero.Item | null = null;
+
+  try {
+    item = await loadItemCompletely(await Zotero.Items.getAsync(itemID));
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Metadaten fuer Item ${itemID} konnten nicht geladen werden: ${error}`,
+    );
+    return null;
+  }
+
+  if (!item?.isRegularItem()) return null;
+
+  const itemData = ItemManager.extractItemData(item);
+
+  return {
+    itemID: item.id,
+    itemKey: item.key,
+    libraryID: item.libraryID,
+    libraryName: getSafeLibraryName(item.libraryID),
+    title: await getSafeMetadataTitle(item, itemData.title),
+    creators: getSafeMetadataCreators(item),
+    year: itemData.year,
+    publicationDate: getSafeMetadataField(item, "date", ""),
+    publicationTitle: getSafeMetadataField(item, "publicationTitle", ""),
+    publisher: getSafeMetadataField(item, "publisher", ""),
+    doi: getSafeMetadataField(item, "DOI", ""),
+    isbn: getSafeMetadataField(item, "ISBN", ""),
+    url: getSafeMetadataField(item, "url", ""),
+    abstractNote: getSafeMetadataField(item, "abstractNote", ""),
+    dateAdded: getSafeMetadataField(item, "dateAdded", ""),
+    dateModified: getSafeMetadataField(item, "dateModified", ""),
+    itemType: itemData.itemType,
+    tags: getSafeTags(item),
+  };
+}
+
+function formatContextMetadataBlock(
+  metadata: ContextPaperMetadata[],
+  fields = resolveMetadataFields(),
+) {
+  if (!metadata.length) {
+    return "Paper-Metadaten: Keine Metadaten verfuegbar.";
+  }
+
+  return [
+    "Paper-Metadaten:",
+    "<paper-metadata>",
+    ...metadata.map((entry) => formatSingleContextMetadata(entry, fields)),
+    "</paper-metadata>",
+  ].join("\n");
+}
+
+function formatAbstractNotesBlock(metadata: ContextPaperMetadata[]) {
+  const abstracts = metadata.filter((entry) =>
+    normalizeMetadataValue(entry.abstractNote),
+  );
+
+  if (!abstracts.length) {
+    return "Zotero-Abstracts: Keine Abstracts in den Zotero-Metadaten vorhanden.";
+  }
+
+  return [
+    "Zotero-Abstracts:",
+    "<paper-abstracts>",
+    ...abstracts.map(formatSingleAbstractNote),
+    "</paper-abstracts>",
+  ].join("\n");
+}
+
+function formatSingleAbstractNote(metadata: ContextPaperMetadata) {
+  return [
+    `[ABSTRACT Zotero-ID=${metadata.itemID}]`,
+    `Titel: ${normalizeMetadataValue(metadata.title, "Ohne Titel")}`,
+    `Autorenschaft: ${normalizeMetadataValue(metadata.creators, "Unbekannte Autorenschaft")}`,
+    `Abstract: ${truncateMetadataValue(metadata.abstractNote, 1800)}`,
+    "[/ABSTRACT]",
+  ].join("\n");
+}
+
+function formatSingleContextMetadata(
+  metadata: ContextPaperMetadata,
+  fields: MetadataFieldSelection[],
+) {
+  const lines = [
+    `[PAPER Zotero-ID=${metadata.itemID}]`,
+    `Titel: ${normalizeMetadataValue(metadata.title, "Ohne Titel")}`,
+  ];
+
+  if (fields.includes("creators")) {
+    lines.push(
+      `Autorenschaft: ${normalizeMetadataValue(metadata.creators, "Unbekannte Autorenschaft")}`,
+    );
+  }
+  if (fields.includes("publicationDate")) {
+    lines.push(
+      `Veröffentlichungsdatum: ${normalizeMetadataValue(metadata.publicationDate, "Unbekannt")}`,
+    );
+  }
+  if (fields.includes("tags")) {
+    lines.push(
+      `Tags: ${metadata.tags.length ? metadata.tags.map((tag) => normalizeMetadataValue(tag)).join(", ") : "Keine Tags"}`,
+    );
+  }
+
+  lines.push("[/PAPER]");
+  return lines.join("\n");
+}
+
+function formatSingleContextMetadataFull(metadata: ContextPaperMetadata) {
+  return [
+    `[PAPER Zotero-ID=${metadata.itemID}]`,
+    `Item-Key: ${normalizeMetadataValue(metadata.itemKey, "unbekannt")}`,
+    `Bibliothek: ${normalizeMetadataValue(metadata.libraryName, "Unbekannte Bibliothek")} (Library-ID: ${metadata.libraryID})`,
+    `Titel: ${normalizeMetadataValue(metadata.title, "Ohne Titel")}`,
+    `Autorenschaft: ${normalizeMetadataValue(metadata.creators, "Unbekannte Autorenschaft")}`,
+    `Veröffentlichungsdatum: ${normalizeMetadataValue(metadata.publicationDate, "Unbekannt")}`,
+    `Jahr: ${normalizeMetadataValue(metadata.year, "Unbekannt")}`,
+    `Publikation/Journal: ${normalizeMetadataValue(metadata.publicationTitle, "Unbekannt")}`,
+    `Verlag: ${normalizeMetadataValue(metadata.publisher, "Unbekannt")}`,
+    `DOI: ${normalizeMetadataValue(metadata.doi, "Nicht vorhanden")}`,
+    `ISBN: ${normalizeMetadataValue(metadata.isbn, "Nicht vorhanden")}`,
+    `URL: ${normalizeMetadataValue(metadata.url, "Nicht vorhanden")}`,
+    `Abstract vorhanden: ${normalizeMetadataValue(metadata.abstractNote) ? "Ja" : "Nein"}`,
+    `Typ: ${normalizeMetadataValue(metadata.itemType, "unknown")}`,
+    `Tags: ${metadata.tags.length ? metadata.tags.map((tag) => normalizeMetadataValue(tag)).join(", ") : "Keine Tags"}`,
+    `Zotero hinzugefügt: ${normalizeMetadataValue(metadata.dateAdded, "Unbekannt")}`,
+    `Zotero geändert: ${normalizeMetadataValue(metadata.dateModified, "Unbekannt")}`,
+    "[/PAPER]",
+  ].join("\n");
+}
+
+function formatMetadataCitation(
+  metadata: ContextPaperMetadata | undefined,
+  fallback: string,
+) {
+  if (!metadata) return fallback;
+
+  const authorLabel = normalizeMetadataValue(metadata.creators, "Unbekannt");
+  const yearLabel = metadata.year
+    ? ` ${normalizeMetadataValue(metadata.year)}`
+    : "";
+  return `${authorLabel}${yearLabel}`;
+}
+
+function normalizeMetadataValue(value: unknown, fallback = "") {
+  const normalized = String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return normalized || fallback;
+}
+
+function truncateMetadataValue(value: unknown, maxLength: number) {
+  const normalized = normalizeMetadataValue(value);
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, maxLength - 1).trim()}…`;
+}
+
+function getSafeLibraryName(libraryID: number) {
+  try {
+    return Zotero.Libraries.getName(libraryID);
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Bibliotheksname fuer Library ${libraryID} konnte nicht gelesen werden: ${error}`,
+    );
+    return "Unbekannte Bibliothek";
+  }
+}
+
+function getSafeMetadataField(
+  item: Zotero.Item,
+  field: string,
+  fallback: string,
+) {
+  try {
+    return item.getField(field) || fallback;
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Metadatenfeld "${field}" fuer Item ${item.id} konnte nicht gelesen werden: ${error}`,
+    );
+    return fallback;
+  }
+}
+
+async function getSafeMetadataTitle(item: Zotero.Item, fallbackTitle: string) {
+  item = await loadItemCompletely(item);
+  const parentTitle = await getParentItemTitle(item);
+  if (parentTitle) return parentTitle;
+
+  const title = getSafeMetadataField(item, "title", "");
+  if (title && !isGenericAttachmentTitle(title)) return title;
+
+  const attachmentTitle = await getBestAttachmentTitle(item);
+  if (attachmentTitle) return attachmentTitle;
+
+  try {
+    const displayTitle = (
+      item as Zotero.Item & { getDisplayTitle?: () => string }
+    ).getDisplayTitle?.();
+    if (displayTitle) return displayTitle;
+  } catch {
+    // Fall back to ItemManager data below.
+  }
+
+  return normalizeMetadataValue(fallbackTitle, "Ohne Titel");
+}
+
+async function getBestAttachmentTitle(item: Zotero.Item) {
+  try {
+    for (const attachmentID of item.getAttachments()) {
+      const attachment = await loadItemCompletely(
+        await Zotero.Items.getAsync(attachmentID),
+      );
+      if (!attachment?.isAttachment()) continue;
+
+      const attachmentTitle =
+        getSafeMetadataField(attachment, "title", "") ||
+        (
+          attachment as Zotero.Item & { getFilename?: () => string }
+        ).getFilename?.() ||
+        "";
+      if (isGenericAttachmentTitle(attachmentTitle)) continue;
+      const normalizedTitle = normalizeAttachmentTitle(attachmentTitle);
+      if (normalizedTitle) return normalizedTitle;
+    }
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Attachment-Titel fuer Item ${item.id} konnte nicht gelesen werden: ${error}`,
+    );
+  }
+
+  return "";
+}
+
+async function getParentItemTitle(item: Zotero.Item) {
+  if (!item.isAttachment() || !item.parentID) return "";
+
+  try {
+    const parent = await loadItemCompletely(
+      await Zotero.Items.getAsync(item.parentID),
+    );
+    const parentTitle = getSafeMetadataField(parent, "title", "");
+    if (parentTitle && !isGenericAttachmentTitle(parentTitle))
+      return parentTitle;
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Parent-Titel fuer Attachment ${item.id} konnte nicht gelesen werden: ${error}`,
+    );
+  }
+
+  return "";
+}
+
+async function loadItemCompletely(item: Zotero.Item) {
+  try {
+    await item.loadAllData(true);
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Item ${item.id} konnte nicht vollstaendig nachgeladen werden: ${error}`,
+    );
+  }
+
+  return item;
+}
+
+function normalizeAttachmentTitle(title: string) {
+  return title
+    .replace(/\.pdf$/i, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isGenericAttachmentTitle(title: string) {
+  const normalized = title
+    .toLowerCase()
+    .replace(/\.pdf$/i, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return [
+    "",
+    "pdf",
+    "full text",
+    "full text pdf",
+    "fulltext",
+    "fulltext pdf",
+    "submitted version",
+    "accepted version",
+    "publisher version",
+  ].includes(normalized);
+}
+
+function getSafeMetadataCreators(item: Zotero.Item) {
+  try {
+    const creators = item
+      .getCreators()
+      .map((creator) => {
+        const name = [creator.firstName, creator.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+        return name || (creator as unknown as { name?: string }).name || "";
+      })
+      .filter(Boolean);
+
+    if (creators.length) return creators.join("; ");
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Creator fuer Item ${item.id} konnten nicht gelesen werden: ${error}`,
+    );
+  }
+
+  const itemData = ItemManager.extractItemData(item);
+  return itemData.firstCreator || "Unbekannte Autorenschaft";
+}
+
+function getSafeTags(item: Zotero.Item) {
+  try {
+    return item
+      .getTags()
+      .map((entry) => entry.tag)
+      .filter(Boolean);
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Tags fuer Item ${item.id} konnten nicht gelesen werden: ${error}`,
+    );
+    return [];
+  }
+}
+
 async function resolveReferencedItem(reference: PaperReference) {
   const item = await ItemManager.getItemByLibraryAndKey(
     reference.libraryID,
@@ -339,12 +946,16 @@ async function getCachedPaper(item: Zotero.Item) {
 
 function formatPaperContext(paper: CachedPaper, chunks: TextChunk[]) {
   const metadata = [
-    `Titel: ${paper.title}`,
-    `Autorenschaft: ${paper.creators}`,
-    paper.year ? `Jahr: ${paper.year}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+    "Paper-Metadaten:",
+    "<paper-metadata>",
+    `[PAPER Attachment-ID=${paper.attachmentID}]`,
+    `Titel: ${normalizeMetadataValue(paper.title, "Ohne Titel")}`,
+    `Autorenschaft: ${normalizeMetadataValue(paper.creators, "Unbekannte Autorenschaft")}`,
+    `Jahr: ${normalizeMetadataValue(paper.year, "Unbekannt")}`,
+    `Attachment-ID: ${paper.attachmentID}`,
+    "[/PAPER]",
+    "</paper-metadata>",
+  ].join("\n");
   const excerpts = chunks
     .map((chunk) => {
       const pageLabel = formatPageLabel(chunk);

@@ -10,7 +10,6 @@ export interface ItemData {
 }
 
 export class ItemManager {
-  
   /**
    * Holt alle aktuell ausgewählten Items im Zotero-Hauptfenster.
    * @returns Array von Zotero Item-Objekten
@@ -53,10 +52,14 @@ export class ItemManager {
     return {
       id: item.id,
       libraryID: item.libraryID,
-      title: item.getField("title") || "Ohne Titel",
-      firstCreator: item.getField("firstCreator") || "Unbekannter Creator",
-      year: item.getField("year") || "",
-      itemType: Zotero.ItemTypes.getName(item.itemTypeID),
+      title: getSafeItemField(item, "title", "Ohne Titel"),
+      firstCreator: getSafeItemField(
+        item,
+        "firstCreator",
+        "Unbekannter Creator",
+      ),
+      year: getSafeItemField(item, "year", ""),
+      itemType: getSafeItemType(item),
     };
   }
 
@@ -80,19 +83,23 @@ export class ItemManager {
    * @param libraryID (Optional) Die ID der Bibliothek. Standard ist die Hauptbibliothek.
    * @returns Ein Array von aufbereiteten ItemData-Objekten
    */
-  static async getAllLibraryItemsMetadata(libraryID?: number): Promise<ItemData[]> {
+  static async getAllLibraryItemsMetadata(
+    libraryID?: number,
+  ): Promise<ItemData[]> {
     const targetLibraryID = libraryID ?? Zotero.Libraries.userLibraryID;
-    
+
     let items: Zotero.Item[] = [];
     try {
       items = await Zotero.Items.getAll(targetLibraryID, true, false);
     } catch (error) {
-      Zotero.debug(`ZAIA: Fehler beim Abrufen aller Items aus Bibliothek ${targetLibraryID}: ${error}`);
+      Zotero.debug(
+        `ZAIA: Fehler beim Abrufen aller Items aus Bibliothek ${targetLibraryID}: ${error}`,
+      );
       return [];
     }
 
     const uniqueItemsMap = new Map<number, Zotero.Item>();
-    
+
     for (const item of items) {
       const resolvedItem = await this.resolveRegularItemAsync(item);
       if (resolvedItem && !uniqueItemsMap.has(resolvedItem.id)) {
@@ -101,7 +108,7 @@ export class ItemManager {
     }
 
     const validItems = Array.from(uniqueItemsMap.values());
-    return validItems.map(item => this.extractItemData(item));
+    return validItems.map((item) => this.extractItemData(item));
   }
 
   static async getItemByLibraryAndKey(
@@ -127,7 +134,12 @@ export class ItemManager {
 
   private static resolveRegularItem(item: Zotero.Item) {
     if (item.isRegularItem()) return item;
-    if (item.isAttachment() && item.attachmentContentType === "application/pdf" && !item.parentID) return item;
+    if (
+      item.isAttachment() &&
+      item.attachmentContentType === "application/pdf" &&
+      !item.parentID
+    )
+      return item;
     if (!item.isAttachment() || !item.parentID) return null;
 
     const parent = Zotero.Items.get(item.parentID);
@@ -135,12 +147,54 @@ export class ItemManager {
   }
 
   private static async resolveRegularItemAsync(item: Zotero.Item) {
+    const loadedItem = await loadItemData(item);
+    item = loadedItem ?? item;
+
     if (item.isRegularItem()) return item;
-    if (item.isAttachment() && item.attachmentContentType === "application/pdf" && !item.parentID) return item;
+    if (
+      item.isAttachment() &&
+      item.attachmentContentType === "application/pdf" &&
+      !item.parentID
+    )
+      return item;
     if (!item.isAttachment() || !item.parentID) return null;
 
     const parent = await Zotero.Items.getAsync(item.parentID);
     return parent?.isRegularItem() ? parent : null;
+  }
+}
+
+async function loadItemData(item: Zotero.Item) {
+  try {
+    const loadedItem = await Zotero.Items.getAsync(item.id);
+    return loadedItem ?? item;
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Item ${item.id} konnte nicht nachgeladen werden: ${error}`,
+    );
+    return item;
+  }
+}
+
+function getSafeItemField(item: Zotero.Item, field: string, fallback: string) {
+  try {
+    return item.getField(field) || fallback;
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Feld "${field}" konnte fÃ¼r Item ${item.id} nicht gelesen werden: ${error}`,
+    );
+    return fallback;
+  }
+}
+
+function getSafeItemType(item: Zotero.Item) {
+  try {
+    return Zotero.ItemTypes.getName(item.itemTypeID);
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Item-Type konnte fÃ¼r Item ${item.id} nicht gelesen werden: ${error}`,
+    );
+    return "unknown";
   }
 }
 

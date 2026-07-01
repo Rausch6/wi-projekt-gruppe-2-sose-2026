@@ -3,6 +3,7 @@ import { bindAssistantChat } from "./assistantChatController";
 import { openPreferencesPane } from "../modules/preferences";
 import { ASSISTANT_POPOUT_REQUEST_EVENT } from "./assistantPopoutEvents";
 import type { LLMProvider } from "../addon";
+import { METADATA_FIELD_SELECTION_OPTIONS } from "../core/MetadataFieldSelection";
 import { REQUIRED_EMBEDDING_MODEL } from "../ai/EmbeddingProvider.js";
 import { getString } from "../utils/locale";
 
@@ -229,7 +230,11 @@ function createModelPicker(doc: Document) {
 
   const content = createHtmlElement(doc, "div", "zai-model-picker-content");
   content.hidden = true;
-  content.append(createProviderToggle(doc), createModelSelect(doc));
+  content.append(
+    createProviderToggle(doc),
+    createModelSelect(doc),
+    createMetadataFieldSelect(doc),
+  );
 
   picker.append(toggle, content);
   return picker;
@@ -277,6 +282,33 @@ function createModelSelect(doc: Document) {
   modelSelect.append(modelValue);
   modelWrap.append(modelSelect, modelOptions);
   return modelWrap;
+}
+
+function createMetadataFieldSelect(doc: Document) {
+  const wrap = createHtmlElement(doc, "label", "zai-metadata-select-wrap");
+  const label = createHtmlElement(
+    doc,
+    "span",
+    "zai-metadata-select-label",
+    "Metadaten",
+  );
+  const select = doc.createElementNS(HTML_NS, "select") as HTMLSelectElement;
+  select.className = "zai-metadata-select";
+  select.setAttribute("aria-label", "Metadaten-Auswahl");
+
+  for (const option of METADATA_FIELD_SELECTION_OPTIONS) {
+    const optionNode = doc.createElementNS(
+      HTML_NS,
+      "option",
+    ) as HTMLOptionElement;
+    optionNode.value = option.value;
+    optionNode.textContent = option.label;
+    select.append(optionNode);
+  }
+
+  select.value = addon.data.settings.metadataFieldSelection;
+  wrap.append(label, select);
+  return wrap;
 }
 
 function createProviderSetup(doc: Document) {

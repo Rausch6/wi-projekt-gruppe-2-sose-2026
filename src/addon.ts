@@ -31,14 +31,19 @@ import {
 } from "./core/EmbeddingSearchService";
 import { ItemManager } from "./core/ItemManager";
 import { LibraryScopeManager } from "./core/LibraryScopeManager";
+import type { MetadataFieldSelectionPreset } from "./core/MetadataFieldSelection";
 import hooks from "./hooks";
 import {
   chatSimulation,
   clearChat,
   createChat,
   deleteChat,
+  formatLastAssistantRequestDebug,
+  formatLastPromptContextRouteDebug,
   getActiveChatID,
   getChatMessages,
+  getLastAssistantRequestDebug,
+  getLastPromptContextRouteDebug,
   listChats,
   loadChat,
   sendChatPrompt,
@@ -80,10 +85,12 @@ export type PluginSettings = {
   baseUrl: string;
   model: string;
   sendPaperContextToKisski: boolean;
+  contextRouterProvider: LLMProvider;
   embeddingSearchEnabled: boolean;
   embeddingBaseUrl: string;
   embeddingModel: string;
   maxItems: number;
+  metadataFieldSelection: MetadataFieldSelectionPreset;
   ollamaBaseUrl: string;
   ollamaModel: string;
   autoDeleteOldChats: boolean;
@@ -143,6 +150,16 @@ class Addon {
       setFavorite: typeof setChatFavorite;
     };
     chatSimulation: typeof chatSimulation;
+    chatDebug: {
+      getLastRequest: typeof getLastAssistantRequestDebug;
+      formatLastRequest: typeof formatLastAssistantRequestDebug;
+      logLastRequest: () => string;
+    };
+    contextRouterDebug: {
+      getLastDecision: typeof getLastPromptContextRouteDebug;
+      formatLastDecision: typeof formatLastPromptContextRouteDebug;
+      logLastDecision: () => string;
+    };
     paperDebug: {
       logSelectedChunks: (itemID?: number) => Promise<string>;
       showSelectedChunks: (itemID?: number) => Promise<string>;
@@ -179,12 +196,14 @@ class Addon {
         baseUrl: KISSKI_DEFAULT_BASE_URL,
         model: KISSKI_DEFAULT_MODEL,
         sendPaperContextToKisski: true,
+        contextRouterProvider: "ollama",
         embeddingSearchEnabled: true,
         embeddingBaseUrl: EMBEDDING_DEFAULT_BASE_URL,
         embeddingModel: EMBEDDING_DEFAULT_MODEL,
         ollamaBaseUrl: "http://localhost:11434",
         ollamaModel: "qwen2.5:3b",
-        maxItems: 20,
+        maxItems: 200,
+        metadataFieldSelection: "title_author_date",
         autoDeleteOldChats: true,
       },
       runtime: {
@@ -253,6 +272,24 @@ class Addon {
         setFavorite: setChatFavorite,
       },
       chatSimulation,
+      chatDebug: {
+        getLastRequest: getLastAssistantRequestDebug,
+        formatLastRequest: formatLastAssistantRequestDebug,
+        logLastRequest: () => {
+          const report = formatLastAssistantRequestDebug();
+          logToZoteroConsole(report);
+          return report;
+        },
+      },
+      contextRouterDebug: {
+        getLastDecision: getLastPromptContextRouteDebug,
+        formatLastDecision: formatLastPromptContextRouteDebug,
+        logLastDecision: () => {
+          const report = formatLastPromptContextRouteDebug();
+          logToZoteroConsole(report);
+          return report;
+        },
+      },
       paperDebug: {
         logSelectedChunks: logSelectedPaperChunks,
         showSelectedChunks: showSelectedPaperChunks,

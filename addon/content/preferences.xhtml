@@ -59,6 +59,27 @@
     <html:p data-l10n-id="pref-paper-context-cloud-notice"></html:p>
   </vbox>
 
+  <vbox>
+    <html:label
+      for="zotero-prefpane-__addonRef__-context-router-provider"
+      data-l10n-id="pref-context-router-provider"
+    ></html:label>
+    <html:select
+      id="zotero-prefpane-__addonRef__-context-router-provider"
+      preference="contextRouterProvider"
+    >
+      <html:option
+        value="ollama"
+        data-l10n-id="pref-context-router-provider-local"
+      ></html:option>
+      <html:option
+        value="kisski"
+        data-l10n-id="pref-context-router-provider-cloud"
+      ></html:option>
+    </html:select>
+    <html:p data-l10n-id="pref-context-router-provider-notice"></html:p>
+  </vbox>
+
   <html:section class="zaia-pref-section">
     <html:h3 data-l10n-id="pref-embedding-section-title"></html:h3>
   </html:section>
@@ -118,7 +139,7 @@
     <html:input
       type="number"
       min="1"
-      max="200"
+      max="1000"
       id="zotero-prefpane-__addonRef__-max-items"
       preference="maxItems"
     ></html:input>

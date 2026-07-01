@@ -1077,6 +1077,40 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   width: 100%;
 }
 
+.zai-metadata-select-wrap {
+  color: inherit;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  width: 100%;
+}
+
+.zai-metadata-select-label {
+  color: var(--text-secondary, rgba(0, 0, 0, 0.62));
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.zai-metadata-select {
+  appearance: auto;
+  background: var(--material-background, #fff);
+  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.14));
+  border-radius: 6px;
+  box-sizing: border-box;
+  color: inherit;
+  font: inherit;
+  min-height: 32px;
+  min-width: 0;
+  padding: 0 8px;
+  width: 100%;
+}
+
+.zai-metadata-select:focus-visible {
+  border-color: var(--accent-blue, #2563eb);
+  box-shadow: 0 0 0 2px color-mix(in srgb, #2563eb 20%, transparent);
+  outline: none;
+}
+
 .zai-model-select-wrap-open {
   z-index: 20;
 }

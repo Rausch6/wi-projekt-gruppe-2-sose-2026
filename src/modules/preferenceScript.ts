@@ -10,7 +10,6 @@ import {
 import {
   OLLAMA_DEFAULT_BASE_URL,
   OLLAMA_DEFAULT_MODEL,
-  OLLAMA_INSTALL_COMMANDS,
 } from "../ai/providers/OllamaProvider.js";
 
 const OLLAMA_INSTALL_COMMANDS = {
@@ -23,6 +22,7 @@ const FIELD_NAMES = [
   "base-url",
   "model",
   "send-paper-context-to-kisski",
+  "context-router-provider",
   "embedding-search-enabled",
   "embedding-base-url",
   "embedding-model",
@@ -87,6 +87,11 @@ function syncRuntimeSettings(window: Window) {
   const sendPaperContextToKisski =
     getElement<HTMLInputElement>(window, "send-paper-context-to-kisski")
       ?.checked ?? true;
+  const contextRouterProviderValue =
+    getElement<HTMLSelectElement>(window, "context-router-provider")?.value ??
+    "ollama";
+  const contextRouterProvider =
+    contextRouterProviderValue === "kisski" ? "kisski" : "ollama";
   const embeddingSearchEnabled =
     getElement<HTMLInputElement>(window, "embedding-search-enabled")?.checked ??
     true;
@@ -103,7 +108,7 @@ function syncRuntimeSettings(window: Window) {
     getElement<HTMLInputElement>(window, "ollama-model")?.value.trim() ||
     OLLAMA_DEFAULT_MODEL;
   const maxItemsValue =
-    getElement<HTMLInputElement>(window, "max-items")?.value ?? "20";
+    getElement<HTMLInputElement>(window, "max-items")?.value ?? "200";
   const autoDeleteOldChats =
     getElement<HTMLInputElement>(window, "auto-delete-old-chats")?.checked ??
     true;
@@ -114,13 +119,15 @@ function syncRuntimeSettings(window: Window) {
     baseUrl,
     model,
     sendPaperContextToKisski,
+    contextRouterProvider,
     embeddingSearchEnabled,
     embeddingBaseUrl,
     embeddingModel,
     ollamaBaseUrl,
     ollamaModel,
-    maxItems: Number.parseInt(maxItemsValue, 10) || 20,
+    maxItems: Number.parseInt(maxItemsValue, 10) || 200,
     autoDeleteOldChats,
+    metadataFieldSelection: addon.data.settings.metadataFieldSelection,
   };
   addon.api.configureAI();
   addon.api.configureEmbeddings();

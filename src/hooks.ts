@@ -9,6 +9,7 @@ import {
   EMBEDDING_DEFAULT_BASE_URL,
   EMBEDDING_DEFAULT_MODEL,
 } from "./ai/EmbeddingProvider.js";
+import { normalizeMetadataFieldSelectionPreset } from "./core/MetadataFieldSelection";
 import { getString, initLocale } from "./utils/locale";
 import { registerPreferencesPane } from "./modules/preferences";
 import { registerPrefsScripts } from "./modules/preferenceScript";
@@ -67,13 +68,17 @@ function loadSettings() {
       "sendPaperContextToKisski",
       true,
     ),
+    contextRouterProvider: getContextRouterProviderSetting(),
     embeddingSearchEnabled: getBooleanSetting("embeddingSearchEnabled", true),
     embeddingBaseUrl: getStringSetting(
       "embeddingBaseUrl",
       EMBEDDING_DEFAULT_BASE_URL,
     ),
     embeddingModel: getStringSetting("embeddingModel", EMBEDDING_DEFAULT_MODEL),
-    maxItems: getNumberSetting("maxItems", 20),
+    maxItems: getNumberSetting("maxItems", 200),
+    metadataFieldSelection: normalizeMetadataFieldSelectionPreset(
+      getStringSetting("metadataFieldSelection", "title_author_date"),
+    ),
     ollamaBaseUrl: getStringSetting("ollamaBaseUrl", "http://localhost:11434"),
     ollamaModel: getStringSetting("ollamaModel", "qwen2.5:3b"),
     autoDeleteOldChats: getBooleanSetting("autoDeleteOldChats", true),
@@ -83,7 +88,7 @@ function loadSettings() {
 }
 
 async function onStartup() {
-  await new Promise(resolve => setTimeout(resolve, 1000));
+  await new Promise((resolve) => setTimeout(resolve, 1000));
   Zotero.debug("[ZAIA-Startup] onStartup BEGIN");
   try {
     await Promise.all([
@@ -92,25 +97,29 @@ async function onStartup() {
       Zotero.uiReadyPromise,
     ]);
     Zotero.debug("[ZAIA-Startup] Promises resolved");
-    
+
     initLocale();
     loadSettings();
     Zotero.debug("[ZAIA-Startup] Settings loaded.");
-    
+
     await vectorStore.initialize();
     Zotero.debug("[ZAIA-Startup] vectorStore initialized.");
-    
+
     // Log currently indexed documents to debug channel
     await vectorStore.logIndexedDocuments();
-    
+
     backgroundIndexer.initialize();
     Zotero.debug("[ZAIA-Startup] backgroundIndexer initialized.");
 
     backgroundIndexer.indexAllLibraryItems().catch((err) => {
-      Zotero.debug(`[BackgroundIndexer] Erst-Indexierung fehlgeschlagen: ${err}`);
+      Zotero.debug(
+        `[BackgroundIndexer] Erst-Indexierung fehlgeschlagen: ${err}`,
+      );
     });
   } catch (err: any) {
-    Zotero.debug(`[ZAIA-Startup] CRITICAL ERROR IN ONSTARTUP: ${err}\n${err.stack}`);
+    Zotero.debug(
+      `[ZAIA-Startup] CRITICAL ERROR IN ONSTARTUP: ${err}\n${err.stack}`,
+    );
   }
 
 
@@ -161,6 +170,11 @@ async function cleanupOldChatsOnStartup() {
 function getProviderSetting(): LLMProvider {
   const value = getStringSetting("provider", "kisski");
   return value === "ollama" ? "ollama" : "kisski";
+}
+
+function getContextRouterProviderSetting(): LLMProvider {
+  const value = getStringSetting("contextRouterProvider", "ollama");
+  return value === "kisski" ? "kisski" : "ollama";
 }
 
 async function checkActiveProviderConnectionOnStartup() {
@@ -339,11 +353,16 @@ function onShortcuts(type: string) {
 function onDialogEvents(type: string) {
   switch (type) {
     case "manualTrigger":
-      Zotero.debug("[ZAIA-ManualTrigger] User requested manual background indexer start.");
+      Zotero.debug(
+        "[ZAIA-ManualTrigger] User requested manual background indexer start.",
+      );
       Zotero.getMainWindow()?.alert("Starte BackgroundIndexer manuell...");
-      backgroundIndexer.indexAllLibraryItems()
-        .then(() => Zotero.getMainWindow()?.alert("Indexer-Startbefehl gesendet!"))
-        .catch(err => {
+      backgroundIndexer
+        .indexAllLibraryItems()
+        .then(() =>
+          Zotero.getMainWindow()?.alert("Indexer-Startbefehl gesendet!"),
+        )
+        .catch((err) => {
           Zotero.debug("[ZAIA-ManualTrigger] Error: " + err);
           Zotero.getMainWindow()?.alert("Fehler beim Indexer: " + err);
         });
@@ -386,7 +405,10 @@ function onAssistantWindowUnload(data: { owner?: Window; window: Window }) {
   );
 }
 
-function onLocalOllamaModelWindowLoad(data: { owner?: Window; window: Window }) {
+function onLocalOllamaModelWindowLoad(data: {
+  owner?: Window;
+  window: Window;
+}) {
   if (!data.owner) return;
 
   initializeLocalOllamaModelWindow(
