@@ -1,3 +1,5 @@
+import { words as naturalStopWords } from "natural/lib/natural/util/stopwords.js";
+import stopwordsIso from "stopwords-iso/stopwords-iso.json";
 import type { PageTextChunk } from "./PdfExtractor";
 
 export interface TextChunk {
@@ -27,49 +29,13 @@ type TextUnit = {
 const DEFAULT_TARGET_TOKENS = 512;
 const DEFAULT_OVERLAP_TOKENS = 100;
 const WORDS_PER_TOKEN = 0.75;
-const STOP_WORDS = new Set([
-  "aber",
-  "als",
-  "auch",
-  "auf",
-  "aus",
-  "bei",
-  "das",
-  "dem",
-  "den",
-  "der",
-  "des",
-  "die",
-  "ein",
-  "eine",
-  "einer",
-  "eines",
-  "für",
-  "ist",
-  "mit",
-  "nach",
-  "oder",
-  "sich",
-  "sind",
-  "und",
-  "von",
-  "was",
-  "wie",
-  "wird",
-  "zu",
-  "the",
-  "and",
-  "for",
-  "from",
-  "that",
-  "this",
-  "with",
-  "what",
-  "when",
-  "where",
-  "which",
-  "why",
-]);
+const REFERENCE_SECTION_HEADING =
+  /(^|\n)\s*(?:\d+(?:\.\d+)*\.?\s+)?(?:references|bibliography|works cited|literatur|literaturverzeichnis|quellen|quellenverzeichnis)\b/iu;
+const STOP_WORDS = new Set(
+  [...naturalStopWords, ...stopwordsIso.de]
+    .map(normalizeTerm)
+    .filter(isStopWordCandidate),
+);
 
 export function cleanPaperPages(pages: PageTextChunk[]) {
   const normalizedPages = pages
@@ -91,7 +57,11 @@ export function chunkPaperText(
     options.overlapTokens ?? DEFAULT_OVERLAP_TOKENS,
     Math.floor(targetTokens / 2),
   );
-  const units = createTextUnits(cleanPaperPages(pages), targetTokens);
+  const cleanedPages = removeReferenceSections(cleanPaperPages(pages));
+  const units = createTextUnits(
+    removeStopWordsFromPages(cleanedPages),
+    targetTokens,
+  );
   const chunks: TextChunk[] = [];
   let current: TextUnit[] = [];
   let currentTokens = 0;
@@ -150,7 +120,6 @@ export function selectRelevantChunks(
   return selected.sort((a, b) => a.index - b.index).map(({ chunk }) => chunk);
 }
 
-
 export function estimateTokens(text: string) {
   const words = text.trim().match(/\S+/g)?.length ?? 0;
   return Math.max(1, Math.ceil(words / WORDS_PER_TOKEN));
@@ -174,9 +143,10 @@ function removeRepeatedPageMargins(pages: PageTextChunk[]) {
 
   const candidates = pages.flatMap((page) => {
     const lines = page.text.split("\n").filter(Boolean);
-    return [lines[0], lines.at(-1)].filter((line): line is string =>
+    const edgeLines = [lines[0], lines.at(-1)].filter((line): line is string =>
       Boolean(line && line.length <= 160),
     );
+    return [...new Set(edgeLines)];
   });
   const counts = new Map<string, number>();
   for (const candidate of candidates) {
@@ -204,6 +174,85 @@ function removeRepeatedPageMargins(pages: PageTextChunk[]) {
 
 function normalizeMarginLine(line: string) {
   return line.toLowerCase().replace(/\d+/g, "#").replace(/\s+/g, " ").trim();
+}
+
+function removeReferenceSections(pages: PageTextChunk[]) {
+  if (!pages.length) return pages;
+
+  const minimumReferencePageIndex = Math.max(
+    0,
+    Math.floor(pages.length * 0.45),
+  );
+
+  for (
+    let index = minimumReferencePageIndex;
+    index < pages.length;
+    index += 1
+  ) {
+    const page = pages[index];
+    const match = REFERENCE_SECTION_HEADING.exec(page.text);
+    if (!match || !looksLikeReferenceSection(page.text.slice(match.index))) {
+      continue;
+    }
+
+    const textBeforeReferences = page.text.slice(0, match.index).trim();
+    return [
+      ...pages.slice(0, index),
+      ...(textBeforeReferences
+        ? [{ ...page, text: textBeforeReferences }]
+        : []),
+    ];
+  }
+
+  return pages;
+}
+
+function looksLikeReferenceSection(text: string) {
+  const sample = text.slice(0, 2_000);
+  const referenceMarkers = [
+    /\[[0-9]{1,3}\]/u,
+    /^\s*[0-9]{1,3}\.\s+\p{Lu}/mu,
+    /\(\d{4}[a-z]?\)/iu,
+    /\bdoi\s*:/iu,
+    /\bhttps?:\/\//iu,
+    /\bet\s+al\./iu,
+    /\bvol\.\s*\d+/iu,
+  ];
+
+  return referenceMarkers.some((marker) => marker.test(sample));
+}
+
+function removeStopWordsFromPages(pages: PageTextChunk[]) {
+  return pages
+    .map((page) => ({
+      ...page,
+      text: removeStopWords(page.text),
+    }))
+    .filter((page) => page.text);
+}
+
+function removeStopWords(text: string) {
+  return text
+    .replace(/[\p{L}\p{N}]+(?:[-'’][\p{L}\p{N}]+)*/gu, (term) =>
+      STOP_WORDS.has(normalizeTerm(term)) ? "" : term,
+    )
+    .split("\n")
+    .map(cleanStopWordLine)
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function cleanStopWordLine(line: string) {
+  return line
+    .replace(/[ \t]+/g, " ")
+    .replace(/\s+([,.;:!?%])/g, "$1")
+    .replace(/([([{])\s+/g, "$1")
+    .replace(/\s+([)\]}])/g, "$1")
+    .replace(/^[,.;:!?]+(?:\s+|$)/g, "")
+    .replace(/[([{][ \t]*[)\]}]/g, "")
+    .replace(/-{2,}/g, "-")
+    .trim();
 }
 
 function createTextUnits(pages: PageTextChunk[], targetTokens: number) {
@@ -283,11 +332,9 @@ function extractTerms(query: string) {
   return [
     ...new Set(
       query
-        .toLowerCase()
-        .normalize("NFKD")
-        .replace(/\p{M}/gu, "")
         .match(/[\p{L}\p{N}]{3,}/gu)
-        ?.filter((term) => !STOP_WORDS.has(term)) ?? [],
+        ?.map(normalizeTerm)
+        .filter((term) => !STOP_WORDS.has(term)) ?? [],
     ),
   ];
 }
@@ -298,7 +345,8 @@ function scoreChunk(chunk: TextChunk, queryTerms: string[], index: number) {
   const normalizedText = chunk.text
     .toLowerCase()
     .normalize("NFKD")
-    .replace(/\p{M}/gu, "");
+    .replace(/\p{M}/gu, "")
+    .replace(/ß/g, "ss");
   let score = index === 0 ? 0.1 : 0;
 
   for (const term of queryTerms) {
@@ -307,4 +355,19 @@ function scoreChunk(chunk: TextChunk, queryTerms: string[], index: number) {
   }
 
   return score / Math.sqrt(Math.max(1, chunk.estimatedTokens / 100));
+}
+
+function normalizeTerm(term: string) {
+  return term
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .replace(/ß/g, "ss");
+}
+
+function isStopWordCandidate(term: string) {
+  return (
+    /^[\p{L}]+$/u.test(term) &&
+    (term.length > 1 || term === "a" || term === "i")
+  );
 }

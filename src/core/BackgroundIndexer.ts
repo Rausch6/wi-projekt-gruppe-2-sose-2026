@@ -1,6 +1,6 @@
 import { vectorStore, type ChunkDocument } from "./OramaService";
 import { PdfExtractor } from "./PdfExtractor";
-import { chunkPaperText } from "./TextChunker";
+import { chunkPaperText, type TextChunk } from "./TextChunker";
 import { embeddingProvider } from "../ai/EmbeddingProvider.js";
 
 declare const Zotero: any;
@@ -151,8 +151,8 @@ export class BackgroundIndexer {
         return;
       }
 
-      const fullText = extractedDoc.pages.map(p => p.text).join(" ");
-      const textHash = this.cyrb53(fullText).toString();
+      const chunks = chunkPaperText(extractedDoc.pages);
+      const textHash = this.cyrb53(this.createChunkHashSource(chunks)).toString();
       const existingHash = vectorStore.getTextHash(targetId.toString());
 
       if (existingHash === textHash) {
@@ -162,8 +162,6 @@ export class BackgroundIndexer {
 
       await vectorStore.deleteByZoteroItemId(targetId.toString());
 
-      const chunks = chunkPaperText(extractedDoc.pages);
-      
       const oramaChunks: ChunkDocument[] = [];
 
       for (const chunk of chunks) {
@@ -204,6 +202,15 @@ export class BackgroundIndexer {
     } finally {
       this.currentlyIndexing.delete(targetId);
     }
+  }
+
+  private createChunkHashSource(chunks: TextChunk[]) {
+    return chunks
+      .map(
+        (chunk) =>
+          `${chunk.id}:${chunk.pageStart ?? ""}:${chunk.pageEnd ?? ""}:${chunk.text}`,
+      )
+      .join("\n\n");
   }
   
   private cyrb53(str: string, seed = 0): number {
