@@ -8,7 +8,7 @@ declare const Zotero: any;
 export class BackgroundIndexer {
   private static instance: BackgroundIndexer;
   private observerId: string | null = null;
-  
+
   private queue: number[] = [];
   private isProcessing = false;
   private currentlyIndexing = new Set<number>();
@@ -26,11 +26,11 @@ export class BackgroundIndexer {
    * Registriert den Notifier bei Zotero, um auf Dateiänderungen zu hören.
    */
   initialize() {
-    if (this.observerId) return; 
+    if (this.observerId) return;
     this.observerId = Zotero.Notifier.registerObserver(
       this,
       ["item"],
-      "ZAIA_BackgroundIndexer"
+      "ZAIA_BackgroundIndexer",
     );
     Zotero.debug("[BackgroundIndexer]: Initialized and listening for events.");
   }
@@ -42,7 +42,7 @@ export class BackgroundIndexer {
     action: string,
     type: string,
     ids: (string | number)[],
-    extraData: Record<string, any>
+    extraData: Record<string, any>,
   ) {
     if (type !== "item") return;
 
@@ -57,19 +57,23 @@ export class BackgroundIndexer {
       case "delete":
         for (const id of itemIds) {
           vectorStore.deleteByZoteroItemId(id.toString()).catch((err) => {
-            Zotero.debug(`[BackgroundIndexer] Error deleting item ${id}: ${err}`);
+            Zotero.debug(
+              `[BackgroundIndexer] Error deleting item ${id}: ${err}`,
+            );
           });
         }
         break;
 
       case "trash":
-
-        const deleteImmediately = Zotero.Prefs.get("extensions.zaia.deleteOnTrash") ?? false;
+        const deleteImmediately =
+          Zotero.Prefs.get("extensions.zaia.deleteOnTrash") ?? false;
 
         if (deleteImmediately) {
           for (const id of itemIds) {
             vectorStore.deleteByZoteroItemId(id.toString()).catch((err) => {
-              Zotero.debug(`[BackgroundIndexer] Error deleting item ${id}: ${err}`);
+              Zotero.debug(
+                `[BackgroundIndexer] Error deleting item ${id}: ${err}`,
+              );
             });
           }
         }
@@ -105,18 +109,18 @@ export class BackgroundIndexer {
         await this.indexItem(itemId);
       } catch (error) {
         Zotero.debug(
-          `[BackgroundIndexer] Error indexing item ${itemId}: ${error}`
+          `[BackgroundIndexer] Error indexing item ${itemId}: ${error}`,
         );
       }
     }
 
     this.isProcessing = false;
   }
-/**
+  /**
    * Text extrahieren, chunken, einbetten und speichern.
    * Child-Attachments werden auf den Parent umgeleitet, um Duplikate zu vermeiden.
    */
-    private async indexItem(rawItemId: number) {
+  private async indexItem(rawItemId: number) {
     let item = await Zotero.Items.getAsync(rawItemId);
     if (!item) return;
 
@@ -126,43 +130,91 @@ export class BackgroundIndexer {
       const parentItem = await Zotero.Items.getAsync(item.parentID);
       if (parentItem) {
         item = parentItem;
-        Zotero.debug(`[BackgroundIndexer] Event für Attachment ${rawItemId} auf Parent ${item.id} umgeleitet.`);
+        Zotero.debug(
+          `[BackgroundIndexer] Event für Attachment ${rawItemId} auf Parent ${item.id} umgeleitet.`,
+        );
       }
     }
 
-    if (!item.isAttachment() || item.attachmentContentType !== "application/pdf") {
-      if (!item.isRegularItem()) return; 
+    if (
+      !item.isAttachment() ||
+      item.attachmentContentType !== "application/pdf"
+    ) {
+      if (!item.isRegularItem()) return;
     }
 
     const targetId = item.id;
 
     if (this.currentlyIndexing.has(targetId)) {
-      Zotero.debug(`[BackgroundIndexer] Item ${targetId} wird bereits indexiert. Überspringe doppelten Aufruf.`);
+      Zotero.debug(
+        `[BackgroundIndexer] Item ${targetId} wird bereits indexiert. Überspringe doppelten Aufruf.`,
+      );
       return;
     }
     this.currentlyIndexing.add(targetId);
 
     try {
-      Zotero.debug(`[BackgroundIndexer] Starting extraction for item ${targetId}...`);
+      Zotero.debug(
+        `[BackgroundIndexer] Starting extraction for item ${targetId}...`,
+      );
 
+      const abstractText = this.getAbstractText(item);
       const extractedDoc = await PdfExtractor.extractDocument(item);
-      if (!extractedDoc || !extractedDoc.pages || extractedDoc.pages.length === 0) {
-        Zotero.debug(`[BackgroundIndexer] No text found for item ${targetId}.`);
+      const chunks = extractedDoc?.pages?.length
+        ? chunkPaperText(extractedDoc.pages)
+        : [];
+
+      if (!abstractText && chunks.length === 0) {
+        Zotero.debug(
+          `[BackgroundIndexer] No abstract or PDF text found for item ${targetId}.`,
+        );
         return;
       }
 
-      const chunks = chunkPaperText(extractedDoc.pages);
-      const textHash = this.cyrb53(this.createChunkHashSource(chunks)).toString();
+      const textHash = this.cyrb53(
+        this.createIndexHashSource(abstractText, chunks),
+      ).toString();
       const existingHash = vectorStore.getTextHash(targetId.toString());
 
       if (existingHash === textHash) {
-         Zotero.debug(`[BackgroundIndexer] Hash für Item ${targetId} ist unverändert. Überspringe Indexierung.`);
-         return;
+        Zotero.debug(
+          `[BackgroundIndexer] Hash für Item ${targetId} ist unverändert. Überspringe Indexierung.`,
+        );
+        return;
       }
 
       await vectorStore.deleteByZoteroItemId(targetId.toString());
 
       const oramaChunks: ChunkDocument[] = [];
+
+      if (abstractText) {
+        let embedding: number[];
+        try {
+          [embedding] = await embeddingProvider.embedTexts([abstractText], {
+            inputType: "passage",
+          });
+        } catch (embeddingError) {
+          Zotero.debug(
+            `[BackgroundIndexer] Embedding fehlgeschlagen für Abstract von Item ${targetId}, wird übersprungen: ${embeddingError}`,
+          );
+          embedding = [];
+        }
+
+        if (embedding.length > 0) {
+          Zotero.debug(
+            `[BackgroundIndexer] Abstract embedded successfully! Length of vector: ${embedding.length}`,
+          );
+
+          oramaChunks.push({
+            id: `doc_${targetId}_abstract`,
+            zoteroItemId: targetId.toString(),
+            sourceType: "abstract",
+            content: abstractText,
+            pageNumber: 0,
+            embedding,
+          });
+        }
+      }
 
       for (const chunk of chunks) {
         let embedding: number[];
@@ -172,56 +224,82 @@ export class BackgroundIndexer {
           });
         } catch (embeddingError) {
           Zotero.debug(
-            `[BackgroundIndexer] Embedding fehlgeschlagen für Chunk ${chunk.id}, wird übersprungen: ${embeddingError}`
+            `[BackgroundIndexer] Embedding fehlgeschlagen für Chunk ${chunk.id}, wird übersprungen: ${embeddingError}`,
           );
           continue;
         }
 
-        Zotero.debug(`[BackgroundIndexer] Chunk ${chunk.id} embedded successfully! Length of vector: ${embedding ? embedding.length : 'undefined'}`);
+        Zotero.debug(
+          `[BackgroundIndexer] Chunk ${chunk.id} embedded successfully! Length of vector: ${embedding ? embedding.length : "undefined"}`,
+        );
 
         oramaChunks.push({
           id: `doc_${targetId}_${chunk.id}`,
           zoteroItemId: targetId.toString(),
+          sourceType: "fulltext",
           content: chunk.text,
           pageNumber: chunk.pageStart || 0,
           embedding,
         });
-        
+
         // Heartbeat every 5 chunks to ensure the user sees logs
         if (oramaChunks.length % 5 === 0) {
-          Zotero.debug(`[BackgroundIndexer] Heartbeat: Still processing item ${targetId}, ${oramaChunks.length} chunks done...`);
+          Zotero.debug(
+            `[BackgroundIndexer] Heartbeat: Still processing item ${targetId}, ${oramaChunks.length} chunks done...`,
+          );
         }
       }
 
       if (oramaChunks.length > 0) {
-        Zotero.debug(`[BackgroundIndexer] Now adding ${oramaChunks.length} chunks to Orama for item ${targetId}...`);
+        Zotero.debug(
+          `[BackgroundIndexer] Now adding ${oramaChunks.length} chunks to Orama for item ${targetId}...`,
+        );
         await vectorStore.addChunks(oramaChunks);
         vectorStore.setTextHash(targetId.toString(), textHash);
-        Zotero.debug(`[BackgroundIndexer] Successfully indexed ${oramaChunks.length} chunks for item ${targetId}.`);
+        Zotero.debug(
+          `[BackgroundIndexer] Successfully indexed ${oramaChunks.length} chunks for item ${targetId}.`,
+        );
       }
     } finally {
       this.currentlyIndexing.delete(targetId);
     }
   }
 
-  private createChunkHashSource(chunks: TextChunk[]) {
-    return chunks
+  private getAbstractText(item: Zotero.Item) {
+    if (!item.isRegularItem()) return "";
+
+    return String(item.getField("abstractNote") || "")
+      .replace(/\r\n?/g, "\n")
+      .replace(/[ \t]+/g, " ")
+      .trim();
+  }
+
+  private createIndexHashSource(abstractText: string, chunks: TextChunk[]) {
+    const abstractSource = abstractText ? `abstract:${abstractText}` : "";
+    const fulltextSource = chunks
       .map(
         (chunk) =>
-          `${chunk.id}:${chunk.pageStart ?? ""}:${chunk.pageEnd ?? ""}:${chunk.text}`,
+          `fulltext:${chunk.id}:${chunk.pageStart ?? ""}:${chunk.pageEnd ?? ""}:${chunk.text}`,
       )
       .join("\n\n");
+
+    return [abstractSource, fulltextSource].filter(Boolean).join("\n\n");
   }
-  
+
   private cyrb53(str: string, seed = 0): number {
-    let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
+    let h1 = 0xdeadbeef ^ seed,
+      h2 = 0x41c6ce57 ^ seed;
     for (let i = 0, ch; i < str.length; i++) {
-        ch = str.charCodeAt(i);
-        h1 = Math.imul(h1 ^ ch, 2654435761);
-        h2 = Math.imul(h2 ^ ch, 1597334677);
+      ch = str.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 2654435761);
+      h2 = Math.imul(h2 ^ ch, 1597334677);
     }
-    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    h1 =
+      Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^
+      Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 =
+      Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^
+      Math.imul(h1 ^ (h1 >>> 13), 3266489909);
     return 4294967296 * (2097151 & h2) + (h1 >>> 0);
   }
   /**
@@ -231,7 +309,9 @@ export class BackgroundIndexer {
    * Diese Methode nur einmalig beim ersten Start der Erweiterung aufgerufen.
    */
   async indexAllLibraryItems(): Promise<void> {
-    Zotero.debug("[BackgroundIndexer] Starte Erst-Indexierung der Bibliothek...");
+    Zotero.debug(
+      "[BackgroundIndexer] Starte Erst-Indexierung der Bibliothek...",
+    );
 
     const allLibraries: any[] = Zotero.Libraries.getAll();
     const allAttachments: Zotero.Item[] = [];
@@ -240,9 +320,9 @@ export class BackgroundIndexer {
       try {
         const items: Zotero.Item[] = await Zotero.Items.getAll(
           library.libraryID,
-          false, 
-          false, 
-          false,  // excludeAttachments = false
+          false,
+          false,
+          false, // excludeAttachments = false
         );
         allAttachments.push(...items);
       } catch (err) {
@@ -253,7 +333,11 @@ export class BackgroundIndexer {
     }
 
     const targetItems = allAttachments.filter(
-      (item) => item.isRegularItem() || (item.isAttachment() && item.attachmentContentType === "application/pdf" && !item.parentID)
+      (item) =>
+        item.isRegularItem() ||
+        (item.isAttachment() &&
+          item.attachmentContentType === "application/pdf" &&
+          !item.parentID),
     );
 
     const msg = `[BackgroundIndexer] ${targetItems.length} unterstützte Einträge (Paper & Standalone PDFs) gefunden. Starte Erst-Indexierung...`;
@@ -286,7 +370,9 @@ export class BackgroundIndexer {
       }
 
       if (i + BATCH_SIZE < targetItems.length) {
-        await new Promise<void>((resolve) => setTimeout(resolve, BATCH_PAUSE_MS));
+        await new Promise<void>((resolve) =>
+          setTimeout(resolve, BATCH_PAUSE_MS),
+        );
       }
     }
 
