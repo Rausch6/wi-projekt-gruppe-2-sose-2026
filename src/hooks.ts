@@ -34,6 +34,11 @@ import { createZToolkit } from "./utils/ztoolkit";
 import type { LLMProvider } from "./addon";
 import { vectorStore } from "./core/OramaService";
 import { backgroundIndexer } from "./core/BackgroundIndexer";
+import { initIndexingNotifier } from "./core/IndexingNotifier";
+import {
+  initializeIndexManagerWindow,
+  handleIndexManagerWindowUnload,
+} from "./ui/indexManagerWindow";
 
 const OLD_CHAT_RETENTION_DAYS = 14;
 
@@ -82,6 +87,9 @@ function loadSettings() {
     ollamaBaseUrl: getStringSetting("ollamaBaseUrl", "http://localhost:11434"),
     ollamaModel: getStringSetting("ollamaModel", "qwen2.5:3b"),
     autoDeleteOldChats: getBooleanSetting("autoDeleteOldChats", true),
+    chunkTargetTokens: getNumberSetting("chunkTargetTokens", 512),
+    chunkOverlapTokens: getNumberSetting("chunkOverlapTokens", 100),
+    chunkCount: getNumberSetting("chunkCount", 3),
   };
   addon.api.configureAI();
   addon.api.configureEmbeddings();
@@ -109,6 +117,7 @@ async function onStartup() {
     await vectorStore.logIndexedDocuments();
 
     backgroundIndexer.initialize();
+    initIndexingNotifier();
     Zotero.debug("[ZAIA-Startup] backgroundIndexer initialized.");
 
     backgroundIndexer.indexAllLibraryItems().catch((err) => {
@@ -430,6 +439,24 @@ function onLocalOllamaModelWindowUnload(data: {
 // Keep in mind hooks only do dispatch. Don't add code that does real jobs in hooks.
 // Otherwise the code would be hard to read and maintain.
 
+function onIndexManagerWindowLoad(data: {
+  owner?: Window;
+  window: Window;
+}) {
+  if (!data.owner) return;
+  void initializeIndexManagerWindow(
+    data.window,
+    data.owner as _ZoteroTypes.MainWindow,
+  );
+}
+
+function onIndexManagerWindowUnload(data: {
+  owner?: Window;
+  window: Window;
+}) {
+  handleIndexManagerWindowUnload(data.window, data.owner as Window);
+}
+
 export default {
   onStartup,
   onShutdown,
@@ -443,4 +470,6 @@ export default {
   onAssistantWindowUnload,
   onLocalOllamaModelWindowLoad,
   onLocalOllamaModelWindowUnload,
+  onIndexManagerWindowLoad,
+  onIndexManagerWindowUnload,
 };

@@ -13,3 +13,6 @@ pref("ollamaModel", "qwen2.5:3b");
 pref("maxItems", 200);
 pref("metadataFieldSelection", "title_author_date");
 pref("autoDeleteOldChats", true);
+pref("chunkTargetTokens", 512);
+pref("chunkOverlapTokens", 100);
+pref("chunkCount", 3);

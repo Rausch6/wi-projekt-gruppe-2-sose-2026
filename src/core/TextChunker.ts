@@ -2,6 +2,11 @@ import { words as naturalStopWords } from "natural/lib/natural/util/stopwords.js
 import stopwordsIso from "stopwords-iso/stopwords-iso.json";
 import type { PageTextChunk } from "./PdfExtractor";
 
+declare const Zotero: any;
+import { config } from "../../package.json";
+// Fallback auf globales Zotero.Addontemplate (falls addon nicht exportiert wird)
+const getAddon = () => (globalThis as any).Zotero?.[config.addonName] || (globalThis as any).addon;
+
 export interface TextChunk {
   id: string;
   text: string;
@@ -51,12 +56,31 @@ export function cleanPaperPages(pages: PageTextChunk[]) {
 export function chunkPaperText(
   pages: PageTextChunk[],
   options: ChunkOptions = {},
-) {
-  const targetTokens = options.targetTokens ?? DEFAULT_TARGET_TOKENS;
+): TextChunk[] {
+  let defaultTarget = 512;
+  let defaultOverlap = 100;
+
+  try {
+    const targetPref = Zotero.Prefs.get("extensions.zotero.addontemplate.chunkTargetTokens");
+    const overlapPref = Zotero.Prefs.get("extensions.zotero.addontemplate.chunkOverlapTokens");
+    
+    if (typeof targetPref === "number" && targetPref > 0) defaultTarget = targetPref;
+    if (typeof overlapPref === "number" && overlapPref >= 0) defaultOverlap = overlapPref;
+  } catch (_e) {
+    // Fallback auf Konstanten
+  }
+
+  const targetTokens = options.targetTokens ?? defaultTarget;
   const overlapTokens = Math.min(
-    options.overlapTokens ?? DEFAULT_OVERLAP_TOKENS,
+    options.overlapTokens ?? defaultOverlap,
     Math.floor(targetTokens / 2),
   );
+
+  try {
+    Zotero.debug(`[TextChunker] Chunking paper text... targetTokens=${targetTokens}, overlapTokens=${overlapTokens}`);
+  } catch (_e) {
+    // ignore if Zotero is not defined in tests
+  }
   const cleanedPages = removeReferenceSections(cleanPaperPages(pages));
   const units = createTextUnits(
     removeStopWordsFromPages(cleanedPages),

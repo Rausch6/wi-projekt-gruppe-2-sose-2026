@@ -2,8 +2,14 @@ import { vectorStore, type ChunkDocument } from "./OramaService";
 import { PdfExtractor } from "./PdfExtractor";
 import { chunkPaperText, type TextChunk } from "./TextChunker";
 import { embeddingProvider } from "../ai/EmbeddingProvider.js";
+import { indexingEvents } from "./IndexingEventBus";
 
 declare const Zotero: any;
+
+export type IndexingState =
+  | { status: "idle" }
+  | { status: "running"; indexed: number; total: number; estimatedRemainingMs?: number }
+  | { status: "done"; indexed: number; total: number; newlyIndexed: number };
 
 export class BackgroundIndexer {
   private static instance: BackgroundIndexer;
@@ -12,6 +18,9 @@ export class BackgroundIndexer {
   private queue: number[] = [];
   private isProcessing = false;
   private currentlyIndexing = new Set<number>();
+  private isSingleMode = true;
+
+  public indexingState: IndexingState = { status: "idle" };
 
   private constructor() {}
 
@@ -85,7 +94,7 @@ export class BackgroundIndexer {
    * Fügt Items in die Warteschlange ein und startet die Verarbeitung, falls sie nicht bereits läuft.
    * So wird sichergestellt, dass die items nacheinander verarbeitet werden.
    */
-  private enqueue(itemIds: number[]) {
+  public enqueue(itemIds: number[]) {
     for (const id of itemIds) {
       if (!this.queue.includes(id)) {
         this.queue.push(id);
@@ -100,6 +109,7 @@ export class BackgroundIndexer {
   private async processQueue() {
     if (this.isProcessing || this.queue.length === 0) return;
     this.isProcessing = true;
+    indexingEvents.emit("started", { mode: "single" });
 
     while (this.queue.length > 0) {
       const itemId = this.queue.shift();
@@ -111,6 +121,7 @@ export class BackgroundIndexer {
         Zotero.debug(
           `[BackgroundIndexer] Error indexing item ${itemId}: ${error}`,
         );
+        indexingEvents.emit("error", { message: String(error) });
       }
     }
 
@@ -157,6 +168,15 @@ export class BackgroundIndexer {
       Zotero.debug(
         `[BackgroundIndexer] Starting extraction for item ${targetId}...`,
       );
+
+      if (this.isSingleMode) {
+        let paperTitle: string | undefined;
+        try {
+          const zItem = await Zotero.Items.getAsync(targetId);
+          paperTitle = zItem?.getField("title") || undefined;
+        } catch (_e) { /* ignore */ }
+        indexingEvents.emit("singleStarted", { mode: "single", paperTitle });
+      }
 
       const abstractText = this.getAbstractText(item);
       const extractedDoc = await PdfExtractor.extractDocument(item);
@@ -259,6 +279,15 @@ export class BackgroundIndexer {
         Zotero.debug(
           `[BackgroundIndexer] Successfully indexed ${oramaChunks.length} chunks for item ${targetId}.`,
         );
+
+        if (this.isSingleMode) {
+          let paperTitle: string | undefined;
+          try {
+            const zItem = await Zotero.Items.getAsync(targetId);
+            paperTitle = zItem?.getField("title") || undefined;
+          } catch (_e) { /* ignore */ }
+          indexingEvents.emit("singleDone", { mode: "single", paperTitle });
+        }
       }
     } finally {
       this.currentlyIndexing.delete(targetId);
@@ -312,6 +341,11 @@ export class BackgroundIndexer {
     Zotero.debug(
       "[BackgroundIndexer] Starte Erst-Indexierung der Bibliothek...",
     );
+    this.isSingleMode = false;
+    this.indexingState = { status: "running", indexed: 0, total: 0 };
+    indexingEvents.emit("started", { mode: "full" });
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
 
     const allLibraries: any[] = Zotero.Libraries.getAll();
     const allAttachments: Zotero.Item[] = [];
@@ -322,7 +356,7 @@ export class BackgroundIndexer {
           library.libraryID,
           false,
           false,
-          false, // excludeAttachments = false
+          false, 
         );
         allAttachments.push(...items);
       } catch (err) {
@@ -340,44 +374,102 @@ export class BackgroundIndexer {
           !item.parentID),
     );
 
-    const msg = `[BackgroundIndexer] ${targetItems.length} unterstützte Einträge (Paper & Standalone PDFs) gefunden. Starte Erst-Indexierung...`;
-    Zotero.debug(msg);
+    Zotero.debug(
+      `[BackgroundIndexer] ${targetItems.length} unterstützte Einträge gefunden. Prüfe Index-Status...`,
+    );
 
-    const BATCH_SIZE = 5;
-    const BATCH_PAUSE_MS = 300;
-    let indexed = 0;
-    let skipped = 0;
+    this.indexingState = { status: "running", indexed: 0, total: targetItems.length };
+    indexingEvents.emit("progress", {
+      mode: "full",
+      indexed: 0,
+      total: targetItems.length,
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
 
-    for (let i = 0; i < targetItems.length; i += BATCH_SIZE) {
-      const batch = targetItems.slice(i, i + BATCH_SIZE);
+    let alreadyIndexedCount = 0;
+    const itemsToIndex: Zotero.Item[] = [];
 
-      for (const item of batch) {
-        const idStr = item.id.toString();
-
-        if (await vectorStore.isItemIndexed(idStr)) {
-          skipped++;
-          continue;
-        }
-
-        try {
-          await this.indexItem(item.id);
-          indexed++;
-        } catch (err) {
-          Zotero.debug(
-            `[BackgroundIndexer] Fehler bei Erst-Indexierung von Item ${item.id}: ${err}`,
-          );
-        }
-      }
-
-      if (i + BATCH_SIZE < targetItems.length) {
-        await new Promise<void>((resolve) =>
-          setTimeout(resolve, BATCH_PAUSE_MS),
-        );
+    for (const item of targetItems) {
+      if (await vectorStore.isItemIndexed(item.id.toString())) {
+        alreadyIndexedCount++;
+      } else {
+        itemsToIndex.push(item);
       }
     }
 
-    const finishMsg = `[BackgroundIndexer] Erst-Indexierung abgeschlossen: ${indexed} neu indexiert, ${skipped} bereits vorhanden.`;
+    this.indexingState = { status: "running", indexed: alreadyIndexedCount, total: targetItems.length };
+    indexingEvents.emit("progress", {
+      mode: "full",
+      indexed: alreadyIndexedCount,
+      total: targetItems.length,
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    let indexedNew = 0;
+    let emaMsPerItem = 0; 
+
+    for (const item of itemsToIndex) {
+      try {
+        const startItem = Date.now();
+        await this.indexItem(item.id);
+        const itemTime = Date.now() - startItem;
+        
+        indexedNew++;
+        
+        if (indexedNew === 1) {
+          emaMsPerItem = itemTime;
+        } else {
+          emaMsPerItem = (emaMsPerItem * 0.5) + (itemTime * 0.5);
+        }
+        
+        const remainingItems = itemsToIndex.length - indexedNew;
+        const estimatedRemainingMs = emaMsPerItem * remainingItems;
+
+        this.indexingState = {
+          status: "running",
+          indexed: alreadyIndexedCount + indexedNew,
+          total: targetItems.length,
+          estimatedRemainingMs,
+        };
+
+        let paperTitle: string | undefined;
+        try {
+          const zItem = await Zotero.Items.getAsync(item.id);
+          paperTitle = zItem?.getField("title") || undefined;
+        } catch (_e) { /* ignore */ }
+        
+        indexingEvents.emit("progress", {
+          mode: "full",
+          indexed: alreadyIndexedCount + indexedNew,
+          total: targetItems.length,
+          estimatedRemainingMs,
+          paperTitle,
+        });
+      } catch (err) {
+        Zotero.debug(
+          `[BackgroundIndexer] Fehler bei Erst-Indexierung von Item ${item.id}: ${err}`,
+        );
+        indexingEvents.emit("error", { message: String(err) });
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 150));
+    }
+
+    const finishMsg = `[BackgroundIndexer] Erst-Indexierung abgeschlossen: ${indexedNew} neu indexiert, ${alreadyIndexedCount} bereits vorhanden.`;
     Zotero.debug(finishMsg);
+
+    this.isSingleMode = true;
+    this.indexingState = {
+      status: "done",
+      indexed: alreadyIndexedCount + indexedNew,
+      newlyIndexed: indexedNew,
+      total: targetItems.length,
+    };
+    indexingEvents.emit("finished", {
+      mode: "full",
+      indexed: alreadyIndexedCount + indexedNew,
+      newlyIndexed: indexedNew,
+      total: targetItems.length,
+    });
   }
 }
 

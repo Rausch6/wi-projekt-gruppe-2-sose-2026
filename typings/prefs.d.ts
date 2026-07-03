@@ -21,6 +21,9 @@ declare namespace _ZoteroTypes {
       "maxItems": number;
       "metadataFieldSelection": string;
       "autoDeleteOldChats": boolean;
+      "chunkTargetTokens": number;
+      "chunkOverlapTokens": number;
+      "chunkCount": number;
     };
   }
 }

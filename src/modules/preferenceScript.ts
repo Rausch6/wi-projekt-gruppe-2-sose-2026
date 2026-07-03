@@ -12,6 +12,10 @@ import {
   OLLAMA_DEFAULT_MODEL,
 } from "../ai/providers/OllamaProvider.js";
 
+import { backgroundIndexer } from "../core/BackgroundIndexer";
+import { vectorStore } from "../core/OramaService";
+import { indexingEvents } from "../core/IndexingEventBus";
+
 const OLLAMA_INSTALL_COMMANDS = {
   unix: "curl -fsSL https://ollama.com/install.sh | sh",
   windows: "irm https://ollama.com/install.ps1 | iex",
@@ -30,6 +34,9 @@ const FIELD_NAMES = [
   "ollama-model",
   "max-items",
   "auto-delete-old-chats",
+  "chunk-target-tokens",
+  "chunk-overlap-tokens",
+  "chunk-count",
 ] as const;
 
 export async function registerPrefsScripts(window: Window) {
@@ -74,6 +81,45 @@ function bindPreferenceEvents(window: Window) {
       void downloadOllamaModel(window);
     },
   );
+
+  // --- Index-Verwaltungs-Buttons ---
+  getElement(window, "rebuild-index")?.addEventListener("command", () => {
+    void rebuildIndex(window);
+  });
+  getElement(window, "clear-index")?.addEventListener("command", () => {
+    void clearIndex(window);
+  });
+  getElement(window, "open-index-manager")?.addEventListener("command", () => {
+    void openIndexManager(window);
+  });
+  
+  // Initial stats update
+  void updateIndexStats(window);
+
+  // Dynamic updates
+  const updateFn = () => { void updateIndexStats(window); };
+  indexingEvents.on("finished", updateFn);
+  indexingEvents.on("singleDone", updateFn);
+  indexingEvents.on("deleted", updateFn);
+  indexingEvents.on("progress", updateFn);
+}
+
+function openIndexManager(window: Window) {
+  const url = `chrome://${config.addonRef}/content/indexManager.xhtml`;
+  const features = "chrome,titlebar,toolbar,centerscreen,resizable=yes,width=800,height=600";
+  window.openDialog(url, "_blank", features, { owner: window });
+}
+
+async function updateIndexStats(window: Window) {
+  const statusEl = getElement<HTMLElement>(window, "indexing-db-status");
+  if (!statusEl) return;
+  
+  try {
+    const stats = await vectorStore.getDatabaseStats();
+    statusEl.textContent = `Vektordatenbank: ${stats.papers} Paper / ${stats.chunks} Chunks.`;
+  } catch (err) {
+    statusEl.textContent = `Vektordatenbank-Status konnte nicht geladen werden.`;
+  }
 }
 
 function syncRuntimeSettings(window: Window) {
@@ -113,7 +159,14 @@ function syncRuntimeSettings(window: Window) {
     getElement<HTMLInputElement>(window, "auto-delete-old-chats")?.checked ??
     true;
 
-  addon.data.settings = {
+  const chunkTargetTokensValue =
+    getElement<HTMLInputElement>(window, "chunk-target-tokens")?.value ?? "512";
+  const chunkOverlapTokensValue =
+    getElement<HTMLInputElement>(window, "chunk-overlap-tokens")?.value ?? "100";
+  const chunkCountValue =
+    getElement<HTMLInputElement>(window, "chunk-count")?.value ?? "3";
+
+  Object.assign(addon.data.settings, {
     provider: addon.data.settings.provider,
     apiKey,
     baseUrl,
@@ -128,7 +181,10 @@ function syncRuntimeSettings(window: Window) {
     maxItems: Number.parseInt(maxItemsValue, 10) || 200,
     autoDeleteOldChats,
     metadataFieldSelection: addon.data.settings.metadataFieldSelection,
-  };
+    chunkTargetTokens: Number.parseInt(chunkTargetTokensValue, 10) || 512,
+    chunkOverlapTokens: Number.parseInt(chunkOverlapTokensValue, 10) || 100,
+    chunkCount: Number.parseInt(chunkCountValue, 10) || 3,
+  });
   addon.api.configureAI();
   addon.api.configureEmbeddings();
 }
@@ -242,4 +298,62 @@ function getElement<T extends Element = Element>(window: Window, name: string) {
   return window.document.querySelector<T>(
     `#zotero-prefpane-${config.addonRef}-${name}`,
   );
+}
+
+async function rebuildIndex(window: Window) {
+  const status = getElement<HTMLElement>(window, "indexing-action-status");
+  const rebuildBtn = getElement<HTMLButtonElement>(window, "rebuild-index");
+  const clearBtn = getElement<HTMLButtonElement>(window, "clear-index");
+
+  const confirmed = window.confirm(
+    "Der gesamte Vektor-Index wird geleert und neu aufgebaut.\n\nDies kann je nach Bibliotheksgröße einige Minuten dauern. Fortfahren?",
+  );
+  if (!confirmed) return;
+
+  if (rebuildBtn) rebuildBtn.disabled = true;
+  if (clearBtn) clearBtn.disabled = true;
+  setStatus(status, "Leere Index…");
+
+  try {
+    await vectorStore.clearIndex();
+    setStatus(status, "Index geleert. Neu-Indexierung läuft im Hintergrund…");
+    backgroundIndexer.indexAllLibraryItems().catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      setStatus(status, `Fehler bei Neu-Indexierung: ${msg}`);
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    setStatus(status, `Fehler beim Leeren: ${message}`);
+  } finally {
+    if (rebuildBtn) rebuildBtn.disabled = false;
+    if (clearBtn) clearBtn.disabled = false;
+    void updateIndexStats(window);
+  }
+}
+
+async function clearIndex(window: Window) {
+  const status = getElement<HTMLElement>(window, "indexing-action-status");
+  const rebuildBtn = getElement<HTMLButtonElement>(window, "rebuild-index");
+  const clearBtn = getElement<HTMLButtonElement>(window, "clear-index");
+
+  const confirmed = window.confirm(
+    "Der gesamte Vektor-Index wird unwiderruflich geleert.\n\nDie Dokumente müssen danach erneut indexiert werden. Fortfahren?",
+  );
+  if (!confirmed) return;
+
+  if (rebuildBtn) rebuildBtn.disabled = true;
+  if (clearBtn) clearBtn.disabled = true;
+  setStatus(status, "Leere Index…");
+
+  try {
+    await vectorStore.clearIndex();
+    setStatus(status, "Index erfolgreich geleert.");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    setStatus(status, `Fehler: ${message}`);
+  } finally {
+    if (rebuildBtn) rebuildBtn.disabled = false;
+    if (clearBtn) clearBtn.disabled = false;
+    void updateIndexStats(window);
+  }
 }

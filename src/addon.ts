@@ -94,6 +94,9 @@ export type PluginSettings = {
   ollamaBaseUrl: string;
   ollamaModel: string;
   autoDeleteOldChats: boolean;
+  chunkTargetTokens: number;
+  chunkOverlapTokens: number;
+  chunkCount: number;
 };
 
 class Addon {
@@ -181,6 +184,9 @@ class Addon {
       listRagCandidates: typeof LibraryScopeManager.listRagItemCandidates;
     };
     openChat: () => boolean;
+    indexingEvents: typeof import("./core/IndexingEventBus").indexingEvents;
+    backgroundIndexer: typeof import("./core/BackgroundIndexer").backgroundIndexer;
+    vectorStore: typeof import("./core/OramaService").vectorStore;
   };
 
   constructor() {
@@ -205,6 +211,9 @@ class Addon {
         maxItems: 200,
         metadataFieldSelection: "title_author_date",
         autoDeleteOldChats: true,
+        chunkTargetTokens: 512,
+        chunkOverlapTokens: 100,
+        chunkCount: 3,
       },
       runtime: {
         isAnalyzing: false,
@@ -312,6 +321,9 @@ class Addon {
         openAssistantSidebar(win);
         return true;
       },
+      indexingEvents: require("./core/IndexingEventBus").indexingEvents,
+      backgroundIndexer: require("./core/BackgroundIndexer").backgroundIndexer,
+      vectorStore: require("./core/OramaService").vectorStore,
     };
   }
 
