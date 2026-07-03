@@ -9,7 +9,10 @@ import {
   EMBEDDING_DEFAULT_BASE_URL,
   EMBEDDING_DEFAULT_MODEL,
 } from "./ai/EmbeddingProvider.js";
-import { normalizeMetadataFieldSelectionPreset } from "./core/MetadataFieldSelection";
+import {
+  DEFAULT_METADATA_FIELD_SELECTION,
+  normalizeMetadataFieldSelection,
+} from "./core/MetadataFieldSelection";
 import { getString, initLocale } from "./utils/locale";
 import { registerPreferencesPane } from "./modules/preferences";
 import { registerPrefsScripts } from "./modules/preferenceScript";
@@ -76,8 +79,11 @@ function loadSettings() {
     ),
     embeddingModel: getStringSetting("embeddingModel", EMBEDDING_DEFAULT_MODEL),
     maxItems: getNumberSetting("maxItems", 200),
-    metadataFieldSelection: normalizeMetadataFieldSelectionPreset(
-      getStringSetting("metadataFieldSelection", "title_author_date"),
+    metadataFieldSelection: normalizeMetadataFieldSelection(
+      getStringSetting(
+        "metadataFieldSelection",
+        DEFAULT_METADATA_FIELD_SELECTION,
+      ),
     ),
     ollamaBaseUrl: getStringSetting("ollamaBaseUrl", "http://localhost:11434"),
     ollamaModel: getStringSetting("ollamaModel", "qwen2.5:3b"),

@@ -3,7 +3,10 @@ import { bindAssistantChat } from "./assistantChatController";
 import { openPreferencesPane } from "../modules/preferences";
 import { ASSISTANT_POPOUT_REQUEST_EVENT } from "./assistantPopoutEvents";
 import type { LLMProvider } from "../addon";
-import { METADATA_FIELD_SELECTION_OPTIONS } from "../core/MetadataFieldSelection";
+import {
+  isMetadataFieldSelected,
+  METADATA_FIELD_SELECTION_OPTIONS,
+} from "../core/MetadataFieldSelection";
 import { REQUIRED_EMBEDDING_MODEL } from "../ai/EmbeddingProvider.js";
 import { getString } from "../utils/locale";
 
@@ -169,11 +172,12 @@ function createSidebar(doc: Document, options: AssistantSidebarRenderOptions) {
 
   const chatStatus = createHtmlElement(doc, "span", "zai-chat-status", "");
   chatStatus.hidden = true;
+  const metadataControl = createMetadataFieldControl(doc);
   const sendButton = createButton(doc, "zai-send-button");
   sendButton.setAttribute("aria-label", "Nachricht senden");
   sendButton.append(createSendIcon(doc));
 
-  composer.append(textarea, chatStatus, sendButton);
+  composer.append(textarea, metadataControl, chatStatus, sendButton);
   footer.append(composer);
 
   sidebar.append(top, main, footer);
@@ -230,11 +234,7 @@ function createModelPicker(doc: Document) {
 
   const content = createHtmlElement(doc, "div", "zai-model-picker-content");
   content.hidden = true;
-  content.append(
-    createProviderToggle(doc),
-    createModelSelect(doc),
-    createMetadataFieldSelect(doc),
-  );
+  content.append(createProviderToggle(doc), createModelSelect(doc));
 
   picker.append(toggle, content);
   return picker;
@@ -284,31 +284,52 @@ function createModelSelect(doc: Document) {
   return modelWrap;
 }
 
-function createMetadataFieldSelect(doc: Document) {
-  const wrap = createHtmlElement(doc, "label", "zai-metadata-select-wrap");
-  const label = createHtmlElement(
-    doc,
-    "span",
-    "zai-metadata-select-label",
-    "Metadaten",
+function createMetadataFieldControl(doc: Document) {
+  const control = createHtmlElement(doc, "div", "zai-metadata-control");
+
+  const button = createButton(doc, "zai-metadata-button");
+  button.setAttribute("aria-expanded", "false");
+  button.setAttribute("aria-haspopup", "dialog");
+  button.setAttribute("aria-label", "Metadaten-Kontext auswählen");
+  button.setAttribute("title", "Metadaten-Kontext auswählen");
+  button.append(
+    createMetadataIcon(doc),
+    createHtmlElement(doc, "span", "zai-metadata-button-label", "Kontext"),
   );
-  const select = doc.createElementNS(HTML_NS, "select") as HTMLSelectElement;
-  select.className = "zai-metadata-select";
-  select.setAttribute("aria-label", "Metadaten-Auswahl");
+
+  const popover = createHtmlElement(doc, "div", "zai-metadata-popover");
+  popover.hidden = true;
+  popover.setAttribute("role", "dialog");
+  popover.setAttribute("aria-label", "Metadaten-Kontext");
+
+  const title = createHtmlElement(
+    doc,
+    "div",
+    "zai-metadata-popover-title",
+    "Metadaten-Kontext",
+  );
+  const options = createHtmlElement(doc, "div", "zai-metadata-options");
 
   for (const option of METADATA_FIELD_SELECTION_OPTIONS) {
-    const optionNode = doc.createElementNS(
-      HTML_NS,
-      "option",
-    ) as HTMLOptionElement;
-    optionNode.value = option.value;
-    optionNode.textContent = option.label;
-    select.append(optionNode);
+    const label = createHtmlElement(doc, "label", "zai-metadata-option");
+    const checkbox = doc.createElementNS(HTML_NS, "input") as HTMLInputElement;
+    checkbox.className = "zai-metadata-checkbox";
+    checkbox.type = "checkbox";
+    checkbox.value = option.value;
+    checkbox.checked = isMetadataFieldSelected(
+      addon.data.settings.metadataFieldSelection,
+      option.value,
+    );
+    label.append(
+      checkbox,
+      createHtmlElement(doc, "span", "zai-metadata-option-label", option.label),
+    );
+    options.append(label);
   }
 
-  select.value = addon.data.settings.metadataFieldSelection;
-  wrap.append(label, select);
-  return wrap;
+  popover.append(title, options);
+  control.append(button, popover);
+  return control;
 }
 
 function createProviderSetup(doc: Document) {
@@ -619,6 +640,31 @@ function createSendIcon(doc: Document) {
   arrow.setAttribute("d", "m5 12 7-7 7 7");
 
   svg.append(line, arrow);
+  return svg;
+}
+
+function createMetadataIcon(doc: Document) {
+  const svg = createIconSvg(doc, "18");
+
+  const topLine = doc.createElementNS(SVG_NS, "path");
+  topLine.setAttribute("d", "M4 7h16");
+
+  const middleLine = doc.createElementNS(SVG_NS, "path");
+  middleLine.setAttribute("d", "M4 12h16");
+
+  const bottomLine = doc.createElementNS(SVG_NS, "path");
+  bottomLine.setAttribute("d", "M4 17h16");
+
+  const topDot = doc.createElementNS(SVG_NS, "path");
+  topDot.setAttribute("d", "M8 5v4");
+
+  const middleDot = doc.createElementNS(SVG_NS, "path");
+  middleDot.setAttribute("d", "M14 10v4");
+
+  const bottomDot = doc.createElementNS(SVG_NS, "path");
+  bottomDot.setAttribute("d", "M10 15v4");
+
+  svg.append(topLine, middleLine, bottomLine, topDot, middleDot, bottomDot);
   return svg;
 }
 
