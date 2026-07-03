@@ -295,6 +295,7 @@ function createMetadataFieldControl(doc: Document) {
   button.append(
     createMetadataIcon(doc),
     createHtmlElement(doc, "span", "zai-metadata-button-label", "Kontext"),
+    createHtmlElement(doc, "span", "zai-context-count-badge", "0"),
   );
 
   const popover = createHtmlElement(doc, "div", "zai-metadata-popover");
@@ -327,7 +328,60 @@ function createMetadataFieldControl(doc: Document) {
     options.append(label);
   }
 
-  popover.append(title, options);
+  const paperContext = createHtmlElement(doc, "div", "zai-paper-context");
+  const paperContextTitle = createHtmlElement(
+    doc,
+    "div",
+    "zai-paper-context-title",
+    "Paper-Kontext",
+  );
+  const paperContextList = createHtmlElement(
+    doc,
+    "div",
+    "zai-paper-context-list",
+  );
+  const manualPaperContextList = createHtmlElement(
+    doc,
+    "div",
+    "zai-paper-manual-context-list",
+  );
+  const selectedPapersTitle = createHtmlElement(
+    doc,
+    "div",
+    "zai-paper-context-subtitle",
+    "Ausgewählte Paper",
+  );
+  const paperContextEmpty = createHtmlElement(
+    doc,
+    "div",
+    "zai-paper-context-empty",
+    "Keine Paper angehängt",
+  );
+  const paperLibrarySearch = createHtmlElement(
+    doc,
+    "input",
+    "zai-paper-library-search",
+  ) as HTMLInputElement;
+  paperLibrarySearch.type = "search";
+  paperLibrarySearch.placeholder = "Paper in Bibliothek suchen...";
+  paperLibrarySearch.setAttribute("aria-label", "Paper in Bibliothek suchen");
+  const paperLibraryResults = createHtmlElement(
+    doc,
+    "div",
+    "zai-paper-library-results",
+  );
+  paperLibraryResults.setAttribute("aria-live", "polite");
+  paperContextList.append(paperContextEmpty);
+  paperContext.append(
+    paperContextTitle,
+    paperLibrarySearch,
+    paperLibraryResults,
+    manualPaperContextList,
+    selectedPapersTitle,
+    paperContextList,
+  );
+
+  popover.append(title, options, paperContext);
   control.append(button, popover);
   return control;
 }
