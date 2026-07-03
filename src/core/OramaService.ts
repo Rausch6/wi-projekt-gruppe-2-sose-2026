@@ -140,6 +140,20 @@ export class OramaService {
       Zotero.debug(
         `[OramaService]: Deleted ${idsToRemove.length} chunks for item ${zoteroItemId}`,
       );
+
+      // Versuche den Titel für die UI-Benachrichtigung zu laden
+      let paperTitle;
+      try {
+        const item = await Zotero.Items.getAsync(parseInt(zoteroItemId, 10));
+        if (item) {
+          paperTitle = item.getField("title") || (item.isAttachment() ? (item as any).getFilename() : undefined);
+        }
+      } catch (e) {}
+
+      // Emit deleted event to update UI stats dynamically
+      import("./IndexingEventBus").then(({ indexingEvents }) => {
+        indexingEvents.emit("deleted", { mode: "single", paperTitle });
+      }).catch(() => {});
     }
   }
 
@@ -215,6 +229,24 @@ export class OramaService {
     );
   }
 
+  /**
+   * Gibt eine Zusammenfassung der Datenbank-Statistiken zurück.
+   */
+  async getDatabaseStats(): Promise<{ chunks: number; papers: number }> {
+    this.checkInit();
+    const papers = this.textHashes.size;
+    const result = await search(this.db, { term: "", limit: 0 });
+    return { chunks: result.count, papers };
+  }
+
+  /**
+   * Gibt die Menge aller Zotero-Item-IDs zurück, die aktuell indexiert sind.
+   */
+  getIndexedItemIds(): Set<string> {
+    return new Set(this.textHashes.keys());
+  }
+
+
   private checkInit() {
     if (!this.isInitialized)
       throw new Error(
@@ -239,11 +271,11 @@ export class OramaService {
   }
 
   private get dbFilePath() {
-    return Zotero.getZoteroDirectory().path + "/orama_vector_index_v2.json";
+    return Zotero.DataDirectory.dir + "/orama_vector_index_v2.json";
   }
 
   private get hashFilePath() {
-    return Zotero.getZoteroDirectory().path + "/orama_text_hashes_v2.json";
+    return Zotero.DataDirectory.dir + "/orama_text_hashes_v2.json";
   }
 
   private scheduleSave() {
@@ -273,6 +305,35 @@ export class OramaService {
       this.saveTimeout = null;
     }
     await this.saveIndex();
+  }
+
+  /**
+   * Löscht den gesamten In-Memory-Index und die gespeicherten Dateien auf der Festplatte.
+   * Nützlich wenn der Nutzer einen Neuaufbau des Index erzwingen möchte.
+   */
+  public async clearIndex() {
+    this.checkInit();
+
+    // Neues leeres DB-Objekt erstellen
+    this.db = (await create({ schema: mySchema })) as VectorDB;
+    this.textHashes = new Map<string, string>();
+
+    // Debounce-Timer abbrechen
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout);
+      this.saveTimeout = null;
+    }
+
+    // Festplatten-Dateien zurücksetzen
+    try {
+      await Zotero.File.putContentsAsync(this.dbFilePath, "{}");
+      await Zotero.File.putContentsAsync(this.hashFilePath, "{}");
+      Zotero.debug("[OramaService] Index auf Festplatte geleert.");
+    } catch (e) {
+      Zotero.debug(`[OramaService] Fehler beim Leeren der Index-Dateien: ${e}`);
+    }
+
+    Zotero.debug("[OramaService] In-Memory-Index geleert.");
   }
 
   private async saveIndex() {

@@ -9,6 +9,7 @@ import {
 } from "../core/MetadataFieldSelection";
 import { REQUIRED_EMBEDDING_MODEL } from "../ai/EmbeddingProvider.js";
 import { getString } from "../utils/locale";
+import { indexingEvents } from "../core/IndexingEventBus";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -161,6 +162,7 @@ function createSidebar(doc: Document, options: AssistantSidebarRenderOptions) {
   main.append(welcome, embeddingSetup, providerSetup, messages);
 
   const footer = createHtmlElement(doc, "footer", "zai-footer");
+  const indexingBanner = createIndexingStatusBanner(doc);
   const composer = createHtmlElement(doc, "div", "zai-composer");
   const textarea = createHtmlElement(
     doc,
@@ -178,7 +180,7 @@ function createSidebar(doc: Document, options: AssistantSidebarRenderOptions) {
   sendButton.append(createSendIcon(doc));
 
   composer.append(textarea, metadataControl, chatStatus, sendButton);
-  footer.append(composer);
+  footer.append(indexingBanner, composer);
 
   sidebar.append(top, main, footer);
   return sidebar;
@@ -848,4 +850,127 @@ function createIconSvg(doc: Document, size: string) {
   svg.setAttribute("stroke-linecap", "round");
   svg.setAttribute("stroke-linejoin", "round");
   return svg;
+}
+
+function createCheckIcon(doc: Document) {
+  const svg = createIconSvg(doc, "14");
+  const check = doc.createElementNS(SVG_NS, "path");
+  check.setAttribute("d", "M20 6 9 17l-5-5");
+  svg.append(check);
+  return svg;
+}
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.round(ms / 1000);
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+/**
+ * Erzeugt den Indizierungs-Status-Banner, der direkt über dem Kompositor angezeigt wird.
+ */
+function createIndexingStatusBanner(doc: Document) {
+  const banner = createHtmlElement(doc, "div", "zai-indexing-banner zai-indexing-banner--idle");
+  banner.hidden = true;
+
+  const activeIndicator = createHtmlElement(doc, "span", "zai-indexing-active");
+  activeIndicator.hidden = true;
+  const activeIcon = createHtmlElement(doc, "span", "zai-indexing-spinner");
+  activeIcon.textContent = "⏳";
+  const activeText = createHtmlElement(doc, "span", "zai-indexing-active-text");
+  activeText.textContent = "Achtung: Indexierung aktiv";
+  activeIndicator.append(activeIcon, activeText);
+
+  const successIndicator = createHtmlElement(doc, "span", "zai-indexing-success");
+  successIndicator.hidden = true;
+  const successText = createHtmlElement(doc, "span", "zai-indexing-success-text");
+  successIndicator.append(successText);
+
+  banner.append(activeIndicator, successIndicator);
+
+  let hideSuccessTimeout: any = null;
+
+  function showActive(text: string) {
+    if (hideSuccessTimeout) clearTimeout(hideSuccessTimeout);
+    successIndicator.hidden = true;
+    activeText.textContent = text;
+    activeIndicator.hidden = false;
+    banner.hidden = false;
+    banner.classList.remove("zai-indexing-banner--success", "zai-indexing-banner--idle");
+    banner.classList.add("zai-indexing-banner--active");
+  }
+
+  function showSuccess(text: string) {
+    activeIndicator.hidden = true;
+    successText.textContent = text;
+    successIndicator.hidden = false;
+    banner.hidden = false;
+    banner.classList.remove("zai-indexing-banner--active", "zai-indexing-banner--idle");
+    banner.classList.add("zai-indexing-banner--success");
+
+    hideSuccessTimeout = setTimeout(() => {
+      successIndicator.hidden = true;
+      banner.hidden = true;
+      banner.classList.remove("zai-indexing-banner--success");
+      hideSuccessTimeout = null;
+    }, 3000);
+  }
+
+  const unsubStarted = indexingEvents.on("started", () => {
+    showActive("Achtung: Indexierung aktiv…");
+  });
+
+  const unsubProgress = indexingEvents.on("progress", ({ indexed, total, estimatedRemainingMs }) => {
+    let msg = `Achtung: Indexierung aktiv – ${indexed} / ${total} Papern indexiert`;
+    if (estimatedRemainingMs !== undefined && estimatedRemainingMs > 0) {
+      msg += ` (noch ca. ${formatDuration(estimatedRemainingMs)})`;
+    }
+    showActive(msg);
+  });
+
+  const unsubFinished = indexingEvents.on("finished", ({ indexed, total }) => {
+    showSuccess(`✓ Indexierung abgeschlossen (${indexed ?? 0} / ${total ?? "?"} Papern)`);
+  });
+
+  const unsubSingleDone = indexingEvents.on("singleDone", ({ paperTitle }) => {
+    showSuccess(`✓ Erfolgreich indexiert: ${paperTitle ?? "Paper"}`);
+  });
+
+  const unsubDeleted = indexingEvents.on("deleted", ({ paperTitle }) => {
+    showSuccess(`✓ Aus dem Index entfernt: ${paperTitle ?? "Paper"}`);
+  });
+
+  import("../core/BackgroundIndexer").then((mod) => {
+    const currentState = mod.backgroundIndexer.indexingState;
+    if (currentState.status === "running") {
+      let msg = `Achtung: Indexierung aktiv – ${currentState.indexed} / ${currentState.total} Papern indexiert`;
+      if (currentState.estimatedRemainingMs !== undefined && currentState.estimatedRemainingMs > 0) {
+        msg += ` (noch ca. ${formatDuration(currentState.estimatedRemainingMs)})`;
+      }
+      showActive(msg);
+    } else if (currentState.status === "done" && currentState.newlyIndexed > 0) {
+      showSuccess(`✓ Indexierung abgeschlossen (${currentState.indexed} / ${currentState.total} Papern)`);
+    }
+  }).catch((err) => {
+
+  });
+
+  const observer = new doc.defaultView!.MutationObserver(() => {
+    if (!banner.isConnected) {
+      unsubStarted();
+      unsubProgress();
+      unsubFinished();
+      unsubSingleDone();
+      unsubDeleted();
+      if (hideSuccessTimeout) clearTimeout(hideSuccessTimeout);
+      observer.disconnect();
+    }
+  });
+  if (banner.ownerDocument.body) {
+    observer.observe(banner.ownerDocument.body, { childList: true, subtree: true });
+  }
+
+  return banner;
 }

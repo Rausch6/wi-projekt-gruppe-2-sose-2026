@@ -31,20 +31,20 @@ pref-help = { $name } Build { $version } { $time }
 
 # Indexierung
 pref-indexing-section-title = Indexing Settings
-pref-indexing-chunk-target-tokens = Chunk size
-pref-indexing-chunk-overlap-tokens = Overlap tokens between chunks
-pref-indexing-chunk-count = Number of Chunks (1-10)
-pref-indexing-chunk-notice = Changes apply to newly indexed documents.
+pref-indexing-chunk-target-tokens = Chunk-Größe
+pref-indexing-chunk-overlap-tokens = Überschneidungs-Tokens zwischen Chunks
+pref-indexing-chunk-count = Anzahl an Chunks (1-10)
+pref-indexing-chunk-notice = Änderungen gelten nur für neu indexierte Dokumente.
 pref-indexing-rebuild-index =
-    .label = Rebuild Index
+    .label = Index neu aufbauen
 pref-indexing-clear-index =
-    .label = Clear Index (Delete all)
+    .label = Index leeren
 pref-indexing-open-manager =
-    .label = Manage Indexed Papers...
+    .label = Indexierte Paper verwalten...
 
-index-manager-title = ZAIA Index Manager
-index-manager-refresh = Refresh List
-index-manager-col-status = Indexed
-index-manager-col-title = Title
-index-manager-col-author = Author
-index-manager-col-year = Year
+index-manager-title = KI-Index Manager
+index-manager-refresh = Liste aktualisieren
+index-manager-col-status = Indexiert
+index-manager-col-title = Titel
+index-manager-col-author = Autor
+index-manager-col-year = Jahr

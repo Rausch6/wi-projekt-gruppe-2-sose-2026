@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html
+  xmlns="http://www.w3.org/1999/xhtml"
+  windowtype="__addonRef__-index-manager-window"
+>
+  <head>
+    <meta charset="utf-8" />
+    <title data-l10n-id="index-manager-title">KI-Index Manager</title>
+    <style>
+      :root {
+        --zotero-background: #ffffff;
+        --zotero-text: #000000;
+        --border-color: #d0d0d0;
+        --hover-color: #f0f0f0;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --zotero-background: #2a2a2e;
+          --zotero-text: #f9f9fa;
+          --border-color: #4a4a4f;
+          --hover-color: #38383d;
+        }
+      }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        background: var(--zotero-background);
+        color: var(--zotero-text);
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        overflow: hidden;
+      }
+      header {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: var(--hover-color);
+      }
+      h1 {
+        margin: 0;
+        font-size: 1.1em;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+      }
+      button {
+        padding: 4px 12px;
+        border-radius: 4px;
+        border: 1px solid var(--border-color);
+        background: var(--zotero-background);
+        color: var(--zotero-text);
+        cursor: pointer;
+        font-size: 0.9em;
+      }
+      button:hover {
+        background: var(--hover-color);
+      }
+      .table-container {
+        flex: 1;
+        overflow-y: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th, td {
+        padding: 8px 12px;
+        text-align: left;
+        border-bottom: 1px solid var(--border-color);
+      }
+      th {
+        position: sticky;
+        top: 0;
+        background: var(--hover-color);
+        font-weight: 600;
+        font-size: 0.9em;
+        z-index: 10;
+      }
+      tr:hover td {
+        background: var(--hover-color);
+      }
+      .col-status {
+        width: 80px;
+        text-align: center;
+      }
+      .col-title {
+        width: auto;
+      }
+      .col-author {
+        width: 25%;
+      }
+      .col-year {
+        width: 60px;
+      }
+      .status-badge {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background-color: #ccc;
+      }
+      .status-badge.indexed {
+        background-color: #28a745;
+      }
+      .status-badge.unindexed {
+        background-color: #dc3545;
+      }
+      .empty-state {
+        padding: 40px;
+        text-align: center;
+        color: #888;
+      }
+      input[type="checkbox"] {
+        cursor: pointer;
+        width: 16px;
+        height: 16px;
+      }
+    </style>
+    <script type="application/javascript">
+      <![CDATA[
+        (function () {
+          var didUnload = false;
+
+          function getDialogArguments() {
+            return window.arguments && window.arguments[0]
+              ? window.arguments[0]
+              : {};
+          }
+
+          function getOwnerWindow() {
+            var args = getDialogArguments();
+            return args.owner || window.opener || null;
+          }
+
+          function getPlugin() {
+            var owner = getOwnerWindow();
+            var args = getDialogArguments();
+            var addonInstance = args.addonInstance || "__addonInstance__";
+
+            return owner &&
+              owner.Zotero &&
+              owner.Zotero[addonInstance]
+              ? owner.Zotero[addonInstance]
+              : null;
+          }
+
+          function callPluginHook(name) {
+            var plugin = getPlugin();
+            var hook = plugin && plugin.hooks && plugin.hooks[name];
+
+            if (typeof hook !== "function") {
+              return false;
+            }
+
+            hook({ owner: getOwnerWindow(), window: window });
+            return true;
+          }
+
+          window.addEventListener(
+            "DOMContentLoaded",
+            function () {
+              callPluginHook("onIndexManagerWindowLoad");
+            },
+            { once: true },
+          );
+
+          window.addEventListener(
+            "unload",
+            function () {
+              if (didUnload) return;
+              didUnload = true;
+              callPluginHook("onIndexManagerWindowUnload");
+            },
+            { once: true },
+          );
+        })();
+      ]]>
+    </script>
+  </head>
+  <body>
+    <header>
+      <h1 data-l10n-id="index-manager-title">KI-Index Manager</h1>
+      <div class="actions">
+        <button id="btn-refresh" data-l10n-id="index-manager-refresh">Aktualisieren</button>
+      </div>
+    </header>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th class="col-status" data-l10n-id="index-manager-col-status">Indexiert</th>
+            <th class="col-title" data-l10n-id="index-manager-col-title">Titel</th>
+            <th class="col-author" data-l10n-id="index-manager-col-author">Autor</th>
+            <th class="col-year" data-l10n-id="index-manager-col-year">Jahr</th>
+          </tr>
+        </thead>
+        <tbody id="papers-tbody">
+          <!-- Dynamically populated -->
+        </tbody>
+      </table>
+      <div id="empty-state" class="empty-state" style="display: none;">
+        Keine unterstützten Dokumente in der Bibliothek gefunden.
+      </div>
+    </div>
+  </body>
+</html>

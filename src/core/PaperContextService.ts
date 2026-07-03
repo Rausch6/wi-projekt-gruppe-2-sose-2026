@@ -144,9 +144,10 @@ export class PaperContextService {
     Zotero.debug(
       `[PaperContextService] Starte dokumentbezogene Suche für Item ${itemIdStr} (Hybrid/Fulltext)`,
     );
+    const chunkLimit = getChunkCountSetting();
     const searchResults = await vectorStore.searchSimilar(
       queryVector,
-      5,
+      chunkLimit,
       {
         zoteroItemId: itemIdStr,
       },
@@ -230,9 +231,10 @@ export class PaperContextService {
       Zotero.debug(
         `[PaperContextService] Starte bibliotheksweite Suche (Hybrid/Fulltext)`,
       );
+      const globalChunkLimit = getChunkCountSetting();
       searchResults = await vectorStore.searchSimilar(
         queryVector,
-        5,
+        globalChunkLimit,
         undefined,
         query,
       );
@@ -318,12 +320,13 @@ export class PaperContextService {
       );
     }
 
+    const chunksPerItem = Math.max(2, Math.ceil(getChunkCountSetting() / 2));
     let hitGroups = await Promise.all(
       uniqueItemIDs.map(async (itemID) => {
         try {
           return await vectorStore.searchSimilar(
             queryVector,
-            3,
+            chunksPerItem,
             { zoteroItemId: String(itemID) },
             vectorSearchQuery,
           );
@@ -984,4 +987,20 @@ function formatPageLabel(chunk: TextChunk) {
   if (chunk.pageStart === null) return "";
   if (chunk.pageStart === chunk.pageEnd) return `, Seite ${chunk.pageStart}`;
   return `, Seiten ${chunk.pageStart}-${chunk.pageEnd}`;
+}
+
+/**
+ * Liest die vom Nutzer konfigurierte Anzahl an Chunks, die pro KI-Anfrage
+ * aus der Vektordatenbank abgerufen werden sollen.
+ * Entspricht dem Pattern aus TextChunker.ts für chunkTargetTokens.
+ */
+function getChunkCountSetting(): number {
+  try {
+    const addon = (globalThis as any).Zotero?.[config.addonName];
+    const count = addon?.data?.settings?.chunkCount;
+    if (typeof count === "number" && count > 0) return count;
+  } catch {
+    // Fallback auf Standardwert
+  }
+  return 5;
 }
