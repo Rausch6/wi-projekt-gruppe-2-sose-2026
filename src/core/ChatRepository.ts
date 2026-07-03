@@ -24,6 +24,9 @@ type MessageRow = {
   content: string;
   position: number;
   created_at: string;
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+  total_tokens?: number | null;
 };
 
 export class ChatRepository {
@@ -120,7 +123,7 @@ export class ChatRepository {
     const createdAt = await getChatCreatedAt(db, chat.id, chat.updated_at);
 
     const messageRows = (await db.queryAsync(
-      "SELECT id, chat_id, role, content, position, created_at FROM messages",
+      "SELECT * FROM messages",
     )) as MessageRow[] | undefined;
 
     return {
@@ -156,23 +159,45 @@ export class ChatRepository {
       content: input.content,
       position,
       createdAt,
+      tokenUsage: input.tokenUsage,
     } satisfies StoredChatMessage;
 
     await db.executeTransaction(async () => {
-      await db.queryAsync(
-        `
-        INSERT INTO messages (id, chat_id, role, content, position, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        `,
-        [
-          message.id,
-          message.chatId,
-          message.role,
-          message.content,
-          message.position,
-          message.createdAt,
-        ],
-      );
+      try {
+        await db.queryAsync(
+          `
+          INSERT INTO messages (id, chat_id, role, content, position, created_at, prompt_tokens, completion_tokens, total_tokens)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `,
+          [
+            message.id,
+            message.chatId,
+            message.role,
+            message.content,
+            message.position,
+            message.createdAt,
+            message.tokenUsage?.promptTokens ?? null,
+            message.tokenUsage?.completionTokens ?? null,
+            message.tokenUsage?.totalTokens ?? null,
+          ],
+        );
+      } catch (error) {
+        // Fallback for when the DB migration hasn't successfully run yet
+        await db.queryAsync(
+          `
+          INSERT INTO messages (id, chat_id, role, content, position, created_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+          `,
+          [
+            message.id,
+            message.chatId,
+            message.role,
+            message.content,
+            message.position,
+            message.createdAt,
+          ],
+        );
+      }
       await db.queryAsync("UPDATE chats SET updated_at = ? WHERE id = ?", [
         message.createdAt,
         message.chatId,
@@ -281,6 +306,14 @@ function mapMessageRow(row: MessageRow): StoredChatMessage {
     content: row.content,
     position: row.position,
     createdAt: row.created_at,
+    tokenUsage:
+      row.prompt_tokens != null || row.completion_tokens != null || row.total_tokens != null
+        ? {
+            promptTokens: row.prompt_tokens ?? null,
+            completionTokens: row.completion_tokens ?? null,
+            totalTokens: row.total_tokens ?? null,
+          }
+        : undefined,
   };
 }
 

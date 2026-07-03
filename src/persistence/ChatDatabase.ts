@@ -2,7 +2,7 @@
 
 const DATABASE_DIR_NAME = "zaia";
 const DATABASE_FILE_NAME = "zaia-chats.sqlite";
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 let connection: _ZoteroTypes.DB | null = null;
 let initializationPromise: Promise<_ZoteroTypes.DB> | null = null;
@@ -121,8 +121,35 @@ async function migrate(db: _ZoteroTypes.DB) {
         `);
       }
 
+      await db.queryAsync(`PRAGMA user_version = 2`);
+    });
+    version = 2;
+  }
+
+  if (version < 3) {
+    await db.executeTransaction(async () => {
+      if (!(await hasColumn(db, "messages", "prompt_tokens"))) {
+        await db.queryAsync(`
+          ALTER TABLE messages
+          ADD COLUMN prompt_tokens INTEGER
+        `);
+      }
+      if (!(await hasColumn(db, "messages", "completion_tokens"))) {
+        await db.queryAsync(`
+          ALTER TABLE messages
+          ADD COLUMN completion_tokens INTEGER
+        `);
+      }
+      if (!(await hasColumn(db, "messages", "total_tokens"))) {
+        await db.queryAsync(`
+          ALTER TABLE messages
+          ADD COLUMN total_tokens INTEGER
+        `);
+      }
+
       await db.queryAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     });
+    version = 3;
   }
 }
 

@@ -17,6 +17,11 @@ export type StoredChatMessage = {
   content: string;
   position: number;
   createdAt: string;
+  tokenUsage?: {
+    promptTokens: number | null;
+    completionTokens: number | null;
+    totalTokens: number | null;
+  };
 };
 
 export type StoredChatWithMessages = StoredChat & {
@@ -37,4 +42,9 @@ export type AppendChatMessageInput = {
   content: string;
   position?: number;
   createdAt?: string;
+  tokenUsage?: {
+    promptTokens: number | null;
+    completionTokens: number | null;
+    totalTokens: number | null;
+  };
 };

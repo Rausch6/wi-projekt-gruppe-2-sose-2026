@@ -73,6 +73,11 @@ export type AssistantChatMessage = {
   id: number;
   role: ChatRole;
   content: string;
+  tokenUsage?: {
+    promptTokens: number | null;
+    completionTokens: number | null;
+    totalTokens: number | null;
+  };
 };
 
 type PendingSimulationPrompt = {
@@ -708,6 +713,7 @@ export async function loadChat(chatID: string) {
       id: nextMessageID++,
       role: message.role,
       content: message.content,
+      tokenUsage: message.tokenUsage,
     });
   }
   pendingSimulationPrompts.length = 0;
@@ -849,7 +855,12 @@ async function requestStreamingAssistantResponse(
       continue;
     }
 
-    if (event.type === "done") break;
+    if (event.type === "done") {
+      if (event.usage && assistantMessage) {
+        assistantMessage.tokenUsage = event.usage as AssistantChatMessage["tokenUsage"];
+      }
+      break;
+    }
   }
 
   const finalMessage = finalizeActiveAssistantMessage() ?? assistantMessage;
@@ -875,6 +886,9 @@ async function requestBufferedAssistantResponse(
   }
 
   const assistantMessage = appendAssistantDelta(result.content.trim());
+  if (assistantMessage && "usage" in result && result.usage) {
+    assistantMessage.tokenUsage = result.usage as AssistantChatMessage["tokenUsage"];
+  }
   return finalizeActiveAssistantMessage() ?? assistantMessage ?? failNoAnswer();
 }
 
@@ -1731,11 +1745,16 @@ function failNoAnswer(): never {
   throw new Error("ZAIA hat keine Textantwort zurückgegeben.");
 }
 
-function appendMessage(role: ChatRole, content: string) {
+function appendMessage(
+  role: ChatRole,
+  content: string,
+  tokenUsage?: AssistantChatMessage["tokenUsage"],
+) {
   const message = {
     id: nextMessageID++,
     role,
     content,
+    tokenUsage,
   } satisfies AssistantChatMessage;
 
   messages.push(message);
@@ -1886,6 +1905,7 @@ async function persistChatMessage(
     role: message.role,
     content: message.content,
     position: Math.max(0, position - 1),
+    tokenUsage: message.tokenUsage,
   });
 }
 
@@ -2392,6 +2412,26 @@ function createMessageElement(
   }
 
   wrapper.append(label, content, createMessageCopyActions(host, message));
+
+  if (message.role === "assistant" && message.tokenUsage) {
+    const { promptTokens, completionTokens, totalTokens } = message.tokenUsage;
+    if (totalTokens != null) {
+      const tokenInfo = doc.createElementNS(HTML_NS, "div") as HTMLElement;
+      tokenInfo.className = "zai-message-tokens";
+      tokenInfo.style.fontSize = "0.75em";
+      tokenInfo.style.color = "var(--fill-quaternary)";
+      tokenInfo.style.marginTop = "4px";
+      tokenInfo.style.textAlign = "right";
+      
+      let text = `Tokens: ${totalTokens} Total`;
+      if (promptTokens != null && completionTokens != null) {
+        text = `Tokens: ${promptTokens} Prompt / ${completionTokens} Antwort (${totalTokens} Total)`;
+      }
+      tokenInfo.textContent = text;
+      wrapper.append(tokenInfo);
+    }
+  }
+
   row.append(wrapper);
   return row;
 }
