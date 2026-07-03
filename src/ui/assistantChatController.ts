@@ -14,8 +14,9 @@ import {
   type PromptContextRouterCandidate,
 } from "../core/PromptContextRouter";
 import {
-  getMetadataFieldsForPreset,
-  normalizeMetadataFieldSelectionPreset,
+  getMetadataFieldSelectionLabel,
+  getMetadataFieldsForSelection,
+  normalizeMetadataFieldSelection,
   type MetadataFieldSelection,
 } from "../core/MetadataFieldSelection";
 import { CreateChatInput, StoredChat } from "../core/chatTypes";
@@ -92,6 +93,18 @@ type ActiveChatResolution = {
   shouldGenerateTitle: boolean;
 };
 
+type PaperContextEntry = PaperReference & {
+  title: string;
+  firstCreator: string;
+  year: string;
+  source: "automatic" | "manual";
+};
+
+type PaperLibraryOption = PaperContextEntry & {
+  libraryName: string;
+  searchText: string;
+};
+
 type ModelOption = {
   id: string;
   name: string;
@@ -110,6 +123,15 @@ const chatSummaries: StoredChat[] = [];
 const pendingSimulationPrompts: PendingSimulationPrompt[] = [];
 const pendingGeneratedTitleChatIDs = new Set<string>();
 const modelDropdownDocuments = new WeakSet<Document>();
+const metadataPopoverDocuments = new WeakSet<Document>();
+const paperContextSelectionWindows = new WeakSet<Window>();
+const manualPaperContextEntries = new Map<string, PaperContextEntry>();
+let paperLibraryOptions: PaperLibraryOption[] = [];
+let paperLibraryLoadState: "idle" | "loading" | "loaded" | "error" = "idle";
+let paperLibraryLoadError = "";
+let paperLibrarySearchValue = "";
+let paperContextSelectionPollID: number | null = null;
+let lastAutomaticPaperContextSignature = "";
 const modelOptionsByProvider = new Map<LLMProvider, ModelOption[]>([
   ["kisski", normalizeModelOptions(KISSKI_MODEL_OPTIONS)],
 ]);
@@ -184,8 +206,29 @@ export function bindAssistantChat(host: HTMLElement) {
   const modelPickerToggle = host.querySelector<HTMLButtonElement>(
     ".zai-model-picker-toggle",
   );
-  const metadataSelect = host.querySelector<HTMLSelectElement>(
-    ".zai-metadata-select",
+  const metadataControl = host.querySelector<HTMLElement>(
+    ".zai-metadata-control",
+  );
+  const metadataButton = host.querySelector<HTMLButtonElement>(
+    ".zai-metadata-button",
+  );
+  const metadataPopover = host.querySelector<HTMLElement>(
+    ".zai-metadata-popover",
+  );
+  const metadataCheckboxes = Array.from(
+    host.querySelectorAll<HTMLInputElement>(".zai-metadata-checkbox[value]"),
+  ) as HTMLInputElement[];
+  const paperLibrarySearch = host.querySelector<HTMLInputElement>(
+    ".zai-paper-library-search",
+  );
+  const paperContextList = host.querySelector<HTMLElement>(
+    ".zai-paper-context-list",
+  );
+  const manualPaperContextList = host.querySelector<HTMLElement>(
+    ".zai-paper-manual-context-list",
+  );
+  const paperLibraryResults = host.querySelector<HTMLElement>(
+    ".zai-paper-library-results",
   );
   const providerButtons = Array.from(
     host.querySelectorAll(".zai-provider-toggle-button[data-provider]"),
@@ -216,7 +259,13 @@ export function bindAssistantChat(host: HTMLElement) {
   const ownerWindow = host.ownerDocument?.defaultView ?? null;
 
   syncModelPicker(host);
-  syncMetadataFieldSelect(host);
+  syncMetadataFieldControls(host);
+  syncPaperContextControls(host);
+  registerPaperContextSelectionWindow(ownerWindow);
+  ownerWindow?.setTimeout(() => {
+    lastAutomaticPaperContextSignature = getAutomaticPaperContextSignature();
+    syncPaperContextControls(host);
+  }, 0);
   ensureLocalModelInstallEventHandler(ownerWindow);
   ensureModelDropdownOutsideHandler(host.ownerDocument);
   void ensureModelOptionsLoaded(getActiveProvider());
@@ -388,12 +437,76 @@ export function bindAssistantChat(host: HTMLElement) {
   modelDropdown?.addEventListener("keydown", (event) => {
     handleModelDropdownKeydown(event as KeyboardEvent, modelDropdown);
   });
-  metadataSelect?.addEventListener("change", () => {
-    const preset = normalizeMetadataFieldSelectionPreset(metadataSelect.value);
-    addon.data.settings.metadataFieldSelection = preset;
-    savePluginPreference("metadataFieldSelection", preset);
-    syncAllMetadataFieldSelects();
+  metadataButton?.addEventListener("click", () => {
+    if (!metadataControl) return;
+
+    hosts.add(host);
+    syncPaperContextControls(host);
+    void ensurePaperLibraryOptionsLoaded();
+    toggleMetadataPopover(metadataControl);
   });
+  metadataPopover?.addEventListener("keydown", (event) => {
+    if ((event as KeyboardEvent).key === "Escape" && metadataControl) {
+      closeMetadataPopover(metadataControl);
+      metadataButton?.focus();
+    }
+  });
+  metadataPopover?.addEventListener("click", (event) => {
+    event.stopPropagation();
+  });
+  for (const checkbox of metadataCheckboxes) {
+    checkbox.addEventListener("change", () => {
+      hosts.add(host);
+      saveMetadataFieldSelection(metadataCheckboxes, checkbox);
+    });
+  }
+  paperLibrarySearch?.addEventListener("input", () => {
+    hosts.add(host);
+    paperLibrarySearchValue = paperLibrarySearch.value;
+    syncAllPaperContextControls();
+    void ensurePaperLibraryOptionsLoaded();
+  });
+  paperLibrarySearch?.addEventListener("keydown", (event) => {
+    const keyboardEvent = event as KeyboardEvent;
+    if (keyboardEvent.key === "Enter") {
+      keyboardEvent.preventDefault();
+      hosts.add(host);
+      addBestMatchingPaperToManualContext();
+    }
+  });
+  paperLibraryResults?.addEventListener("click", (event) => {
+    const addButton = (
+      event.target as Element | null
+    )?.closest<HTMLButtonElement>(
+      ".zai-paper-library-result-add-button[data-context-key]",
+    );
+    const key = addButton?.dataset.contextKey;
+    if (!key) return;
+
+    const option = paperLibraryOptions.find(
+      (entry) => getPaperContextKey(entry) === key,
+    );
+    if (!option) return;
+
+    hosts.add(host);
+    addPaperLibraryOptionToManualContext(option);
+  });
+  manualPaperContextList?.addEventListener("click", (event) => {
+    const removeButton = (
+      event.target as Element | null
+    )?.closest<HTMLButtonElement>(
+      ".zai-paper-context-remove-button[data-context-key]",
+    );
+    const key = removeButton?.dataset.contextKey;
+    if (!key) return;
+
+    hosts.add(host);
+    manualPaperContextEntries.delete(key);
+    syncAllPaperContextControls();
+  });
+  if (metadataControl?.ownerDocument) {
+    ensureMetadataPopoverOutsideHandler(metadataControl.ownerDocument);
+  }
 }
 
 function ensureLocalModelInstallEventHandler(win: Window | null) {
@@ -425,6 +538,17 @@ export async function initializeChatPersistence() {
   showAllChats = false;
   resetMessages();
   renderAllHosts();
+}
+
+export function registerPaperContextSelectionWindow(win: Window | null) {
+  ensurePaperContextSelectionPolling(win);
+  ensurePaperContextSelectionEventHandlers(win);
+  win?.setTimeout(refreshPaperContextControls, 0);
+}
+
+export function refreshPaperContextControls() {
+  lastAutomaticPaperContextSignature = getAutomaticPaperContextSignature();
+  syncAllPaperContextControls();
 }
 
 export async function sendChatPrompt(prompt: string) {
@@ -787,7 +911,9 @@ function getActiveModel(provider: LLMProvider = getActiveProvider()) {
 }
 
 function getSelectedMetadataFields() {
-  return getMetadataFieldsForPreset(addon.data.settings.metadataFieldSelection);
+  return getMetadataFieldsForSelection(
+    addon.data.settings.metadataFieldSelection,
+  );
 }
 
 async function createRequestMessages(prompt: string) {
@@ -831,6 +957,15 @@ async function createPaperContextMessage(prompt: string) {
   }
 
   const reference = await getActivePaperReference();
+  const forcedReferences = getForcedPaperContextReferences();
+  if (forcedReferences.length) {
+    const attachedContext = await buildAttachedPaperContext(
+      prompt,
+      forcedReferences,
+    );
+    if (attachedContext) return attachedContext;
+  }
+
   const candidates = await getPromptRouterCandidates();
 
   try {
@@ -938,6 +1073,33 @@ async function buildContextFromRouteDecision(
     default:
       return undefined;
   }
+}
+
+async function buildAttachedPaperContext(
+  prompt: string,
+  references: PaperReference[],
+) {
+  const itemIDs = references
+    .map((reference) => reference.itemID)
+    .filter((itemID): itemID is number => typeof itemID === "number");
+
+  if (itemIDs.length) {
+    return PaperContextService.buildVectorContextForItems(
+      prompt,
+      itemIDs,
+      "Relevante Auszüge aus den angehängten Papern:",
+    );
+  }
+
+  if (references.length === 1) {
+    const context = await PaperContextService.buildContext(
+      references[0],
+      prompt,
+    );
+    return context?.systemMessage ?? null;
+  }
+
+  return null;
 }
 
 async function buildSinglePaperContext(
@@ -1818,7 +1980,8 @@ function renderHost(host: HTMLElement) {
   const chatReady = providerReady && embeddingReady && !showEmbeddingSetup;
   const showProviderSetup =
     !showEmbeddingSetup && shouldShowProviderSetup(providerConnection);
-  const showWelcome = !activeChatID && !showEmbeddingSetup && !showProviderSetup;
+  const showWelcome =
+    !activeChatID && !showEmbeddingSetup && !showProviderSetup;
   const showChat = !showWelcome && !showEmbeddingSetup && !showProviderSetup;
   top?.classList.toggle("zai-top-chat-active", showChat);
   main.classList.toggle(
@@ -1830,7 +1993,12 @@ function renderHost(host: HTMLElement) {
   footer?.toggleAttribute("hidden", showEmbeddingSetup);
   welcome?.toggleAttribute("hidden", !showWelcome);
   syncEmbeddingSetup(host, showEmbeddingSetup, embeddingConnection);
-  syncProviderSetup(host, activeProvider, providerConnection, showProviderSetup);
+  syncProviderSetup(
+    host,
+    activeProvider,
+    providerConnection,
+    showProviderSetup,
+  );
   messageList.toggleAttribute("hidden", !showChat);
   chatList?.toggleAttribute("hidden", !showWelcome);
   const showSeeAll = showWelcome && chatSummaries.length > 3;
@@ -1884,6 +2052,7 @@ function renderHost(host: HTMLElement) {
     stopOllamaButton.setAttribute("title", label);
   }
   if (chatList && showWelcome) renderChatList(host, chatList);
+  syncPaperContextControls(host);
 
   const renderedMessages = messages
     .map((message) => createMessageElement(host, message))
@@ -2082,7 +2251,9 @@ function syncEmbeddingSetup(
   }
 }
 
-function getEmbeddingConnectionStatusText(connection: EmbeddingConnectionResult) {
+function getEmbeddingConnectionStatusText(
+  connection: EmbeddingConnectionResult,
+) {
   if (ollamaStartRunning) return getString("sidebar-starting-ollama");
   if (ollamaSetupLaunchRunning) {
     return getString("sidebar-launching-ollama-setup");
@@ -2523,10 +2694,71 @@ function syncAllModelPickers() {
   }
 }
 
-function syncAllMetadataFieldSelects() {
+function syncAllMetadataFieldControls() {
   for (const host of [...hosts]) {
-    syncMetadataFieldSelect(host);
+    syncMetadataFieldControls(host);
   }
+}
+
+function syncAllPaperContextControls() {
+  syncPaperContextBadges();
+  for (const host of [...hosts]) {
+    syncPaperContextControls(host);
+  }
+}
+
+function syncPaperContextBadges() {
+  const count = getVisiblePaperContextCount();
+  const documents = new Set<Document>();
+  for (const host of [...hosts]) {
+    if (host.ownerDocument) documents.add(host.ownerDocument);
+  }
+
+  try {
+    for (const win of Zotero.getMainWindows()) {
+      if (win.document) documents.add(win.document);
+    }
+  } catch {
+    // Sidebar hosts are still handled above.
+  }
+
+  for (const doc of documents) {
+    doc
+      .querySelectorAll<HTMLElement>(".zai-context-count-badge")
+      .forEach((badge) => {
+        badge.textContent = String(count);
+        badge.toggleAttribute("hidden", count === 0);
+      });
+  }
+}
+
+function ensurePaperContextSelectionPolling(win: Window | null) {
+  if (!win) return;
+  if (paperContextSelectionPollID !== null) return;
+
+  lastAutomaticPaperContextSignature = getAutomaticPaperContextSignature();
+  paperContextSelectionPollID = win.setInterval(() => {
+    const signature = getAutomaticPaperContextSignature();
+    if (signature !== lastAutomaticPaperContextSignature) {
+      lastAutomaticPaperContextSignature = signature;
+    }
+    syncAllPaperContextControls();
+  }, 500);
+}
+
+function ensurePaperContextSelectionEventHandlers(win: Window | null) {
+  if (!win || paperContextSelectionWindows.has(win)) return;
+
+  paperContextSelectionWindows.add(win);
+  const scheduleRefresh = () => {
+    win.setTimeout(() => {
+      refreshPaperContextControls();
+    }, 50);
+  };
+
+  win.document.addEventListener("mouseup", scheduleRefresh, true);
+  win.document.addEventListener("keyup", scheduleRefresh, true);
+  win.document.addEventListener("select", scheduleRefresh, true);
 }
 
 function syncModelPicker(host: HTMLElement) {
@@ -2541,13 +2773,525 @@ function syncModelPicker(host: HTMLElement) {
   );
 }
 
-function syncMetadataFieldSelect(host: HTMLElement) {
-  const select = host.querySelector<HTMLSelectElement>(".zai-metadata-select");
-  if (!select) return;
-
-  select.value = normalizeMetadataFieldSelectionPreset(
+function syncMetadataFieldControls(host: HTMLElement) {
+  const selection = normalizeMetadataFieldSelection(
     addon.data.settings.metadataFieldSelection,
   );
+  const selectedFields = getMetadataFieldsForSelection(selection);
+
+  host
+    .querySelectorAll<HTMLInputElement>(".zai-metadata-checkbox[value]")
+    .forEach((checkbox) => {
+      checkbox.checked = selectedFields.includes(
+        checkbox.value as MetadataFieldSelection,
+      );
+    });
+
+  const label = getMetadataFieldSelectionLabel(selection);
+  const button = host.querySelector<HTMLButtonElement>(".zai-metadata-button");
+  const title = `Metadaten-Kontext: ${label}`;
+  button?.setAttribute("aria-label", title);
+  button?.setAttribute("title", title);
+}
+
+function saveMetadataFieldSelection(
+  checkboxes: HTMLInputElement[],
+  changedCheckbox: HTMLInputElement,
+) {
+  let selectedValue = checkboxes
+    .filter((checkbox) => checkbox.checked)
+    .map((checkbox) => checkbox.value)
+    .join(",");
+
+  if (!selectedValue) {
+    changedCheckbox.checked = true;
+    selectedValue = changedCheckbox.value || "title";
+  }
+
+  const selection = normalizeMetadataFieldSelection(selectedValue);
+  addon.data.settings.metadataFieldSelection = selection;
+  savePluginPreference("metadataFieldSelection", selection);
+  syncAllMetadataFieldControls();
+}
+
+function syncPaperContextControls(host: HTMLElement) {
+  const automaticEntries = getAutomaticPaperContextEntries();
+  const manualEntries = getManualPaperContextEntries(automaticEntries);
+  const count = automaticEntries.length + manualEntries.length;
+  const countBadge = host.querySelector<HTMLElement>(
+    ".zai-context-count-badge",
+  );
+  const list = host.querySelector<HTMLElement>(".zai-paper-context-list");
+  const manualList = host.querySelector<HTMLElement>(
+    ".zai-paper-manual-context-list",
+  );
+  const search = host.querySelector<HTMLInputElement>(
+    ".zai-paper-library-search",
+  );
+  const results = host.querySelector<HTMLElement>(".zai-paper-library-results");
+
+  if (countBadge) {
+    countBadge.textContent = String(count);
+    countBadge.toggleAttribute("hidden", count === 0);
+  }
+
+  if (search && search.value !== paperLibrarySearchValue) {
+    search.value = paperLibrarySearchValue;
+  }
+
+  if (results) renderPaperLibraryResults(results);
+
+  if (manualList) {
+    renderPaperContextList(manualList, manualEntries, "");
+  }
+
+  if (list) {
+    renderPaperContextList(list, automaticEntries, "Keine Paper ausgewählt");
+  }
+}
+
+function renderPaperContextList(
+  list: HTMLElement,
+  entries: PaperContextEntry[],
+  emptyText: string,
+) {
+  const doc = list.ownerDocument;
+  if (!entries.length) {
+    if (!emptyText) {
+      list.replaceChildren();
+      return;
+    }
+
+    list.replaceChildren(
+      createControllerHtmlElement(
+        doc,
+        "div",
+        "zai-paper-context-empty",
+        emptyText,
+      ),
+    );
+    return;
+  }
+
+  list.replaceChildren(
+    ...entries.map((entry) => createPaperContextRow(doc, entry)),
+  );
+}
+
+function renderPaperLibraryResults(container: HTMLElement) {
+  const doc = container.ownerDocument;
+  const hasSearch = Boolean(paperLibrarySearchValue.trim());
+  if (!hasSearch) {
+    container.replaceChildren();
+    return;
+  }
+
+  if (paperLibraryLoadState === "loading") {
+    container.replaceChildren(
+      createControllerHtmlElement(
+        doc,
+        "div",
+        "zai-paper-library-state",
+        "Bibliothek wird geladen...",
+      ),
+    );
+    return;
+  }
+
+  if (paperLibraryLoadState === "error") {
+    container.replaceChildren(
+      createControllerHtmlElement(
+        doc,
+        "div",
+        "zai-paper-library-state zai-paper-library-state-error",
+        paperLibraryLoadError || "Bibliothek konnte nicht geladen werden",
+      ),
+    );
+    return;
+  }
+
+  const options = getFilteredPaperLibraryOptions();
+  if (!options.length) {
+    container.replaceChildren(
+      createControllerHtmlElement(
+        doc,
+        "div",
+        "zai-paper-library-state",
+        "Keine passenden Paper gefunden",
+      ),
+    );
+    return;
+  }
+
+  container.replaceChildren(
+    ...options.map((option) => createPaperLibraryResultRow(doc, option)),
+  );
+}
+
+function createPaperContextRow(doc: Document, entry: PaperContextEntry) {
+  const row = createControllerHtmlElement(
+    doc,
+    "div",
+    `zai-paper-context-row zai-paper-context-row-${entry.source}`,
+  );
+  const text = createControllerHtmlElement(
+    doc,
+    "div",
+    "zai-paper-context-text",
+  );
+  const title = createControllerHtmlElement(
+    doc,
+    "div",
+    "zai-paper-context-item-title",
+    entry.title || "Ohne Titel",
+  );
+  const meta = createControllerHtmlElement(
+    doc,
+    "div",
+    "zai-paper-context-item-meta",
+    getPaperContextMeta(entry),
+  );
+  text.append(title, meta);
+  row.append(text);
+
+  if (entry.source === "manual") {
+    const removeButton = createControllerHtmlElement(
+      doc,
+      "button",
+      "zai-paper-context-remove-button",
+      "-",
+    ) as HTMLButtonElement;
+    removeButton.type = "button";
+    removeButton.dataset.contextKey = getPaperContextKey(entry);
+    removeButton.setAttribute("aria-label", `${entry.title} entfernen`);
+    row.append(removeButton);
+  } else {
+    row.append(
+      createControllerHtmlElement(
+        doc,
+        "span",
+        "zai-paper-context-source zai-paper-context-source-automatic",
+      ),
+    );
+  }
+
+  return row;
+}
+
+function createPaperLibraryResultRow(
+  doc: Document,
+  option: PaperLibraryOption,
+) {
+  const row = createControllerHtmlElement(
+    doc,
+    "div",
+    "zai-paper-library-result-row",
+  );
+  const text = createControllerHtmlElement(
+    doc,
+    "div",
+    "zai-paper-library-result-text",
+  );
+  const title = createControllerHtmlElement(
+    doc,
+    "div",
+    "zai-paper-library-result-title",
+    option.title || "Ohne Titel",
+  );
+  const meta = createControllerHtmlElement(
+    doc,
+    "div",
+    "zai-paper-library-result-meta",
+    [option.firstCreator, option.year, option.libraryName]
+      .filter(Boolean)
+      .join(" · "),
+  );
+  const addButton = createControllerHtmlElement(
+    doc,
+    "button",
+    "zai-paper-library-result-add-button",
+    "+",
+  ) as HTMLButtonElement;
+  addButton.type = "button";
+  addButton.dataset.contextKey = getPaperContextKey(option);
+  addButton.setAttribute("aria-label", `${option.title} hinzufügen`);
+  addButton.title = "Paper hinzufügen";
+
+  text.append(title, meta);
+  row.append(text, addButton);
+  return row;
+}
+
+async function ensurePaperLibraryOptionsLoaded(force = false) {
+  if (
+    !force &&
+    (paperLibraryLoadState === "loaded" || paperLibraryLoadState === "loading")
+  ) {
+    return;
+  }
+
+  paperLibraryLoadState = "loading";
+  paperLibraryLoadError = "";
+  syncAllPaperContextControls();
+
+  try {
+    const options: PaperLibraryOption[] = [];
+    for (const scope of LibraryScopeManager.listLibraryScopes()) {
+      const candidates = await LibraryScopeManager.listRagItemCandidates({
+        libraryID: scope.libraryID,
+        includeWithoutPdf: true,
+      });
+      options.push(...candidates.map(createPaperLibraryOption));
+    }
+
+    paperLibraryOptions = options.sort((first, second) =>
+      first.title.localeCompare(second.title),
+    );
+    paperLibraryLoadState = "loaded";
+  } catch (error) {
+    paperLibraryOptions = [];
+    paperLibraryLoadState = "error";
+    paperLibraryLoadError =
+      error instanceof Error
+        ? error.message
+        : "Bibliothek konnte nicht geladen werden";
+  }
+
+  syncAllPaperContextControls();
+}
+
+function addBestMatchingPaperToManualContext() {
+  const option = getBestMatchingPaperLibraryOption();
+  if (!option) return;
+
+  addPaperLibraryOptionToManualContext(option);
+}
+
+function addPaperLibraryOptionToManualContext(option: PaperLibraryOption) {
+  manualPaperContextEntries.set(getPaperContextKey(option), {
+    libraryID: option.libraryID,
+    itemKey: option.itemKey,
+    itemID: option.itemID,
+    title: option.title,
+    firstCreator: option.firstCreator,
+    year: option.year,
+    source: "manual",
+  });
+  paperLibrarySearchValue = "";
+  syncAllPaperContextControls();
+}
+
+function getBestMatchingPaperLibraryOption() {
+  return getFilteredPaperLibraryOptions()[0] ?? null;
+}
+
+function createPaperLibraryOption(
+  candidate: RagItemCandidate,
+): PaperLibraryOption {
+  const option: PaperLibraryOption = {
+    libraryID: candidate.library.libraryID,
+    itemKey: candidate.itemKey,
+    itemID: candidate.itemID,
+    title: candidate.title,
+    firstCreator: candidate.creators,
+    year: candidate.year || candidate.publicationDate,
+    source: "manual",
+    libraryName: candidate.library.name,
+    searchText: "",
+  };
+  option.searchText = [
+    option.title,
+    option.firstCreator,
+    option.year,
+    option.libraryName,
+  ]
+    .join(" ")
+    .toLowerCase();
+  return option;
+}
+
+function getFilteredPaperLibraryOptions() {
+  const attachedKeys = new Set(
+    getVisiblePaperContextEntries().map(getPaperContextKey),
+  );
+  const terms = paperLibrarySearchValue
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  return paperLibraryOptions
+    .filter((option) => !attachedKeys.has(getPaperContextKey(option)))
+    .filter((option) => terms.every((term) => option.searchText.includes(term)))
+    .slice(0, 8);
+}
+
+function getVisiblePaperContextEntries() {
+  const entries = new Map<string, PaperContextEntry>();
+
+  for (const entry of getAutomaticPaperContextEntries()) {
+    entries.set(getPaperContextKey(entry), entry);
+  }
+
+  for (const entry of manualPaperContextEntries.values()) {
+    const key = getPaperContextKey(entry);
+    if (!entries.has(key)) entries.set(key, entry);
+  }
+
+  return [...entries.values()];
+}
+
+function getVisiblePaperContextCount() {
+  const automaticEntries = getAutomaticPaperContextEntries();
+  return (
+    automaticEntries.length +
+    getManualPaperContextEntries(automaticEntries).length
+  );
+}
+
+function getManualPaperContextEntries(automaticEntries: PaperContextEntry[]) {
+  const automaticKeys = new Set(automaticEntries.map(getPaperContextKey));
+  return [...manualPaperContextEntries.values()].filter(
+    (entry) => !automaticKeys.has(getPaperContextKey(entry)),
+  );
+}
+
+function getForcedPaperContextReferences() {
+  const references = new Map<string, PaperReference>();
+
+  for (const item of getSelectedContextItems()) {
+    const entry = createPaperContextEntry(item, "automatic");
+    references.set(getPaperContextKey(entry), {
+      libraryID: entry.libraryID,
+      itemKey: entry.itemKey,
+      itemID: entry.itemID,
+    });
+  }
+
+  for (const entry of manualPaperContextEntries.values()) {
+    references.set(getPaperContextKey(entry), {
+      libraryID: entry.libraryID,
+      itemKey: entry.itemKey,
+      itemID: entry.itemID,
+    });
+  }
+
+  return [...references.values()];
+}
+
+function getAutomaticPaperContextEntries() {
+  return getSelectedContextItems().map((item) =>
+    createPaperContextEntry(item, "automatic"),
+  );
+}
+
+function getSelectedContextItems() {
+  try {
+    return ItemManager.filterItems();
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Paper-Kontext-Auswahl konnte nicht gelesen werden: ${error}`,
+    );
+    return [];
+  }
+}
+
+function getAutomaticPaperContextSignature() {
+  return getAutomaticPaperContextEntries().map(getPaperContextKey).join("|");
+}
+
+function createPaperContextEntry(
+  item: Zotero.Item,
+  source: PaperContextEntry["source"],
+): PaperContextEntry {
+  const data = ItemManager.extractItemData(item);
+  return {
+    libraryID: item.libraryID,
+    itemKey: item.key,
+    itemID: item.id,
+    title: data.title,
+    firstCreator: data.firstCreator,
+    year: data.year,
+    source,
+  };
+}
+
+function getPaperContextMeta(entry: PaperContextEntry) {
+  return [entry.firstCreator, entry.year].filter(Boolean).join(" · ");
+}
+
+function getPaperContextKey(reference: PaperReference) {
+  return `${reference.libraryID}:${reference.itemKey}`;
+}
+
+function createControllerHtmlElement<K extends keyof HTMLElementTagNameMap>(
+  doc: Document,
+  tagName: K,
+  className?: string,
+  text?: string,
+) {
+  const element = doc.createElementNS(HTML_NS, tagName);
+  if (className) element.className = className;
+  if (text) element.textContent = text;
+  return element;
+}
+
+function toggleMetadataPopover(control: HTMLElement) {
+  const open = !control.classList.contains("zai-metadata-control-open");
+  if (open) {
+    openMetadataPopover(control);
+  } else {
+    closeMetadataPopover(control);
+  }
+}
+
+function openMetadataPopover(control: HTMLElement) {
+  closeOtherMetadataPopovers(control);
+  const button = control.querySelector<HTMLButtonElement>(
+    ".zai-metadata-button",
+  );
+  const popover = control.querySelector<HTMLElement>(".zai-metadata-popover");
+
+  control.classList.add("zai-metadata-control-open");
+  button?.setAttribute("aria-expanded", "true");
+  popover?.removeAttribute("hidden");
+}
+
+function closeMetadataPopover(control: HTMLElement) {
+  const button = control.querySelector<HTMLButtonElement>(
+    ".zai-metadata-button",
+  );
+  const popover = control.querySelector<HTMLElement>(".zai-metadata-popover");
+
+  control.classList.remove("zai-metadata-control-open");
+  button?.setAttribute("aria-expanded", "false");
+  popover?.setAttribute("hidden", "");
+}
+
+function closeOtherMetadataPopovers(control: HTMLElement) {
+  control.ownerDocument
+    .querySelectorAll<HTMLElement>(".zai-metadata-control-open")
+    .forEach((openControl) => {
+      if (openControl !== control) {
+        closeMetadataPopover(openControl);
+      }
+    });
+}
+
+function ensureMetadataPopoverOutsideHandler(doc: Document) {
+  if (metadataPopoverDocuments.has(doc)) return;
+
+  metadataPopoverDocuments.add(doc);
+  doc.addEventListener("click", (event) => {
+    const target = event.target as Node | null;
+    doc
+      .querySelectorAll<HTMLElement>(".zai-metadata-control-open")
+      .forEach((control) => {
+        if (!target || !control.contains(target)) {
+          closeMetadataPopover(control);
+        }
+      });
+  });
 }
 
 function syncModelPickerDisclosure(host: HTMLElement, provider: LLMProvider) {

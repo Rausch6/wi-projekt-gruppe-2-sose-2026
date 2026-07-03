@@ -32,6 +32,16 @@ body {
   color: var(--text-primary, #1f2933);
 }
 
+.zai-assistant-popout .zai-send-button {
+  background: #fff;
+  color: #1f2933;
+}
+
+.zai-assistant-popout .zai-send-button svg {
+  fill: none;
+  stroke: currentColor;
+}
+
 .zai-assistant-window-error {
   box-sizing: border-box;
   color: var(--text-primary);

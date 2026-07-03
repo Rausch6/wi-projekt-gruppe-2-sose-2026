@@ -11,7 +11,7 @@ pref("embeddingModel", "bge-m3:latest");
 pref("ollamaBaseUrl", "http://localhost:11434");
 pref("ollamaModel", "qwen2.5:3b");
 pref("maxItems", 200);
-pref("metadataFieldSelection", "title_author_date");
+pref("metadataFieldSelection", "title,creators,publicationDate");
 pref("autoDeleteOldChats", true);
 pref("chunkTargetTokens", 512);
 pref("chunkOverlapTokens", 100);

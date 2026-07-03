@@ -6,7 +6,8 @@ import { vectorStore, type ChunkDocument } from "./OramaService";
 import { embeddingProvider } from "../ai/EmbeddingProvider.js";
 import { config } from "../../package.json";
 import {
-  getMetadataFieldsForPreset,
+  DEFAULT_METADATA_FIELD_SELECTION,
+  getMetadataFieldsForSelection,
   type MetadataFieldSelection,
 } from "./MetadataFieldSelection";
 
@@ -512,7 +513,7 @@ function resolveVectorContextOptions(
 function resolveMetadataFields(options: VectorContextOptions = {}) {
   if (options.metadataFields?.length) return options.metadataFields;
 
-  let preset = "title_author_date";
+  let preset = DEFAULT_METADATA_FIELD_SELECTION;
   try {
     const storedPreset = Zotero.Prefs.get(
       `${config.prefsPrefix}.metadataFieldSelection`,
@@ -522,7 +523,7 @@ function resolveMetadataFields(options: VectorContextOptions = {}) {
     // Preference fallback below.
   }
 
-  return getMetadataFieldsForPreset(preset);
+  return getMetadataFieldsForSelection(preset);
 }
 
 function shouldUseAbstractFocus(query: string) {

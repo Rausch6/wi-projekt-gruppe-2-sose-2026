@@ -9,7 +9,10 @@ import {
   EMBEDDING_DEFAULT_BASE_URL,
   EMBEDDING_DEFAULT_MODEL,
 } from "./ai/EmbeddingProvider.js";
-import { normalizeMetadataFieldSelectionPreset } from "./core/MetadataFieldSelection";
+import {
+  DEFAULT_METADATA_FIELD_SELECTION,
+  normalizeMetadataFieldSelection,
+} from "./core/MetadataFieldSelection";
 import { getString, initLocale } from "./utils/locale";
 import { registerPreferencesPane } from "./modules/preferences";
 import { registerPrefsScripts } from "./modules/preferenceScript";
@@ -20,7 +23,11 @@ import {
   initializeChatDatabase,
 } from "./persistence/ChatDatabase";
 import { ChatRepository } from "./core/ChatRepository";
-import { initializeChatPersistence } from "./ui/assistantChatController";
+import {
+  initializeChatPersistence,
+  registerPaperContextSelectionWindow,
+  refreshPaperContextControls,
+} from "./ui/assistantChatController";
 import {
   handleAssistantPopoutWindowUnload,
   initializeAssistantPopoutWindow,
@@ -81,8 +88,11 @@ function loadSettings() {
     ),
     embeddingModel: getStringSetting("embeddingModel", EMBEDDING_DEFAULT_MODEL),
     maxItems: getNumberSetting("maxItems", 200),
-    metadataFieldSelection: normalizeMetadataFieldSelectionPreset(
-      getStringSetting("metadataFieldSelection", "title_author_date"),
+    metadataFieldSelection: normalizeMetadataFieldSelection(
+      getStringSetting(
+        "metadataFieldSelection",
+        DEFAULT_METADATA_FIELD_SELECTION,
+      ),
     ),
     ollamaBaseUrl: getStringSetting("ollamaBaseUrl", "http://localhost:11434"),
     ollamaModel: getStringSetting("ollamaModel", "qwen2.5:3b"),
@@ -130,7 +140,6 @@ async function onStartup() {
       `[ZAIA-Startup] CRITICAL ERROR IN ONSTARTUP: ${err}\n${err.stack}`,
     );
   }
-
 
   void checkEmbeddingConnectionOnStartup();
   void checkActiveProviderConnectionOnStartup();
@@ -238,6 +247,7 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   UIExampleFactory.registerStyleSheet(win);
 
   UIExampleFactory.registerAssistantToolbarButton(win);
+  registerPaperContextSelectionWindow(win);
 
   UIExampleFactory.registerRightClickMenuItem();
 
@@ -315,6 +325,10 @@ async function onNotify(
 ) {
   // You can add your code to the corresponding notify type
   ztoolkit.log("notify", event, type, ids, extraData);
+  if (event == "select") {
+    refreshPaperContextControls();
+  }
+
   if (
     event == "select" &&
     type == "tab" &&
