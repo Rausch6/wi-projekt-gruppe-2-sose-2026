@@ -23,7 +23,11 @@ import {
   initializeChatDatabase,
 } from "./persistence/ChatDatabase";
 import { ChatRepository } from "./core/ChatRepository";
-import { initializeChatPersistence } from "./ui/assistantChatController";
+import {
+  initializeChatPersistence,
+  registerPaperContextSelectionWindow,
+  refreshPaperContextControls,
+} from "./ui/assistantChatController";
 import {
   handleAssistantPopoutWindowUnload,
   initializeAssistantPopoutWindow,
@@ -127,7 +131,6 @@ async function onStartup() {
       `[ZAIA-Startup] CRITICAL ERROR IN ONSTARTUP: ${err}\n${err.stack}`,
     );
   }
-
 
   void checkEmbeddingConnectionOnStartup();
   void checkActiveProviderConnectionOnStartup();
@@ -235,6 +238,7 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   UIExampleFactory.registerStyleSheet(win);
 
   UIExampleFactory.registerAssistantToolbarButton(win);
+  registerPaperContextSelectionWindow(win);
 
   UIExampleFactory.registerRightClickMenuItem();
 
@@ -312,6 +316,10 @@ async function onNotify(
 ) {
   // You can add your code to the corresponding notify type
   ztoolkit.log("notify", event, type, ids, extraData);
+  if (event == "select") {
+    refreshPaperContextControls();
+  }
+
   if (
     event == "select" &&
     type == "tab" &&

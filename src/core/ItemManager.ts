@@ -26,6 +26,18 @@ export class ItemManager {
           `ZAIA: Zotero-Auswahl konnte nicht gelesen werden: ${error}`,
         );
       }
+
+      try {
+        const itemIDs = pane.getSelectedItems(true) as number[];
+        const items = itemIDs
+          .map((itemID) => Zotero.Items.get(itemID))
+          .filter((item): item is Zotero.Item => Boolean(item));
+        if (items.length) return items;
+      } catch (error) {
+        Zotero.debug(
+          `ZAIA: Zotero-Auswahl-IDs konnten nicht gelesen werden: ${error}`,
+        );
+      }
     }
 
     return [];
@@ -214,9 +226,11 @@ function getCandidateZoteroPanes() {
     const mainWindow = Zotero.getMainWindow() as
       | (_ZoteroTypes.MainWindow & {
           ZoteroPane?: _ZoteroTypes.ZoteroPane;
+          ZoteroPane_Local?: _ZoteroTypes.ZoteroPane;
         })
       | null;
     addPane(mainWindow?.ZoteroPane);
+    addPane(mainWindow?.ZoteroPane_Local);
   } catch {
     // Continue with the panes known to Zotero.
   }
