@@ -1,57 +1,102 @@
-export type MetadataFieldSelectionPreset =
-  | "title"
-  | "title_author"
-  | "title_date"
-  | "title_author_date"
-  | "title_tags";
-
 export type MetadataFieldSelection =
   | "title"
   | "creators"
   | "publicationDate"
   | "tags";
 
-export const DEFAULT_METADATA_FIELD_SELECTION: MetadataFieldSelectionPreset =
-  "title_author_date";
+export type MetadataFieldSelectionValue = string;
 
 export const METADATA_FIELD_SELECTION_OPTIONS: Array<{
-  value: MetadataFieldSelectionPreset;
+  value: MetadataFieldSelection;
   label: string;
 }> = [
-  { value: "title", label: "Nur Titel" },
-  { value: "title_author", label: "Titel + Autor" },
-  { value: "title_date", label: "Titel + Veröffentlichungsdatum" },
-  {
-    value: "title_author_date",
-    label: "Titel + Autor + Veröffentlichungsdatum",
-  },
-  { value: "title_tags", label: "Titel + Tags" },
+  { value: "title", label: "Titel" },
+  { value: "creators", label: "Autor" },
+  { value: "publicationDate", label: "Veröffentlichungsdatum" },
+  { value: "tags", label: "Tags" },
 ];
 
-export function normalizeMetadataFieldSelectionPreset(
+const DEFAULT_METADATA_FIELDS: MetadataFieldSelection[] = [
+  "title",
+  "creators",
+  "publicationDate",
+];
+
+export const DEFAULT_METADATA_FIELD_SELECTION = serializeMetadataFields(
+  DEFAULT_METADATA_FIELDS,
+);
+
+const LEGACY_METADATA_FIELD_SELECTION_PRESETS: Record<
+  string,
+  MetadataFieldSelection[]
+> = {
+  title: ["title"],
+  title_author: ["title", "creators"],
+  title_date: ["title", "publicationDate"],
+  title_author_date: ["title", "creators", "publicationDate"],
+  title_tags: ["title", "tags"],
+};
+
+export function normalizeMetadataFieldSelection(
   value: unknown,
-): MetadataFieldSelectionPreset {
-  return METADATA_FIELD_SELECTION_OPTIONS.some(
-    (option) => option.value === value,
-  )
-    ? (value as MetadataFieldSelectionPreset)
-    : DEFAULT_METADATA_FIELD_SELECTION;
+): MetadataFieldSelectionValue {
+  return serializeMetadataFields(getMetadataFieldsForSelection(value));
 }
 
-export function getMetadataFieldsForPreset(
-  preset: unknown,
+export function getMetadataFieldsForSelection(
+  value: unknown,
 ): MetadataFieldSelection[] {
-  switch (normalizeMetadataFieldSelectionPreset(preset)) {
-    case "title":
-      return ["title"];
-    case "title_author":
-      return ["title", "creators"];
-    case "title_date":
-      return ["title", "publicationDate"];
-    case "title_tags":
-      return ["title", "tags"];
-    case "title_author_date":
-    default:
-      return ["title", "creators", "publicationDate"];
+  if (typeof value !== "string") return [...DEFAULT_METADATA_FIELDS];
+
+  const trimmedValue = value.trim();
+  const legacyFields = LEGACY_METADATA_FIELD_SELECTION_PRESETS[trimmedValue];
+  if (legacyFields) return [...legacyFields];
+
+  const selectedFields = trimmedValue
+    .split(",")
+    .map((field) => field.trim())
+    .filter(isMetadataFieldSelection);
+
+  return selectedFields.length
+    ? dedupeMetadataFields(selectedFields)
+    : ["title"];
+}
+
+export function isMetadataFieldSelected(
+  selection: unknown,
+  field: MetadataFieldSelection,
+) {
+  return getMetadataFieldsForSelection(selection).includes(field);
+}
+
+export function getMetadataFieldSelectionLabel(selection: unknown) {
+  const fields = getMetadataFieldsForSelection(selection);
+  if (fields.length === METADATA_FIELD_SELECTION_OPTIONS.length) {
+    return "Alle Metadaten";
   }
+
+  return METADATA_FIELD_SELECTION_OPTIONS.filter((option) =>
+    fields.includes(option.value),
+  )
+    .map((option) => option.label)
+    .join(", ");
+}
+
+function serializeMetadataFields(fields: MetadataFieldSelection[]) {
+  return dedupeMetadataFields(fields).join(",");
+}
+
+function dedupeMetadataFields(fields: MetadataFieldSelection[]) {
+  const allowedFields = METADATA_FIELD_SELECTION_OPTIONS.map(
+    (option) => option.value,
+  );
+  return allowedFields.filter((field) => fields.includes(field));
+}
+
+function isMetadataFieldSelection(
+  value: string,
+): value is MetadataFieldSelection {
+  return METADATA_FIELD_SELECTION_OPTIONS.some(
+    (option) => option.value === value,
+  );
 }

@@ -1053,6 +1053,114 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   box-shadow: 0 0 0 2px color-mix(in srgb, #2563eb 20%, transparent);
 }
 
+.zai-metadata-control {
+  bottom: 8px;
+  left: 8px;
+  position: absolute;
+  z-index: 15;
+}
+
+.zai-metadata-button {
+  align-items: center;
+  -moz-appearance: none;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  box-sizing: border-box;
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 12px;
+  gap: 5px;
+  height: 30px;
+  justify-content: center;
+  line-height: 1;
+  max-width: 96px;
+  min-width: 0;
+  padding: 0 8px;
+}
+
+.zai-metadata-button svg {
+  flex: 0 0 auto;
+  height: 15px;
+  width: 15px;
+}
+
+.zai-metadata-button-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zai-metadata-button:hover,
+.zai-metadata-button:focus-visible,
+.zai-metadata-control-open .zai-metadata-button {
+  background: rgba(255, 255, 255, 0.12);
+  outline: none;
+}
+
+.zai-metadata-button:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, #2563eb 20%, transparent);
+}
+
+.zai-metadata-popover {
+  background: var(--material-background, #fff);
+  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.16));
+  border-radius: 8px;
+  bottom: 38px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18);
+  box-sizing: border-box;
+  color: inherit;
+  left: 0;
+  min-width: 224px;
+  padding: 10px;
+  position: absolute;
+  width: min(260px, calc(100vw - 32px));
+  z-index: 30;
+}
+
+.zai-metadata-popover[hidden] {
+  display: none !important;
+}
+
+.zai-metadata-popover-title {
+  color: var(--text-secondary, #5f6b7a);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.2;
+  margin-bottom: 8px;
+}
+
+.zai-metadata-options {
+  display: grid;
+  gap: 7px;
+}
+
+.zai-metadata-option {
+  align-items: center;
+  color: inherit;
+  display: grid;
+  font-size: 12px;
+  gap: 8px;
+  grid-template-columns: 16px minmax(0, 1fr);
+  line-height: 1.25;
+  min-width: 0;
+}
+
+.zai-metadata-checkbox {
+  height: 14px;
+  margin: 0;
+  width: 14px;
+}
+
+.zai-metadata-option-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .zai-model-select-wrap {
   align-items: center;
   background: var(--material-background, #fff);
@@ -1075,40 +1183,6 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   max-width: none;
   min-height: 32px;
   width: 100%;
-}
-
-.zai-metadata-select-wrap {
-  color: inherit;
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-  width: 100%;
-}
-
-.zai-metadata-select-label {
-  color: var(--text-secondary, rgba(0, 0, 0, 0.62));
-  font-size: 11px;
-  line-height: 1.2;
-}
-
-.zai-metadata-select {
-  appearance: auto;
-  background: var(--material-background, #fff);
-  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.14));
-  border-radius: 6px;
-  box-sizing: border-box;
-  color: inherit;
-  font: inherit;
-  min-height: 32px;
-  min-width: 0;
-  padding: 0 8px;
-  width: 100%;
-}
-
-.zai-metadata-select:focus-visible {
-  border-color: var(--accent-blue, #2563eb);
-  box-shadow: 0 0 0 2px color-mix(in srgb, #2563eb 20%, transparent);
-  outline: none;
 }
 
 .zai-model-select-wrap-open {
@@ -1274,8 +1348,8 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
 .zai-chat-status {
   color: var(--text-secondary, #5f6b7a);
   font-size: 11px;
-  left: 10px;
-  max-width: calc(100% - 72px);
+  left: 112px;
+  max-width: calc(100% - 182px);
   overflow: hidden;
   pointer-events: none;
   position: absolute;

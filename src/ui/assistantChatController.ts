@@ -14,8 +14,9 @@ import {
   type PromptContextRouterCandidate,
 } from "../core/PromptContextRouter";
 import {
-  getMetadataFieldsForPreset,
-  normalizeMetadataFieldSelectionPreset,
+  getMetadataFieldSelectionLabel,
+  getMetadataFieldsForSelection,
+  normalizeMetadataFieldSelection,
   type MetadataFieldSelection,
 } from "../core/MetadataFieldSelection";
 import { CreateChatInput, StoredChat } from "../core/chatTypes";
@@ -110,6 +111,7 @@ const chatSummaries: StoredChat[] = [];
 const pendingSimulationPrompts: PendingSimulationPrompt[] = [];
 const pendingGeneratedTitleChatIDs = new Set<string>();
 const modelDropdownDocuments = new WeakSet<Document>();
+const metadataPopoverDocuments = new WeakSet<Document>();
 const modelOptionsByProvider = new Map<LLMProvider, ModelOption[]>([
   ["kisski", normalizeModelOptions(KISSKI_MODEL_OPTIONS)],
 ]);
@@ -184,9 +186,18 @@ export function bindAssistantChat(host: HTMLElement) {
   const modelPickerToggle = host.querySelector<HTMLButtonElement>(
     ".zai-model-picker-toggle",
   );
-  const metadataSelect = host.querySelector<HTMLSelectElement>(
-    ".zai-metadata-select",
+  const metadataControl = host.querySelector<HTMLElement>(
+    ".zai-metadata-control",
   );
+  const metadataButton = host.querySelector<HTMLButtonElement>(
+    ".zai-metadata-button",
+  );
+  const metadataPopover = host.querySelector<HTMLElement>(
+    ".zai-metadata-popover",
+  );
+  const metadataCheckboxes = Array.from(
+    host.querySelectorAll<HTMLInputElement>(".zai-metadata-checkbox[value]"),
+  ) as HTMLInputElement[];
   const providerButtons = Array.from(
     host.querySelectorAll(".zai-provider-toggle-button[data-provider]"),
   ) as HTMLButtonElement[];
@@ -216,7 +227,7 @@ export function bindAssistantChat(host: HTMLElement) {
   const ownerWindow = host.ownerDocument?.defaultView ?? null;
 
   syncModelPicker(host);
-  syncMetadataFieldSelect(host);
+  syncMetadataFieldControls(host);
   ensureLocalModelInstallEventHandler(ownerWindow);
   ensureModelDropdownOutsideHandler(host.ownerDocument);
   void ensureModelOptionsLoaded(getActiveProvider());
@@ -388,12 +399,30 @@ export function bindAssistantChat(host: HTMLElement) {
   modelDropdown?.addEventListener("keydown", (event) => {
     handleModelDropdownKeydown(event as KeyboardEvent, modelDropdown);
   });
-  metadataSelect?.addEventListener("change", () => {
-    const preset = normalizeMetadataFieldSelectionPreset(metadataSelect.value);
-    addon.data.settings.metadataFieldSelection = preset;
-    savePluginPreference("metadataFieldSelection", preset);
-    syncAllMetadataFieldSelects();
+  metadataButton?.addEventListener("click", () => {
+    if (!metadataControl) return;
+
+    hosts.add(host);
+    toggleMetadataPopover(metadataControl);
   });
+  metadataPopover?.addEventListener("keydown", (event) => {
+    if ((event as KeyboardEvent).key === "Escape" && metadataControl) {
+      closeMetadataPopover(metadataControl);
+      metadataButton?.focus();
+    }
+  });
+  metadataPopover?.addEventListener("click", (event) => {
+    event.stopPropagation();
+  });
+  for (const checkbox of metadataCheckboxes) {
+    checkbox.addEventListener("change", () => {
+      hosts.add(host);
+      saveMetadataFieldSelection(metadataCheckboxes, checkbox);
+    });
+  }
+  if (metadataControl?.ownerDocument) {
+    ensureMetadataPopoverOutsideHandler(metadataControl.ownerDocument);
+  }
 }
 
 function ensureLocalModelInstallEventHandler(win: Window | null) {
@@ -787,7 +816,9 @@ function getActiveModel(provider: LLMProvider = getActiveProvider()) {
 }
 
 function getSelectedMetadataFields() {
-  return getMetadataFieldsForPreset(addon.data.settings.metadataFieldSelection);
+  return getMetadataFieldsForSelection(
+    addon.data.settings.metadataFieldSelection,
+  );
 }
 
 async function createRequestMessages(prompt: string) {
@@ -2523,9 +2554,9 @@ function syncAllModelPickers() {
   }
 }
 
-function syncAllMetadataFieldSelects() {
+function syncAllMetadataFieldControls() {
   for (const host of [...hosts]) {
-    syncMetadataFieldSelect(host);
+    syncMetadataFieldControls(host);
   }
 }
 
@@ -2541,13 +2572,103 @@ function syncModelPicker(host: HTMLElement) {
   );
 }
 
-function syncMetadataFieldSelect(host: HTMLElement) {
-  const select = host.querySelector<HTMLSelectElement>(".zai-metadata-select");
-  if (!select) return;
-
-  select.value = normalizeMetadataFieldSelectionPreset(
+function syncMetadataFieldControls(host: HTMLElement) {
+  const selection = normalizeMetadataFieldSelection(
     addon.data.settings.metadataFieldSelection,
   );
+  const selectedFields = getMetadataFieldsForSelection(selection);
+
+  host
+    .querySelectorAll<HTMLInputElement>(".zai-metadata-checkbox[value]")
+    .forEach((checkbox) => {
+      checkbox.checked = selectedFields.includes(
+        checkbox.value as MetadataFieldSelection,
+      );
+    });
+
+  const label = getMetadataFieldSelectionLabel(selection);
+  const button = host.querySelector<HTMLButtonElement>(".zai-metadata-button");
+  const title = `Metadaten-Kontext: ${label}`;
+  button?.setAttribute("aria-label", title);
+  button?.setAttribute("title", title);
+}
+
+function saveMetadataFieldSelection(
+  checkboxes: HTMLInputElement[],
+  changedCheckbox: HTMLInputElement,
+) {
+  let selectedValue = checkboxes
+    .filter((checkbox) => checkbox.checked)
+    .map((checkbox) => checkbox.value)
+    .join(",");
+
+  if (!selectedValue) {
+    changedCheckbox.checked = true;
+    selectedValue = changedCheckbox.value || "title";
+  }
+
+  const selection = normalizeMetadataFieldSelection(selectedValue);
+  addon.data.settings.metadataFieldSelection = selection;
+  savePluginPreference("metadataFieldSelection", selection);
+  syncAllMetadataFieldControls();
+}
+
+function toggleMetadataPopover(control: HTMLElement) {
+  const open = !control.classList.contains("zai-metadata-control-open");
+  if (open) {
+    openMetadataPopover(control);
+  } else {
+    closeMetadataPopover(control);
+  }
+}
+
+function openMetadataPopover(control: HTMLElement) {
+  closeOtherMetadataPopovers(control);
+  const button = control.querySelector<HTMLButtonElement>(
+    ".zai-metadata-button",
+  );
+  const popover = control.querySelector<HTMLElement>(".zai-metadata-popover");
+
+  control.classList.add("zai-metadata-control-open");
+  button?.setAttribute("aria-expanded", "true");
+  popover?.removeAttribute("hidden");
+}
+
+function closeMetadataPopover(control: HTMLElement) {
+  const button = control.querySelector<HTMLButtonElement>(
+    ".zai-metadata-button",
+  );
+  const popover = control.querySelector<HTMLElement>(".zai-metadata-popover");
+
+  control.classList.remove("zai-metadata-control-open");
+  button?.setAttribute("aria-expanded", "false");
+  popover?.setAttribute("hidden", "");
+}
+
+function closeOtherMetadataPopovers(control: HTMLElement) {
+  control.ownerDocument
+    .querySelectorAll<HTMLElement>(".zai-metadata-control-open")
+    .forEach((openControl) => {
+      if (openControl !== control) {
+        closeMetadataPopover(openControl);
+      }
+    });
+}
+
+function ensureMetadataPopoverOutsideHandler(doc: Document) {
+  if (metadataPopoverDocuments.has(doc)) return;
+
+  metadataPopoverDocuments.add(doc);
+  doc.addEventListener("click", (event) => {
+    const target = event.target as Node | null;
+    doc
+      .querySelectorAll<HTMLElement>(".zai-metadata-control-open")
+      .forEach((control) => {
+        if (!target || !control.contains(target)) {
+          closeMetadataPopover(control);
+        }
+      });
+  });
 }
 
 function syncModelPickerDisclosure(host: HTMLElement, provider: LLMProvider) {
