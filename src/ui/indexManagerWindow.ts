@@ -82,11 +82,19 @@ async function loadPapers(
       target.disabled = true; // prevent double clicks
       try {
         if (target.checked) {
-
-          backgroundIndexer.enqueue([item.id]);
+          const confirmed = window.confirm("Möchten Sie dieses Element wirklich zum Index hinzufügen?");
+          if (confirmed) {
+            backgroundIndexer.enqueue([item.id]);
+          } else {
+            target.checked = false; // revert checkbox
+          }
         } else {
-
-          await vectorStore.deleteByZoteroItemId(item.id.toString());
+          const confirmed = window.confirm("Möchten Sie dieses Element wirklich aus dem Index entfernen?");
+          if (confirmed) {
+            await vectorStore.deleteByZoteroItemId(item.id.toString());
+          } else {
+            target.checked = true; // revert checkbox
+          }
         }
       } catch (err) {
         Zotero.debug(`[IndexManager] Error toggling item ${item.id}: ${err}`);
