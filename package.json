@@ -26,7 +26,7 @@
     "lint:check": "prettier --check . && eslint .",
     "lint:fix": "prettier --write . && eslint . --fix",
     "release": "zotero-plugin release",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest run",
     "update-deps": "npm update --save"
   },
   "dependencies": {
@@ -41,6 +41,7 @@
     "eslint": "^9.23.0",
     "prettier": "^3.5.3",
     "typescript": "^5.8.2",
+    "vitest": "^2.1.9",
     "typescript-eslint": "^8.28.0",
     "zotero-plugin-scaffold": "^0.4.1",
     "zotero-types": "^4.0.0-beta.3"

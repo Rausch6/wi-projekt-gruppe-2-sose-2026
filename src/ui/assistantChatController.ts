@@ -69,15 +69,28 @@ type RequestMessage = {
   content: string;
 };
 
+type AIUsage = {
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
+};
+
+type AIStreamEvent = {
+  type?: unknown;
+  content?: unknown;
+  usage?: AIUsage | null;
+};
+
+type AIChatResult = {
+  content?: unknown;
+  usage?: AIUsage | null;
+};
+
 export type AssistantChatMessage = {
   id: number;
   role: ChatRole;
   content: string;
-  tokenUsage?: {
-    promptTokens: number | null;
-    completionTokens: number | null;
-    totalTokens: number | null;
-  };
+  tokenUsage?: AIUsage;
 };
 
 type PendingSimulationPrompt = {
@@ -836,7 +849,7 @@ async function requestStreamingAssistantResponse(
   for await (const event of addon.api.ai.chatStream(requestMessages, {
     providerId: getActiveProvider(),
     model: getActiveModel(),
-  }) as AsyncIterable<{ type?: unknown; content?: unknown }>) {
+  }) as AsyncIterable<AIStreamEvent>) {
     if (isActiveChatRequestCancelled(requestID)) break;
     if (!event || typeof event !== "object") continue;
 
@@ -857,7 +870,8 @@ async function requestStreamingAssistantResponse(
 
     if (event.type === "done") {
       if (event.usage && assistantMessage) {
-        assistantMessage.tokenUsage = event.usage as AssistantChatMessage["tokenUsage"];
+        assistantMessage.tokenUsage =
+          event.usage as AssistantChatMessage["tokenUsage"];
       }
       break;
     }
@@ -877,7 +891,7 @@ async function requestBufferedAssistantResponse(
   const result = (await addon.api.ai.chat(requestMessages, {
     providerId: getActiveProvider(),
     model: getActiveModel(),
-  })) as { content?: unknown };
+  })) as AIChatResult;
 
   if (isActiveChatRequestCancelled(requestID)) return null;
 
@@ -887,7 +901,8 @@ async function requestBufferedAssistantResponse(
 
   const assistantMessage = appendAssistantDelta(result.content.trim());
   if (assistantMessage && "usage" in result && result.usage) {
-    assistantMessage.tokenUsage = result.usage as AssistantChatMessage["tokenUsage"];
+    assistantMessage.tokenUsage =
+      result.usage as AssistantChatMessage["tokenUsage"];
   }
   return finalizeActiveAssistantMessage() ?? assistantMessage ?? failNoAnswer();
 }
@@ -1586,7 +1601,7 @@ async function getActivePaperReference(): Promise<PaperReference | null> {
   return null;
 }
 
-function appendAssistantDelta(delta: string) {
+function appendAssistantDelta(delta: string): AssistantChatMessage | null {
   const activeResponse = activeAssistantResponse;
   if (!activeResponse) {
     return appendMessage("assistant", delta);
@@ -2422,7 +2437,7 @@ function createMessageElement(
       tokenInfo.style.color = "var(--fill-quaternary)";
       tokenInfo.style.marginTop = "4px";
       tokenInfo.style.textAlign = "right";
-      
+
       let text = `Tokens: ${totalTokens} Total`;
       if (promptTokens != null && completionTokens != null) {
         text = `Tokens: ${promptTokens} Prompt / ${completionTokens} Antwort (${totalTokens} Total)`;
