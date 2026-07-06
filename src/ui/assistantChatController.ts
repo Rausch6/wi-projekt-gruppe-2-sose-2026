@@ -509,6 +509,23 @@ export function bindAssistantChat(host: HTMLElement) {
     hosts.add(host);
     addPaperLibraryOptionToManualContext(option);
   });
+  paperContextList?.addEventListener("click", (event) => {
+    const removeButton = (
+      event.target as Element | null
+    )?.closest<HTMLButtonElement>(
+      ".zai-paper-context-remove-button[data-context-key]",
+    );
+    const key = removeButton?.dataset.contextKey;
+    if (!key) return;
+
+    const entry = getAutomaticPaperContextEntries().find(
+      (entry) => getPaperContextKey(entry) === key,
+    );
+    if (!entry) return;
+
+    hosts.add(host);
+    void removeAutomaticPaperContextEntry(entry);
+  });
   manualPaperContextList?.addEventListener("click", (event) => {
     const removeButton = (
       event.target as Element | null
@@ -3009,26 +3026,20 @@ function createPaperContextRow(doc: Document, entry: PaperContextEntry) {
   text.append(title, meta);
   row.append(text);
 
-  if (entry.source === "manual") {
-    const removeButton = createControllerHtmlElement(
-      doc,
-      "button",
-      "zai-paper-context-remove-button",
-      "-",
-    ) as HTMLButtonElement;
-    removeButton.type = "button";
-    removeButton.dataset.contextKey = getPaperContextKey(entry);
-    removeButton.setAttribute("aria-label", `${entry.title} entfernen`);
-    row.append(removeButton);
-  } else {
-    row.append(
-      createControllerHtmlElement(
-        doc,
-        "span",
-        "zai-paper-context-source zai-paper-context-source-automatic",
-      ),
-    );
-  }
+  const removeButton = createControllerHtmlElement(
+    doc,
+    "button",
+    "zai-paper-context-remove-button",
+    "-",
+  ) as HTMLButtonElement;
+  removeButton.type = "button";
+  removeButton.dataset.contextKey = getPaperContextKey(entry);
+  removeButton.setAttribute("aria-label", `${entry.title} entfernen`);
+  removeButton.title =
+    entry.source === "automatic"
+      ? "Paper aus Zotero-Auswahl entfernen"
+      : "Paper entfernen";
+  row.append(removeButton);
 
   return row;
 }
@@ -3133,6 +3144,20 @@ function addPaperLibraryOptionToManualContext(option: PaperLibraryOption) {
     source: "manual",
   });
   paperLibrarySearchValue = "";
+  syncAllPaperContextControls();
+}
+
+async function removeAutomaticPaperContextEntry(entry: PaperContextEntry) {
+  const key = getPaperContextKey(entry);
+  manualPaperContextEntries.delete(key);
+
+  const removed = await ItemManager.removeItemFromSelection(entry);
+  if (!removed) {
+    Zotero.debug(
+      `ZAIA: Automatischer Paper-Kontext konnte nicht entfernt werden: ${key}`,
+    );
+  }
+
   syncAllPaperContextControls();
 }
 
