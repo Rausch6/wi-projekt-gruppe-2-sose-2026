@@ -9,6 +9,12 @@ export interface ItemData {
   itemType: string;
 }
 
+export interface ItemReference {
+  libraryID: number;
+  itemKey: string;
+  itemID?: number;
+}
+
 export class ItemManager {
   /**
    * Holt alle aktuell ausgewählten Items im Zotero-Hauptfenster.
@@ -18,26 +24,8 @@ export class ItemManager {
   static getSelectedItems(): Zotero.Item[] {
     const panes = getCandidateZoteroPanes();
     for (const pane of panes) {
-      try {
-        const items = pane.getSelectedItems() as Zotero.Item[];
-        if (items.length) return items;
-      } catch (error) {
-        Zotero.debug(
-          `ZAIA: Zotero-Auswahl konnte nicht gelesen werden: ${error}`,
-        );
-      }
-
-      try {
-        const itemIDs = pane.getSelectedItems(true) as number[];
-        const items = itemIDs
-          .map((itemID) => Zotero.Items.get(itemID))
-          .filter((item): item is Zotero.Item => Boolean(item));
-        if (items.length) return items;
-      } catch (error) {
-        Zotero.debug(
-          `ZAIA: Zotero-Auswahl-IDs konnten nicht gelesen werden: ${error}`,
-        );
-      }
+      const items = getSelectedItemsForPane(pane);
+      if (items.length) return items;
     }
 
     return [];
@@ -53,6 +41,32 @@ export class ItemManager {
     return items
       .map((item) => this.resolveRegularItem(item))
       .filter((item): item is Zotero.Item => Boolean(item));
+  }
+
+  static async removeItemFromSelection(reference: ItemReference) {
+    for (const pane of getCandidateZoteroPanes()) {
+      const selectedItems = getSelectedItemsForPane(pane);
+      if (!selectedItems.length) continue;
+
+      const remainingItemIDs: number[] = [];
+      let removed = false;
+
+      for (const item of selectedItems) {
+        const resolvedItem = this.resolveRegularItem(item);
+        if (resolvedItem && matchesItemReference(resolvedItem, reference)) {
+          removed = true;
+          continue;
+        }
+
+        remainingItemIDs.push(item.id);
+      }
+
+      if (!removed) continue;
+
+      return setPaneSelection(pane, remainingItemIDs);
+    }
+
+    return false;
   }
 
   /**
@@ -174,6 +188,68 @@ export class ItemManager {
     const parent = await Zotero.Items.getAsync(item.parentID);
     return parent?.isRegularItem() ? parent : null;
   }
+}
+
+function getSelectedItemsForPane(pane: _ZoteroTypes.ZoteroPane) {
+  try {
+    const items = pane.getSelectedItems() as Zotero.Item[];
+    if (items.length) return items;
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Zotero-Auswahl konnte nicht gelesen werden: ${error}`,
+    );
+  }
+
+  try {
+    const itemIDs = pane.getSelectedItems(true) as number[];
+    return itemIDs
+      .map((itemID) => Zotero.Items.get(itemID))
+      .filter((item): item is Zotero.Item => Boolean(item));
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Zotero-Auswahl-IDs konnten nicht gelesen werden: ${error}`,
+    );
+    return [];
+  }
+}
+
+async function setPaneSelection(
+  pane: _ZoteroTypes.ZoteroPane,
+  itemIDs: number[],
+) {
+  try {
+    await pane.selectItems(itemIDs);
+    if (!itemIDs.length) clearPaneItemSelection(pane);
+    return true;
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Zotero-Auswahl konnte nicht aktualisiert werden: ${error}`,
+    );
+    if (!itemIDs.length) return clearPaneItemSelection(pane);
+    return false;
+  }
+}
+
+function clearPaneItemSelection(pane: _ZoteroTypes.ZoteroPane) {
+  try {
+    const selection = pane.itemsView && pane.itemsView.selection;
+    if (selection?.clearSelection) {
+      selection.clearSelection();
+      return true;
+    }
+  } catch (error) {
+    Zotero.debug(
+      `ZAIA: Zotero-Auswahl konnte nicht geleert werden: ${error}`,
+    );
+  }
+
+  return false;
+}
+
+function matchesItemReference(item: Zotero.Item, reference: ItemReference) {
+  if (item.libraryID !== reference.libraryID) return false;
+  if (item.key === reference.itemKey) return true;
+  return typeof reference.itemID === "number" && item.id === reference.itemID;
 }
 
 async function loadItemData(item: Zotero.Item) {
