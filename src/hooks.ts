@@ -1,10 +1,4 @@
-import {
-  BasicExampleFactory,
-  HelperExampleFactory,
-  KeyExampleFactory,
-  PromptExampleFactory,
-  UIExampleFactory,
-} from "./modules/examples";
+import { UIExampleFactory } from "./modules/examples";
 import {
   EMBEDDING_DEFAULT_BASE_URL,
   EMBEDDING_DEFAULT_MODEL,
@@ -46,6 +40,11 @@ import {
   initializeIndexManagerWindow,
   handleIndexManagerWindowUnload,
 } from "./ui/indexManagerWindow";
+import {
+  registerZAIAShortcuts,
+  unregisterAllZAIAShortcuts,
+  unregisterZAIAShortcuts,
+} from "./modules/shortcutManager";
 
 const OLD_CHAT_RETENTION_DAYS = 14;
 
@@ -149,10 +148,6 @@ async function onStartup() {
 
   await registerPreferencesPane();
 
-  BasicExampleFactory.registerNotifier();
-
-  KeyExampleFactory.registerShortcuts();
-
   await UIExampleFactory.registerExtraColumn();
 
   await UIExampleFactory.registerExtraColumnWithCustomCell();
@@ -248,18 +243,7 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
 
   UIExampleFactory.registerAssistantToolbarButton(win);
   registerPaperContextSelectionWindow(win);
-
-  UIExampleFactory.registerRightClickMenuItem();
-
-  UIExampleFactory.registerRightClickMenuPopup(win);
-
-  UIExampleFactory.registerWindowMenuWithSeparator();
-
-  PromptExampleFactory.registerNormalCommandExample();
-
-  PromptExampleFactory.registerAnonymousCommandExample(win);
-
-  PromptExampleFactory.registerConditionalCommandExample();
+  registerZAIAShortcuts(win);
 
   await Zotero.Promise.delay(1000);
 
@@ -268,11 +252,10 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
     text: `[100%] ${getString("startup-finish")}`,
   });
   popupWin.startCloseTimer(5000);
-
-  // addon.hooks.onDialogEvents("dialogExample");
 }
 
 async function onMainWindowUnload(win: Window): Promise<void> {
+  unregisterZAIAShortcuts(win);
   UIExampleFactory.unregisterAssistantToolbarButton(
     win as _ZoteroTypes.MainWindow,
   );
@@ -291,6 +274,7 @@ async function onShutdown(): Promise<void> {
   }
 
   try {
+    unregisterAllZAIAShortcuts();
     Zotero.getMainWindows().forEach((win) => {
       UIExampleFactory.unregisterAssistantToolbarButton(win);
       unregisterAssistantSidebarController(win);
@@ -329,15 +313,7 @@ async function onNotify(
     refreshPaperContextControls();
   }
 
-  if (
-    event == "select" &&
-    type == "tab" &&
-    extraData[ids[0]].type == "reader"
-  ) {
-    BasicExampleFactory.exampleNotifierCallback();
-  } else {
-    return;
-  }
+  return;
 }
 
 /**
@@ -357,56 +333,6 @@ async function onPrefsEvent(type: string, data: { [key: string]: any }) {
       break;
     default:
       return;
-  }
-}
-
-function onShortcuts(type: string) {
-  switch (type) {
-    case "larger":
-      KeyExampleFactory.exampleShortcutLargerCallback();
-      break;
-    case "smaller":
-      KeyExampleFactory.exampleShortcutSmallerCallback();
-      break;
-    default:
-      break;
-  }
-}
-
-function onDialogEvents(type: string) {
-  switch (type) {
-    case "manualTrigger":
-      Zotero.debug(
-        "[ZAIA-ManualTrigger] User requested manual background indexer start.",
-      );
-      Zotero.getMainWindow()?.alert("Starte BackgroundIndexer manuell...");
-      backgroundIndexer
-        .indexAllLibraryItems()
-        .then(() =>
-          Zotero.getMainWindow()?.alert("Indexer-Startbefehl gesendet!"),
-        )
-        .catch((err) => {
-          Zotero.debug("[ZAIA-ManualTrigger] Error: " + err);
-          Zotero.getMainWindow()?.alert("Fehler beim Indexer: " + err);
-        });
-      break;
-    case "dialogExample":
-      HelperExampleFactory.dialogExample();
-      break;
-    case "clipboardExample":
-      HelperExampleFactory.clipboardExample();
-      break;
-    case "filePickerExample":
-      HelperExampleFactory.filePickerExample();
-      break;
-    case "progressWindowExample":
-      HelperExampleFactory.progressWindowExample();
-      break;
-    case "vtableExample":
-      HelperExampleFactory.vtableExample();
-      break;
-    default:
-      break;
   }
 }
 
@@ -453,10 +379,7 @@ function onLocalOllamaModelWindowUnload(data: {
 // Keep in mind hooks only do dispatch. Don't add code that does real jobs in hooks.
 // Otherwise the code would be hard to read and maintain.
 
-function onIndexManagerWindowLoad(data: {
-  owner?: Window;
-  window: Window;
-}) {
+function onIndexManagerWindowLoad(data: { owner?: Window; window: Window }) {
   if (!data.owner) return;
   void initializeIndexManagerWindow(
     data.window,
@@ -464,10 +387,7 @@ function onIndexManagerWindowLoad(data: {
   );
 }
 
-function onIndexManagerWindowUnload(data: {
-  owner?: Window;
-  window: Window;
-}) {
+function onIndexManagerWindowUnload(data: { owner?: Window; window: Window }) {
   handleIndexManagerWindowUnload(data.window, data.owner as Window);
 }
 
@@ -478,8 +398,6 @@ export default {
   onMainWindowUnload,
   onNotify,
   onPrefsEvent,
-  onShortcuts,
-  onDialogEvents,
   onAssistantWindowLoad,
   onAssistantWindowUnload,
   onLocalOllamaModelWindowLoad,

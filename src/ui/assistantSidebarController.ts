@@ -253,6 +253,27 @@ export function openAssistantSidebar(win: _ZoteroTypes.MainWindow) {
   state?.setOpen(true);
 }
 
+export function closeAssistantSidebar(win: _ZoteroTypes.MainWindow) {
+  states.get(win)?.setOpen(false);
+}
+
+export function focusAssistantSidebar(win: _ZoteroTypes.MainWindow) {
+  const state = ensureAssistantSidebarController(win);
+  state?.setOpen(true);
+
+  win.setTimeout(() => {
+    const panel = getAssistantSidebarElement(win);
+    const focusTarget =
+      panel?.querySelector<HTMLTextAreaElement>(".zai-input") ??
+      panel?.querySelector<HTMLElement>(
+        "button, input, textarea, select, [tabindex]:not([tabindex='-1'])",
+      );
+    focusTarget?.focus();
+  }, 0);
+
+  return Boolean(state);
+}
+
 export function toggleAssistantSidebar(win: _ZoteroTypes.MainWindow) {
   const state = ensureAssistantSidebarController(win);
   return state?.toggle() ?? false;
@@ -262,9 +283,19 @@ export function isAssistantSidebarOpen(win: _ZoteroTypes.MainWindow) {
   return states.get(win)?.isOpen() ?? false;
 }
 
+export function isAssistantSidebarFocused(win: _ZoteroTypes.MainWindow) {
+  const panel = getAssistantSidebarElement(win);
+  const activeElement = win.document.activeElement;
+  return Boolean(panel && activeElement && panel.contains(activeElement));
+}
+
 export function markAssistantSidenavBody(body: HTMLElement) {
   body.classList.add("zai-assistant-sidenav-body");
   body.replaceChildren();
+}
+
+function getAssistantSidebarElement(win: Window) {
+  return win.document.getElementById(SIDEBAR_ID) as HTMLElement | null;
 }
 
 function addSidenavCloseListeners(
