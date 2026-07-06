@@ -788,6 +788,64 @@ export function clearChat() {
   returnToWelcome();
 }
 
+export async function createChatAndFocusComposer() {
+  const chat = await createChat();
+  focusAssistantComposer();
+  return chat;
+}
+
+export async function toggleActiveChatFavorite() {
+  const chatID = activeChatID;
+  if (!chatID) {
+    throw new Error("Es ist kein ZAIA-Chat aktiv.");
+  }
+
+  const nextFavorite = !getActiveChatSummary()?.isFavorite;
+  await setChatFavorite(chatID, nextFavorite);
+  return nextFavorite;
+}
+
+export function focusAssistantComposer(owner?: Window | null) {
+  const host = getPreferredAssistantHost(owner);
+  const textarea = host?.querySelector<HTMLTextAreaElement>(".zai-input");
+  textarea?.focus();
+  return Boolean(textarea);
+}
+
+export function focusModelSelection(owner?: Window | null) {
+  const host = getPreferredAssistantHost(owner);
+  if (!host) return false;
+
+  setModelPickerExpanded(true);
+  void ensureModelOptionsLoaded(getActiveProvider());
+
+  const dropdown = host.querySelector<HTMLElement>(".zai-model-select-wrap");
+  if (dropdown) {
+    openModelDropdown(dropdown);
+    dropdown.querySelector<HTMLButtonElement>(".zai-model-select")?.focus();
+    return true;
+  }
+
+  return false;
+}
+
+export function openContextWindow(owner?: Window | null) {
+  const host = getPreferredAssistantHost(owner);
+  if (!host || !isAssistantHostReadyForPopover(host)) return false;
+
+  const metadataControl = host.querySelector<HTMLElement>(
+    ".zai-metadata-control",
+  );
+  if (!metadataControl || !isElementReadyForPopover(metadataControl)) {
+    return false;
+  }
+
+  syncPaperContextControls(host);
+  void ensurePaperLibraryOptionsLoaded();
+  openMetadataPopover(metadataControl);
+  return true;
+}
+
 function returnToWelcome() {
   activeChatID = null;
   showAllChats = false;
@@ -1944,6 +2002,58 @@ async function persistChatMessage(
 function resetMessages() {
   messages.length = 0;
   nextMessageID = 1;
+}
+
+function getPreferredAssistantHost(owner?: Window | null) {
+  const connectedHosts = [...hosts].filter((host) => {
+    if (!host.isConnected) {
+      hosts.delete(host);
+      return false;
+    }
+
+    return true;
+  });
+
+  if (owner) {
+    const ownedHost = connectedHosts.find(
+      (host) => host.ownerDocument.defaultView === owner,
+    );
+    if (ownedHost) return ownedHost;
+
+    const containedHost = connectedHosts.find((host) =>
+      owner.document.contains(host),
+    );
+    if (containedHost) return containedHost;
+
+    const documentHost = owner.document.querySelector<HTMLElement>(
+      ".zotero-ai-assistant-host",
+    );
+    if (documentHost) {
+      hosts.add(documentHost);
+      return documentHost;
+    }
+  }
+
+  return connectedHosts[0] ?? null;
+}
+
+function isAssistantHostReadyForPopover(host: HTMLElement) {
+  if (host.hidden || host.getAttribute("aria-hidden") === "true") {
+    return false;
+  }
+
+  return isElementReadyForPopover(host);
+}
+
+function isElementReadyForPopover(element: HTMLElement) {
+  const win = element.ownerDocument.defaultView;
+  const style = win?.getComputedStyle(element);
+  if (!style || style.display === "none" || style.visibility === "hidden") {
+    return false;
+  }
+
+  const rect = element.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
 }
 
 function getSelectedItemChatInput(): CreateChatInput {
