@@ -1,281 +1,288 @@
 <linkset>
   <html:link rel="localization" href="__addonRef__-preferences.ftl" />
 </linkset>
+
 <groupbox
+  class="zaia-pref-root"
   onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window })"
 >
   <html:section class="zaia-pref-section">
-    <html:h3 data-l10n-id="pref-kisski-section-title"></html:h3>
-  </html:section>
+    <html:header class="zaia-pref-section-header">
+      <html:h3 data-l10n-id="pref-cloud-section-title"></html:h3>
+      <html:p data-l10n-id="pref-cloud-section-description"></html:p>
+    </html:header>
 
-  <vbox>
-    <html:label
-      for="zotero-prefpane-__addonRef__-api-key"
-      data-l10n-id="pref-kisski-api-key"
-    ></html:label>
-    <html:input
-      type="password"
-      id="zotero-prefpane-__addonRef__-api-key"
-      preference="apiKey"
-      autocomplete="off"
-    ></html:input>
-  </vbox>
-
-  <vbox>
-    <html:label
-      for="zotero-prefpane-__addonRef__-base-url"
-      data-l10n-id="pref-kisski-base-url"
-    ></html:label>
-    <html:input
-      type="url"
-      id="zotero-prefpane-__addonRef__-base-url"
-      preference="baseUrl"
-    ></html:input>
-  </vbox>
-
-  <vbox>
-    <html:label
-      for="zotero-prefpane-__addonRef__-model"
-      data-l10n-id="pref-kisski-model"
-    ></html:label>
-    <html:input
-      type="text"
-      id="zotero-prefpane-__addonRef__-model"
-      preference="model"
-      list="__addonRef__-model-options"
-    ></html:input>
-    <html:datalist id="__addonRef__-model-options"></html:datalist>
-  </vbox>
-
-  <vbox>
-    <html:label class="zaia-pref-checkbox">
+    <html:div class="zaia-pref-field">
+      <html:label
+        for="zotero-prefpane-__addonRef__-api-key"
+        data-l10n-id="pref-kisski-api-key"
+      ></html:label>
       <html:input
-        type="checkbox"
-        id="zotero-prefpane-__addonRef__-send-paper-context-to-kisski"
-        preference="sendPaperContextToKisski"
+        type="password"
+        id="zotero-prefpane-__addonRef__-api-key"
+        preference="apiKey"
+        autocomplete="off"
       ></html:input>
-      <html:span data-l10n-id="pref-send-paper-context-to-kisski"></html:span>
-    </html:label>
-    <html:p data-l10n-id="pref-paper-context-cloud-notice"></html:p>
-  </vbox>
-
-  <vbox>
-    <html:label
-      for="zotero-prefpane-__addonRef__-context-router-provider"
-      data-l10n-id="pref-context-router-provider"
-    ></html:label>
-    <html:select
-      id="zotero-prefpane-__addonRef__-context-router-provider"
-      preference="contextRouterProvider"
-    >
-      <html:option
-        value="ollama"
-        data-l10n-id="pref-context-router-provider-local"
-      ></html:option>
-      <html:option
-        value="kisski"
-        data-l10n-id="pref-context-router-provider-cloud"
-      ></html:option>
-    </html:select>
-    <html:p data-l10n-id="pref-context-router-provider-notice"></html:p>
-  </vbox>
-
-  <html:section class="zaia-pref-section">
-    <html:h3 data-l10n-id="pref-embedding-section-title"></html:h3>
-  </html:section>
-
-  <vbox>
-    <html:label class="zaia-pref-checkbox">
-      <html:input
-        type="checkbox"
-        id="zotero-prefpane-__addonRef__-embedding-search-enabled"
-        preference="embeddingSearchEnabled"
-      ></html:input>
-      <html:span data-l10n-id="pref-embedding-search-enabled"></html:span>
-    </html:label>
-    <html:p data-l10n-id="pref-embedding-search-notice"></html:p>
-  </vbox>
-
-  <vbox>
-    <html:label
-      for="zotero-prefpane-__addonRef__-embedding-base-url"
-      data-l10n-id="pref-embedding-base-url"
-    ></html:label>
-    <html:input
-      type="url"
-      id="zotero-prefpane-__addonRef__-embedding-base-url"
-      preference="embeddingBaseUrl"
-    ></html:input>
-  </vbox>
-
-  <vbox>
-    <html:label
-      for="zotero-prefpane-__addonRef__-embedding-model"
-      data-l10n-id="pref-embedding-model"
-    ></html:label>
-    <html:input
-      type="text"
-      id="zotero-prefpane-__addonRef__-embedding-model"
-      preference="embeddingModel"
-    ></html:input>
-  </vbox>
-
-  <hbox align="center">
-    <button
-      id="zotero-prefpane-__addonRef__-test-embedding-service"
-      data-l10n-id="pref-test-embedding-service"
-    />
-    <html:span
-      id="zotero-prefpane-__addonRef__-embedding-service-status"
-      class="zaia-pref-status"
-    ></html:span>
-  </hbox>
-
-  <vbox>
-    <html:label
-      for="zotero-prefpane-__addonRef__-max-items"
-      data-l10n-id="pref-max-items"
-    ></html:label>
-    <html:input
-      type="number"
-      min="1"
-      max="1000"
-      id="zotero-prefpane-__addonRef__-max-items"
-      preference="maxItems"
-    ></html:input>
-  </vbox>
-
-  <html:section class="zaia-pref-section">
-    <html:h3 data-l10n-id="pref-chat-section-title"></html:h3>
-  </html:section>
-
-  <vbox>
-    <html:label class="zaia-pref-checkbox">
-      <html:input
-        type="checkbox"
-        id="zotero-prefpane-__addonRef__-auto-delete-old-chats"
-        preference="autoDeleteOldChats"
-      ></html:input>
-      <html:span data-l10n-id="pref-auto-delete-old-chats"></html:span>
-    </html:label>
-  </vbox>
-
-  <hbox align="center">
-    <button
-      id="zotero-prefpane-__addonRef__-load-models"
-      data-l10n-id="pref-load-models"
-    />
-    <html:span id="zotero-prefpane-__addonRef__-connection-status"></html:span>
-  </hbox>
-
-  <html:section class="zaia-pref-section">
-    <html:h3 data-l10n-id="pref-ollama-section-title"></html:h3>
-  </html:section>
-
-  <vbox>
-    <html:label
-      for="zotero-prefpane-__addonRef__-ollama-base-url"
-      data-l10n-id="pref-ollama-base-url"
-    ></html:label>
-    <html:input
-      type="url"
-      id="zotero-prefpane-__addonRef__-ollama-base-url"
-      preference="ollamaBaseUrl"
-    ></html:input>
-  </vbox>
-
-  <vbox>
-    <html:label
-      for="zotero-prefpane-__addonRef__-ollama-model"
-      data-l10n-id="pref-ollama-model"
-    ></html:label>
-    <html:input
-      type="text"
-      id="zotero-prefpane-__addonRef__-ollama-model"
-      preference="ollamaModel"
-    ></html:input>
-  </vbox>
-
-  <html:hr style="margin-block: 0.75rem; opacity: 0.3;" />
-
-  <html:h3 data-l10n-id="pref-indexing-section-title" style="margin-block-end: 0.25rem;"></html:h3>
-
-  <vbox>
-    <html:label
-      for="zotero-prefpane-__addonRef__-chunk-target-tokens"
-      data-l10n-id="pref-indexing-chunk-target-tokens"
-    ></html:label>
-    <html:input
-      type="number"
-      min="128"
-      max="2048"
-      step="64"
-      id="zotero-prefpane-__addonRef__-chunk-target-tokens"
-      preference="chunkTargetTokens"
-    ></html:input>
-    <html:p data-l10n-id="pref-indexing-chunk-notice" style="font-size: 0.8em; opacity: 0.7; margin-block: 0.25rem;"></html:p>
-  </vbox>
-
-  <vbox>
-    <html:label
-      for="zotero-prefpane-__addonRef__-chunk-overlap-tokens"
-      data-l10n-id="pref-indexing-chunk-overlap-tokens"
-    ></html:label>
-    <html:input
-      type="number"
-      min="0"
-      max="512"
-      step="32"
-      id="zotero-prefpane-__addonRef__-chunk-overlap-tokens"
-      preference="chunkOverlapTokens"
-    ></html:input>
-  </vbox>
-
-  <vbox>
-    <html:label
-      for="zotero-prefpane-__addonRef__-chunk-count"
-      data-l10n-id="pref-indexing-chunk-count"
-    ></html:label>
-    <html:input
-      type="number"
-      min="1"
-      max="10"
-      step="1"
-      id="zotero-prefpane-__addonRef__-chunk-count"
-      preference="chunkCount"
-    ></html:input>
-  </vbox>
-
-  <vbox style="margin-block-start: 1rem;">
-    <html:div
-      id="zotero-prefpane-__addonRef__-indexing-db-status"
-      style="font-weight: 500; margin-bottom: 0.5rem;"
-    >
-      Lade Vektordatenbank-Status...
+      <html:p
+        class="zaia-pref-help"
+        data-l10n-id="pref-api-key-notice"
+      ></html:p>
     </html:div>
-    <hbox align="center" style="gap: 8px;">
+
+    <html:div class="zaia-pref-field">
+      <html:label
+        for="zotero-prefpane-__addonRef__-model"
+        data-l10n-id="pref-cloud-model"
+      ></html:label>
+      <html:select
+        id="zotero-prefpane-__addonRef__-model"
+        preference="model"
+      ></html:select>
+    </html:div>
+
+    <html:div class="zaia-pref-actions">
+      <button
+        id="zotero-prefpane-__addonRef__-load-cloud-models"
+        data-l10n-id="pref-load-cloud-models"
+      />
+      <button
+        id="zotero-prefpane-__addonRef__-test-cloud-connection"
+        data-l10n-id="pref-test-cloud-connection"
+      />
+      <html:span
+        id="zotero-prefpane-__addonRef__-cloud-status"
+        class="zaia-pref-status"
+        aria-live="polite"
+      ></html:span>
+    </html:div>
+
+    <html:div class="zaia-pref-field">
+      <html:label class="zaia-pref-checkbox">
+        <html:input
+          type="checkbox"
+          id="zotero-prefpane-__addonRef__-send-paper-context-to-kisski"
+          preference="sendPaperContextToKisski"
+        ></html:input>
+        <html:span data-l10n-id="pref-send-paper-context-to-kisski"></html:span>
+      </html:label>
+      <html:p
+        class="zaia-pref-help zaia-pref-notice"
+        data-l10n-id="pref-paper-context-cloud-notice"
+      ></html:p>
+    </html:div>
+
+    <html:details class="zaia-pref-secondary">
+      <html:summary data-l10n-id="pref-cloud-advanced-summary"></html:summary>
+      <html:div class="zaia-pref-field">
+        <html:label
+          for="zotero-prefpane-__addonRef__-base-url"
+          data-l10n-id="pref-kisski-base-url"
+        ></html:label>
+        <html:input
+          type="url"
+          id="zotero-prefpane-__addonRef__-base-url"
+          preference="baseUrl"
+        ></html:input>
+        <html:p
+          class="zaia-pref-help"
+          data-l10n-id="pref-kisski-base-url-notice"
+        ></html:p>
+      </html:div>
+    </html:details>
+  </html:section>
+
+  <html:section class="zaia-pref-section">
+    <html:header class="zaia-pref-section-header">
+      <html:h3 data-l10n-id="pref-local-section-title"></html:h3>
+      <html:p data-l10n-id="pref-local-section-description"></html:p>
+    </html:header>
+
+    <html:div class="zaia-pref-field">
+      <html:label
+        for="zotero-prefpane-__addonRef__-ollama-model"
+        data-l10n-id="pref-local-model"
+      ></html:label>
+      <html:select
+        id="zotero-prefpane-__addonRef__-ollama-model"
+        preference="ollamaModel"
+      ></html:select>
+    </html:div>
+
+    <html:div class="zaia-pref-actions">
+      <button
+        id="zotero-prefpane-__addonRef__-load-local-models"
+        data-l10n-id="pref-load-local-models"
+      />
+      <button
+        id="zotero-prefpane-__addonRef__-test-local-connection"
+        data-l10n-id="pref-test-local-connection"
+      />
+      <html:span
+        id="zotero-prefpane-__addonRef__-local-status"
+        class="zaia-pref-status"
+        aria-live="polite"
+      ></html:span>
+    </html:div>
+
+    <html:details class="zaia-pref-secondary">
+      <html:summary data-l10n-id="pref-local-advanced-summary"></html:summary>
+      <html:div class="zaia-pref-field">
+        <html:label
+          for="zotero-prefpane-__addonRef__-ollama-base-url"
+          data-l10n-id="pref-ollama-base-url"
+        ></html:label>
+        <html:input
+          type="url"
+          id="zotero-prefpane-__addonRef__-ollama-base-url"
+          preference="ollamaBaseUrl"
+        ></html:input>
+      </html:div>
+    </html:details>
+  </html:section>
+
+  <html:section class="zaia-pref-section">
+    <html:header class="zaia-pref-section-header">
+      <html:h3 data-l10n-id="pref-context-section-title"></html:h3>
+      <html:p data-l10n-id="pref-context-section-description"></html:p>
+    </html:header>
+
+    <html:div class="zaia-pref-field">
+      <html:label class="zaia-pref-checkbox">
+        <html:input
+          type="checkbox"
+          id="zotero-prefpane-__addonRef__-embedding-search-enabled"
+          preference="embeddingSearchEnabled"
+        ></html:input>
+        <html:span data-l10n-id="pref-embedding-search-enabled"></html:span>
+      </html:label>
+      <html:p
+        class="zaia-pref-help"
+        data-l10n-id="pref-embedding-search-notice"
+      ></html:p>
+    </html:div>
+
+    <html:div class="zaia-pref-actions">
       <button
         id="zotero-prefpane-__addonRef__-open-index-manager"
         data-l10n-id="pref-indexing-open-manager"
       />
       <button
-        id="zotero-prefpane-__addonRef__-rebuild-index"
-        data-l10n-id="pref-indexing-rebuild-index"
-      />
-      <button
-        id="zotero-prefpane-__addonRef__-clear-index"
-        data-l10n-id="pref-indexing-clear-index"
+        id="zotero-prefpane-__addonRef__-test-embedding-service"
+        data-l10n-id="pref-test-embedding-service"
       />
       <html:span
-        id="zotero-prefpane-__addonRef__-indexing-action-status"
+        id="zotero-prefpane-__addonRef__-embedding-service-status"
+        class="zaia-pref-status"
+        aria-live="polite"
       ></html:span>
-    </hbox>
-  </vbox>
+    </html:div>
+
+    <html:details class="zaia-pref-secondary">
+      <html:summary data-l10n-id="pref-context-advanced-summary"></html:summary>
+      <html:div class="zaia-pref-field">
+        <html:label
+          for="zotero-prefpane-__addonRef__-context-router-provider"
+          data-l10n-id="pref-context-router-provider"
+        ></html:label>
+        <html:select
+          id="zotero-prefpane-__addonRef__-context-router-provider"
+          preference="contextRouterProvider"
+        >
+          <html:option
+            value="ollama"
+            data-l10n-id="pref-context-router-provider-local"
+          ></html:option>
+          <html:option
+            value="kisski"
+            data-l10n-id="pref-context-router-provider-cloud"
+          ></html:option>
+        </html:select>
+        <html:p
+          class="zaia-pref-help"
+          data-l10n-id="pref-context-router-provider-notice"
+        ></html:p>
+      </html:div>
+      <html:div class="zaia-pref-field">
+        <html:label
+          for="zotero-prefpane-__addonRef__-max-items"
+          data-l10n-id="pref-max-items"
+        ></html:label>
+        <html:input
+          type="number"
+          min="1"
+          max="1000"
+          id="zotero-prefpane-__addonRef__-max-items"
+          preference="maxItems"
+        ></html:input>
+        <html:p
+          class="zaia-pref-help"
+          data-l10n-id="pref-max-items-notice"
+        ></html:p>
+      </html:div>
+      <html:div class="zaia-pref-field">
+        <html:label
+          for="zotero-prefpane-__addonRef__-embedding-base-url"
+          data-l10n-id="pref-embedding-base-url"
+        ></html:label>
+        <html:input
+          type="url"
+          id="zotero-prefpane-__addonRef__-embedding-base-url"
+          preference="embeddingBaseUrl"
+        ></html:input>
+      </html:div>
+      <html:div class="zaia-pref-readonly">
+        <html:span data-l10n-id="pref-embedding-model-fixed-label"></html:span>
+        <html:code>bge-m3:latest</html:code>
+      </html:div>
+      <html:p
+        class="zaia-pref-help"
+        data-l10n-id="pref-embedding-model-fixed-notice"
+      ></html:p>
+    </html:details>
+  </html:section>
+
+  <html:section class="zaia-pref-section">
+    <html:header class="zaia-pref-section-header">
+      <html:h3 data-l10n-id="pref-chat-section-title"></html:h3>
+      <html:p data-l10n-id="pref-chat-local-storage-notice"></html:p>
+    </html:header>
+
+    <html:div class="zaia-pref-field">
+      <html:label class="zaia-pref-checkbox">
+        <html:input
+          type="checkbox"
+          id="zotero-prefpane-__addonRef__-auto-delete-old-chats"
+          preference="autoDeleteOldChats"
+        ></html:input>
+        <html:span data-l10n-id="pref-auto-delete-old-chats"></html:span>
+      </html:label>
+    </html:div>
+  </html:section>
+
+  <html:div class="zaia-pref-footer">
+    <html:div class="zaia-pref-build-info">
+      <html:dl>
+        <html:div>
+          <html:dt data-l10n-id="pref-debug-version-label"></html:dt>
+          <html:dd>__buildVersion__</html:dd>
+        </html:div>
+        <html:div>
+          <html:dt data-l10n-id="pref-debug-build-time-label"></html:dt>
+          <html:dd>__buildTime__</html:dd>
+        </html:div>
+      </html:dl>
+    </html:div>
+
+    <html:div class="zaia-pref-actions">
+      <button
+        id="zotero-prefpane-__addonRef__-reset-preferences"
+        data-l10n-id="pref-reset-defaults"
+      />
+      <html:span
+        id="zotero-prefpane-__addonRef__-reset-status"
+        class="zaia-pref-status"
+        aria-live="polite"
+      ></html:span>
+    </html:div>
+  </html:div>
 </groupbox>
-<vbox>
-  <html:p data-l10n-id="pref-api-key-notice"></html:p>
-  <html:label
-    data-l10n-id="pref-help"
-    data-l10n-args='{"time": "__buildTime__","name": "__addonName__","version":"__buildVersion__"}'
-  ></html:label>
-</vbox>

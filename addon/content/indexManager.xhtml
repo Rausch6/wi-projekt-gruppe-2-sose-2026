@@ -24,7 +24,9 @@
       }
       body {
         margin: 0;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+          Arial, sans-serif;
         background: var(--zotero-background);
         color: var(--zotero-text);
         display: flex;
@@ -46,19 +48,27 @@
       }
       .actions {
         display: flex;
+        flex-wrap: wrap;
         gap: 8px;
       }
-      button {
-        padding: 4px 12px;
-        border-radius: 4px;
-        border: 1px solid var(--border-color);
-        background: var(--zotero-background);
-        color: var(--zotero-text);
-        cursor: pointer;
+      .action-status {
+        border-bottom: 1px solid var(--border-color);
+        color: #666;
         font-size: 0.9em;
+        min-height: 1.2em;
+        padding: 8px 16px;
       }
-      button:hover {
-        background: var(--hover-color);
+      .action-status[data-state="success"] {
+        color: #2f7d32;
+      }
+      .action-status[data-state="warning"] {
+        color: #9a5b00;
+      }
+      .action-status[data-state="error"] {
+        color: #b3261e;
+      }
+      .action-status[data-state="loading"] {
+        color: #1f6feb;
       }
       .table-container {
         flex: 1;
@@ -68,7 +78,8 @@
         width: 100%;
         border-collapse: collapse;
       }
-      th, td {
+      th,
+      td {
         padding: 8px 12px;
         text-align: left;
         border-bottom: 1px solid var(--border-color);
@@ -186,16 +197,38 @@
     <header>
       <h1 data-l10n-id="index-manager-title">KI-Index Manager</h1>
       <div class="actions">
-        <button id="btn-refresh" data-l10n-id="index-manager-refresh">Aktualisieren</button>
+        <button
+          id="btn-rebuild-index"
+          data-l10n-id="index-manager-rebuild-index"
+        >
+          Index neu aufbauen
+        </button>
+        <button id="btn-clear-index" data-l10n-id="index-manager-clear-index">
+          Index leeren
+        </button>
+        <button id="btn-refresh" data-l10n-id="index-manager-refresh">
+          Aktualisieren
+        </button>
       </div>
     </header>
+    <div
+      id="index-action-status"
+      class="action-status"
+      aria-live="polite"
+    ></div>
     <div class="table-container">
       <table>
         <thead>
           <tr>
-            <th class="col-status" data-l10n-id="index-manager-col-status">Indexiert</th>
-            <th class="col-title" data-l10n-id="index-manager-col-title">Titel</th>
-            <th class="col-author" data-l10n-id="index-manager-col-author">Autor</th>
+            <th class="col-status" data-l10n-id="index-manager-col-status">
+              Indexiert
+            </th>
+            <th class="col-title" data-l10n-id="index-manager-col-title">
+              Titel
+            </th>
+            <th class="col-author" data-l10n-id="index-manager-col-author">
+              Autor
+            </th>
             <th class="col-year" data-l10n-id="index-manager-col-year">Jahr</th>
           </tr>
         </thead>
@@ -203,7 +236,7 @@
           <!-- Dynamically populated -->
         </tbody>
       </table>
-      <div id="empty-state" class="empty-state" style="display: none;">
+      <div id="empty-state" class="empty-state" style="display: none">
         Keine unterstützten Dokumente in der Bibliothek gefunden.
       </div>
     </div>

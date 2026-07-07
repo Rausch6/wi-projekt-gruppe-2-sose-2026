@@ -10,17 +10,252 @@ image[src$="LogoPlugin.png"] {
   width: auto !important;
 }
 
-.zaia-pref-section {
-  margin-block: 1.25rem 0.5rem;
+.zaia-pref-root {
+  color: var(--text-primary, inherit);
+  max-width: 780px;
+  padding-block-end: 1.75rem;
+  padding-inline: 0.15rem 0.75rem;
 }
 
-.zaia-pref-section h3 {
-  font-size: 1rem;
-  margin-block: 0;
+.zaia-pref-section {
+  border-block-start: 1px solid var(--border-color, rgba(0, 0, 0, 0.12));
+  display: grid;
+  gap: 1.25rem;
+  padding-block: 2rem;
+}
+
+.zaia-pref-section:first-of-type {
+  border-block-start: 0;
+  padding-block-start: 0.5rem;
+}
+
+.zaia-pref-section + .zaia-pref-section {
+  margin-block-start: 0.75rem;
+}
+
+.zaia-pref-section-header {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.zaia-pref-section-header h3 {
+  font-size: 1.16rem;
+  font-weight: 650;
+  line-height: 1.25;
+  margin: 0;
+}
+
+.zaia-pref-section-header p,
+.zaia-pref-help {
+  color: var(
+    --text-secondary,
+    color-mix(in srgb, currentColor 72%, transparent)
+  );
+  font-size: 0.88rem;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.zaia-pref-field {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.zaia-pref-field > label:not(.zaia-pref-checkbox) {
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.zaia-pref-field input:not([type="checkbox"]),
+.zaia-pref-field select {
+  background: var(--material-background, var(--input-bgcolor, #fff));
+  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.2));
+  border-radius: 6px;
+  box-sizing: border-box;
+  color: var(--text-primary, inherit);
+  min-height: 2rem;
+  max-width: 100%;
+  padding: 0.3rem 0.45rem;
+  width: min(100%, 32rem);
+}
+
+.zaia-pref-field input:not([type="checkbox"]):focus,
+.zaia-pref-field select:focus {
+  border-color: var(--accent-blue, #2f6fed);
+  outline: 2px solid rgba(47, 111, 237, 0.16);
+  outline-offset: 1px;
+}
+
+.zaia-pref-field select[data-state="empty"],
+.zaia-pref-field select[data-state="error"] {
+  color: var(
+    --text-secondary,
+    color-mix(in srgb, currentColor 72%, transparent)
+  );
 }
 
 .zaia-pref-checkbox {
-  align-items: center;
+  align-items: flex-start;
   display: flex;
   gap: 0.5rem;
+  line-height: 1.35;
+}
+
+.zaia-pref-checkbox input {
+  flex: 0 0 auto;
+  margin-block-start: 0.1rem;
+}
+
+.zaia-pref-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.zaia-pref-status {
+  color: var(
+    --text-secondary,
+    color-mix(in srgb, currentColor 72%, transparent)
+  );
+  font-size: 0.86rem;
+  line-height: 1.35;
+  min-height: 1.25em;
+  overflow-wrap: anywhere;
+}
+
+.zaia-pref-status[data-state="success"] {
+  color: var(--accent-green, #2f7d32);
+}
+
+.zaia-pref-status[data-state="warning"] {
+  color: var(--accent-orange, #9a5b00);
+}
+
+.zaia-pref-status[data-state="error"] {
+  color: var(--accent-red, #b3261e);
+}
+
+.zaia-pref-status[data-state="loading"] {
+  color: var(--accent-blue, #1f6feb);
+}
+
+.zaia-pref-secondary {
+  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.16));
+  border-radius: 6px;
+  display: grid;
+  gap: 1.6rem;
+  padding: 0.95rem 1rem 1.05rem;
+  width: min(100%, 36rem);
+}
+
+.zaia-pref-secondary summary {
+  cursor: pointer;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.zaia-pref-secondary[open] summary {
+  margin-block-end: 0.8rem;
+}
+
+.zaia-pref-secondary > .zaia-pref-field,
+.zaia-pref-secondary > .zaia-pref-readonly,
+.zaia-pref-secondary > .zaia-pref-help {
+  margin-block-start: 0.35rem;
+}
+
+.zaia-pref-secondary > .zaia-pref-help + .zaia-pref-field,
+.zaia-pref-secondary > .zaia-pref-help + .zaia-pref-readonly {
+  margin-block-start: 0.95rem;
+}
+
+.zaia-pref-notice {
+  background: color-mix(in srgb, var(--accent-blue, #2f6fed) 7%, transparent);
+  border-inline-start: 3px solid
+    color-mix(in srgb, var(--accent-blue, #2f6fed) 42%, transparent);
+  border-radius: 4px;
+  padding: 0.55rem 0.65rem;
+  width: min(100%, 36rem);
+}
+
+.zaia-pref-readonly {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.zaia-pref-readonly code {
+  background: var(--material-mix, rgba(127, 127, 127, 0.14));
+  border-radius: 4px;
+  font-size: 0.86rem;
+  padding: 0.12rem 0.3rem;
+}
+
+.zaia-pref-build-info {
+  color: var(
+    --text-secondary,
+    color-mix(in srgb, currentColor 72%, transparent)
+  );
+  font-size: 0.86rem;
+  width: min(100%, 36rem);
+}
+
+.zaia-pref-build-info dl {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+}
+
+.zaia-pref-build-info dl > div {
+  display: grid;
+  gap: 0.4rem;
+  grid-template-columns: minmax(8rem, max-content) minmax(0, 1fr);
+}
+
+.zaia-pref-build-info dt {
+  color: var(
+    --text-secondary,
+    color-mix(in srgb, currentColor 72%, transparent)
+  );
+  font-weight: 600;
+}
+
+.zaia-pref-build-info dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.zaia-pref-footer {
+  border-block-start: 1px solid var(--border-color, rgba(0, 0, 0, 0.12));
+  display: grid;
+  gap: 0.85rem;
+  margin-block-start: 1rem;
+  padding-block-start: 1.35rem;
+}
+
+@media (max-width: 560px) {
+  .zaia-pref-root {
+    padding-inline-end: 0.25rem;
+  }
+
+  .zaia-pref-section {
+    gap: 1rem;
+    padding-block: 1.6rem;
+  }
+
+  .zaia-pref-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .zaia-pref-actions .zaia-pref-status {
+    width: 100%;
+  }
+
+  .zaia-pref-build-info dl > div {
+    grid-template-columns: 1fr;
+  }
 }
