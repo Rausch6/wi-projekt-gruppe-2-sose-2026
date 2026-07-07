@@ -20,7 +20,6 @@ import {
 const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
 
 type ShortcutAction = (win: _ZoteroTypes.MainWindow) => void | Promise<void>;
-type NotificationType = "default" | "success" | "fail";
 
 type ShortcutDefinition = {
   id: string;
@@ -90,10 +89,7 @@ export function registerZAIAShortcuts(win: _ZoteroTypes.MainWindow) {
     void Promise.resolve(shortcut.action(win)).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
       Zotero.logError(error instanceof Error ? error : new Error(message));
-      showShortcutNotification(
-        `ZAIA Shortcut fehlgeschlagen: ${message}`,
-        "fail",
-      );
+      showShortcutNotification(`ZAIA Shortcut fehlgeschlagen: ${message}`);
     });
   };
 
@@ -268,7 +264,7 @@ async function startNewChat(win: _ZoteroTypes.MainWindow) {
   focusAssistantSidebar(win);
   await createChatAndFocusComposer();
   focusAssistantComposer(win);
-  showShortcutNotification("Neuer ZAIA-Chat gestartet", "success");
+  showShortcutNotification("Neuer ZAIA-Chat gestartet");
 }
 
 function openOrFocusPopout(win: _ZoteroTypes.MainWindow) {
@@ -284,10 +280,7 @@ function openOrFocusPopout(win: _ZoteroTypes.MainWindow) {
   });
 
   if (!openedWindow) {
-    showShortcutNotification(
-      "ZAIA-Popout konnte nicht geöffnet werden",
-      "fail",
-    );
+    showShortcutNotification("ZAIA-Popout konnte nicht geöffnet werden");
   }
 }
 
@@ -296,7 +289,6 @@ async function favoriteActiveChat(win: _ZoteroTypes.MainWindow) {
   const isFavorite = await toggleActiveChatFavorite();
   showShortcutNotification(
     isFavorite ? "ZAIA-Chat favorisiert" : "ZAIA-Chat-Favorit entfernt",
-    "success",
   );
 }
 
@@ -343,24 +335,6 @@ function focusZoteroLibrary(win: _ZoteroTypes.MainWindow) {
   (win.document.activeElement as HTMLElement | null)?.blur?.();
 }
 
-function showShortcutNotification(
-  text: string,
-  type: NotificationType = "default",
-) {
+function showShortcutNotification(text: string) {
   Zotero.debug(`[ZAIA Shortcut] ${text}`);
-
-  try {
-    new ztoolkit.ProgressWindow(addon.data.config.addonName, {
-      closeOnClick: true,
-      closeTime: 2500,
-    })
-      .createLine({
-        text,
-        type,
-        progress: type === "default" ? undefined : 100,
-      })
-      .show();
-  } catch (error) {
-    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
-  }
 }

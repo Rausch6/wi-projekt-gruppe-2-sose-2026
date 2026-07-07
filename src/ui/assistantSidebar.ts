@@ -1159,9 +1159,20 @@ function createIndexingStatusBanner(doc: Document) {
     );
   });
 
-  const unsubSingleDone = indexingEvents.on("singleDone", ({ paperTitle }) => {
-    showSuccess(`✓ Erfolgreich indexiert: ${paperTitle ?? "Paper"}`);
-  });
+  const unsubSingleDone = indexingEvents.on(
+    "singleDone",
+    ({ paperTitle, skipped, unchanged }) => {
+      if (unchanged) {
+        showSuccess(`✓ Bereits aktuell indexiert: ${paperTitle ?? "Paper"}`);
+        return;
+      }
+      if (skipped) {
+        showSuccess(`Indexierung übersprungen: ${paperTitle ?? "Paper"}`);
+        return;
+      }
+      showSuccess(`✓ Erfolgreich indexiert: ${paperTitle ?? "Paper"}`);
+    },
+  );
 
   const unsubDeleted = indexingEvents.on("deleted", ({ paperTitle }) => {
     showSuccess(`✓ Aus dem Index entfernt: ${paperTitle ?? "Paper"}`);

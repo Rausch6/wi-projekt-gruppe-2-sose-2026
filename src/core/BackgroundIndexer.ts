@@ -8,8 +8,20 @@ declare const Zotero: any;
 
 export type IndexingState =
   | { status: "idle" }
-  | { status: "running"; indexed: number; total: number; estimatedRemainingMs?: number }
+  | {
+      status: "running";
+      indexed: number;
+      total: number;
+      estimatedRemainingMs?: number;
+    }
   | { status: "done"; indexed: number; total: number; newlyIndexed: number };
+
+type IndexItemResult = {
+  indexed: boolean;
+  skipped?: boolean;
+  targetId?: number;
+  unchanged?: boolean;
+};
 
 export class BackgroundIndexer {
   private static instance: BackgroundIndexer;
@@ -121,7 +133,10 @@ export class BackgroundIndexer {
         Zotero.debug(
           `[BackgroundIndexer] Error indexing item ${itemId}: ${error}`,
         );
-        indexingEvents.emit("error", { message: String(error) });
+        indexingEvents.emit("error", {
+          message: String(error),
+          itemID: itemId,
+        });
       }
     }
 
@@ -131,11 +146,11 @@ export class BackgroundIndexer {
    * Text extrahieren, chunken, einbetten und speichern.
    * Child-Attachments werden auf den Parent umgeleitet, um Duplikate zu vermeiden.
    */
-  private async indexItem(rawItemId: number) {
+  private async indexItem(rawItemId: number): Promise<IndexItemResult> {
     let item = await Zotero.Items.getAsync(rawItemId);
-    if (!item) return;
+    if (!item) return { indexed: false, skipped: true };
 
-    if (item.isNote()) return;
+    if (item.isNote()) return { indexed: false, skipped: true };
 
     if (item.isAttachment() && item.parentID) {
       const parentItem = await Zotero.Items.getAsync(item.parentID);
@@ -151,7 +166,7 @@ export class BackgroundIndexer {
       !item.isAttachment() ||
       item.attachmentContentType !== "application/pdf"
     ) {
-      if (!item.isRegularItem()) return;
+      if (!item.isRegularItem()) return { indexed: false, skipped: true };
     }
 
     const targetId = item.id;
@@ -160,7 +175,11 @@ export class BackgroundIndexer {
       Zotero.debug(
         `[BackgroundIndexer] Item ${targetId} wird bereits indexiert. Überspringe doppelten Aufruf.`,
       );
-      return;
+      return {
+        indexed: vectorStore.getIndexedItemIds().has(targetId.toString()),
+        skipped: true,
+        targetId,
+      };
     }
     this.currentlyIndexing.add(targetId);
 
@@ -174,8 +193,14 @@ export class BackgroundIndexer {
         try {
           const zItem = await Zotero.Items.getAsync(targetId);
           paperTitle = zItem?.getField("title") || undefined;
-        } catch (_e) { /* ignore */ }
-        indexingEvents.emit("singleStarted", { mode: "single", paperTitle });
+        } catch (_e) {
+          /* ignore */
+        }
+        indexingEvents.emit("singleStarted", {
+          mode: "single",
+          itemID: targetId,
+          paperTitle,
+        });
       }
 
       const abstractText = this.getAbstractText(item);
@@ -188,7 +213,8 @@ export class BackgroundIndexer {
         Zotero.debug(
           `[BackgroundIndexer] No abstract or PDF text found for item ${targetId}.`,
         );
-        return;
+        this.emitSingleDone(targetId, { skipped: true });
+        return { indexed: false, skipped: true, targetId };
       }
 
       const textHash = this.cyrb53(
@@ -200,7 +226,8 @@ export class BackgroundIndexer {
         Zotero.debug(
           `[BackgroundIndexer] Hash für Item ${targetId} ist unverändert. Überspringe Indexierung.`,
         );
-        return;
+        this.emitSingleDone(targetId, { skipped: true, unchanged: true });
+        return { indexed: true, skipped: true, targetId, unchanged: true };
       }
 
       await vectorStore.deleteByZoteroItemId(targetId.toString());
@@ -281,17 +308,50 @@ export class BackgroundIndexer {
         );
 
         if (this.isSingleMode) {
-          let paperTitle: string | undefined;
-          try {
-            const zItem = await Zotero.Items.getAsync(targetId);
-            paperTitle = zItem?.getField("title") || undefined;
-          } catch (_e) { /* ignore */ }
-          indexingEvents.emit("singleDone", { mode: "single", paperTitle });
+          this.emitSingleDone(targetId);
         }
+        return { indexed: true, targetId };
       }
+      this.emitSingleDone(targetId, { skipped: true });
+      return { indexed: false, skipped: true, targetId };
     } finally {
       this.currentlyIndexing.delete(targetId);
     }
+  }
+
+  private async getPaperTitle(itemID: number): Promise<string | undefined> {
+    try {
+      const zItem = await Zotero.Items.getAsync(itemID);
+      return zItem?.getField("title") || undefined;
+    } catch (_e) {
+      return undefined;
+    }
+  }
+
+  private emitSingleDone(
+    itemID: number,
+    options: { skipped?: boolean; unchanged?: boolean } = {},
+  ) {
+    if (!this.isSingleMode) return;
+
+    this.getPaperTitle(itemID)
+      .then((paperTitle) => {
+        indexingEvents.emit("singleDone", {
+          mode: "single",
+          itemID,
+          paperTitle,
+          skipped: options.skipped,
+          unchanged: options.unchanged,
+        });
+      })
+      .catch(() => {
+        indexingEvents.emit("singleDone", {
+          mode: "single",
+          itemID,
+          skipped: options.skipped,
+          unchanged: options.unchanged,
+        });
+      });
   }
 
   private getAbstractText(item: Zotero.Item) {
@@ -356,7 +416,7 @@ export class BackgroundIndexer {
           library.libraryID,
           false,
           false,
-          false, 
+          false,
         );
         allAttachments.push(...items);
       } catch (err) {
@@ -378,7 +438,11 @@ export class BackgroundIndexer {
       `[BackgroundIndexer] ${targetItems.length} unterstützte Einträge gefunden. Prüfe Index-Status...`,
     );
 
-    this.indexingState = { status: "running", indexed: 0, total: targetItems.length };
+    this.indexingState = {
+      status: "running",
+      indexed: 0,
+      total: targetItems.length,
+    };
     indexingEvents.emit("progress", {
       mode: "full",
       indexed: 0,
@@ -386,18 +450,17 @@ export class BackgroundIndexer {
     });
     await new Promise<void>((resolve) => setTimeout(resolve, 50));
 
-    let alreadyIndexedCount = 0;
-    const itemsToIndex: Zotero.Item[] = [];
+    const indexedItemIds = vectorStore.getIndexedItemIds();
+    const alreadyIndexedCount = this.countIndexedTargetItems(targetItems);
+    const itemsToIndex = targetItems.filter(
+      (item) => !indexedItemIds.has(item.id.toString()),
+    );
 
-    for (const item of targetItems) {
-      if (await vectorStore.isItemIndexed(item.id.toString())) {
-        alreadyIndexedCount++;
-      } else {
-        itemsToIndex.push(item);
-      }
-    }
-
-    this.indexingState = { status: "running", indexed: alreadyIndexedCount, total: targetItems.length };
+    this.indexingState = {
+      status: "running",
+      indexed: alreadyIndexedCount,
+      total: targetItems.length,
+    };
     indexingEvents.emit("progress", {
       mode: "full",
       indexed: alreadyIndexedCount,
@@ -406,28 +469,38 @@ export class BackgroundIndexer {
     await new Promise<void>((resolve) => setTimeout(resolve, 50));
 
     let indexedNew = 0;
-    let emaMsPerItem = 0; 
+    let emaMsPerItem = 0;
 
     for (const item of itemsToIndex) {
       try {
         const startItem = Date.now();
+        const wasIndexed = vectorStore
+          .getIndexedItemIds()
+          .has(item.id.toString());
         await this.indexItem(item.id);
+        const isIndexed = vectorStore
+          .getIndexedItemIds()
+          .has(item.id.toString());
         const itemTime = Date.now() - startItem;
-        
-        indexedNew++;
-        
+
+        if (!wasIndexed && isIndexed) {
+          indexedNew++;
+        }
+
         if (indexedNew === 1) {
           emaMsPerItem = itemTime;
         } else {
-          emaMsPerItem = (emaMsPerItem * 0.5) + (itemTime * 0.5);
+          emaMsPerItem = emaMsPerItem * 0.5 + itemTime * 0.5;
         }
-        
+
         const remainingItems = itemsToIndex.length - indexedNew;
         const estimatedRemainingMs = emaMsPerItem * remainingItems;
 
+        const currentIndexedCount = this.countIndexedTargetItems(targetItems);
+
         this.indexingState = {
           status: "running",
-          indexed: alreadyIndexedCount + indexedNew,
+          indexed: currentIndexedCount,
           total: targetItems.length,
           estimatedRemainingMs,
         };
@@ -436,11 +509,13 @@ export class BackgroundIndexer {
         try {
           const zItem = await Zotero.Items.getAsync(item.id);
           paperTitle = zItem?.getField("title") || undefined;
-        } catch (_e) { /* ignore */ }
-        
+        } catch (_e) {
+          /* ignore */
+        }
+
         indexingEvents.emit("progress", {
           mode: "full",
-          indexed: alreadyIndexedCount + indexedNew,
+          indexed: currentIndexedCount,
           total: targetItems.length,
           estimatedRemainingMs,
           paperTitle,
@@ -458,18 +533,26 @@ export class BackgroundIndexer {
     Zotero.debug(finishMsg);
 
     this.isSingleMode = true;
+    const finalIndexedCount = this.countIndexedTargetItems(targetItems);
+
     this.indexingState = {
       status: "done",
-      indexed: alreadyIndexedCount + indexedNew,
+      indexed: finalIndexedCount,
       newlyIndexed: indexedNew,
       total: targetItems.length,
     };
     indexingEvents.emit("finished", {
       mode: "full",
-      indexed: alreadyIndexedCount + indexedNew,
+      indexed: finalIndexedCount,
       newlyIndexed: indexedNew,
       total: targetItems.length,
     });
+  }
+
+  private countIndexedTargetItems(items: Zotero.Item[]): number {
+    const indexedItemIds = vectorStore.getIndexedItemIds();
+    return items.filter((item) => indexedItemIds.has(item.id.toString()))
+      .length;
   }
 }
 

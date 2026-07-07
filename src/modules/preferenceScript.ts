@@ -64,6 +64,11 @@ const FIELD_NAMES = [
   "auto-delete-old-chats",
 ] as const;
 
+const INDEX_MANAGER_DEFAULT_WIDTH = 800;
+const INDEX_MANAGER_DEFAULT_HEIGHT = 600;
+const INDEX_MANAGER_MIN_WIDTH = INDEX_MANAGER_DEFAULT_WIDTH;
+const INDEX_MANAGER_MIN_HEIGHT = INDEX_MANAGER_DEFAULT_HEIGHT;
+
 const PREFERENCE_FIELD_NAMES: Partial<Record<keyof PluginSettings, string>> = {
   apiKey: "api-key",
   baseUrl: "base-url",
@@ -349,9 +354,22 @@ async function testEmbeddingService(window: Window) {
 
 function openIndexManager(window: Window) {
   const url = `chrome://${config.addonRef}/content/indexManager.xhtml`;
-  const features =
-    "chrome,titlebar,toolbar,centerscreen,resizable=yes,width=800,height=600";
-  window.openDialog(url, "_blank", features, { owner: window });
+  const features = [
+    "chrome",
+    "titlebar",
+    "toolbar",
+    "centerscreen",
+    "resizable=yes",
+    `width=${INDEX_MANAGER_DEFAULT_WIDTH}`,
+    `height=${INDEX_MANAGER_DEFAULT_HEIGHT}`,
+    `minwidth=${INDEX_MANAGER_MIN_WIDTH}`,
+    `minheight=${INDEX_MANAGER_MIN_HEIGHT}`,
+  ].join(",");
+
+  window.openDialog(url, "_blank", features, {
+    addonInstance: config.addonInstance,
+    owner: window,
+  });
 }
 
 function resetPreferences(window: Window) {

@@ -829,7 +829,7 @@ async function showSelectedPaperChunks(itemID?: number) {
     "Der vollständige Bericht wurde in die Zwischenablage kopiert",
     "und in die Zotero-Debugausgabe geschrieben.",
   ].join("\n");
-  Zotero.getMainWindow()?.alert(message);
+  Zotero.debug(`[ZAIA] ${message}`);
   return message;
 }
 
@@ -875,7 +875,7 @@ async function showSelectedPaperEmbeddings(
     "Der vollständige Bericht wurde in die Zwischenablage kopiert",
     "und in die Zotero-Debugausgabe geschrieben.",
   ].join("\n");
-  Zotero.getMainWindow()?.alert(message);
+  Zotero.debug(`[ZAIA] ${message}`);
   return message;
 }
 
