@@ -18,6 +18,50 @@ type AssistantSidebarRenderOptions = {
   showPopoutButton?: boolean;
 };
 
+const ABOUT_TEAM_MEMBERS = [
+  {
+    name: "Frank Baum",
+    role: "Setup & KI-Anbindung",
+  },
+  {
+    name: "Vincent Korsch",
+    role: "UI-Design & Branding",
+  },
+  {
+    name: "Nicolas Medda",
+    role: "Embedding & Indexierung",
+  },
+  {
+    name: "Timo Rausch",
+    role: "KI-Anbindung & Architektur",
+  },
+  {
+    name: "Henrik Schneider",
+    role: "Indexierung & Datenspeicherung",
+  },
+];
+
+const ABOUT_LINKS = [
+  {
+    label: "Instagram",
+    description: "Einblicke in Entwicklung, Design und Projektfortschritt.",
+    url: "https://www.instagram.com/zaia.plugin/",
+    icon: "instagram",
+  },
+  {
+    label: "Website",
+    description: "Alle Informationen zu Features, FAQ und Download.",
+    url: "https://zaia-plugin.vercel.app/",
+    icon: "website",
+  },
+  {
+    label: "GitHub",
+    description: "Technische Umsetzung und Projektstruktur.",
+    url: "GITHUB_URL",
+    icon: "github",
+  },
+];
+
 export function renderAssistantSidebar(
   host: HTMLElement,
   options: AssistantSidebarRenderOptions = {},
@@ -47,6 +91,7 @@ function createSidebar(doc: Document, options: AssistantSidebarRenderOptions) {
   );
   const headerActions = createHtmlElement(doc, "div", "zai-header-actions");
   const aboutButton = createButton(doc, "zai-header-icon-button");
+  aboutButton.dataset.viewTarget = "about";
   aboutButton.setAttribute("aria-label", "Über ZAIA");
   aboutButton.setAttribute("title", "Über ZAIA");
   aboutButton.append(createQuestionIcon(doc));
@@ -159,7 +204,8 @@ function createSidebar(doc: Document, options: AssistantSidebarRenderOptions) {
   const providerSetup = createProviderSetup(doc);
   const messages = createHtmlElement(doc, "div", "zai-messages");
   messages.setAttribute("aria-live", "polite");
-  main.append(welcome, embeddingSetup, providerSetup, messages);
+  const aboutView = createAboutView(doc);
+  main.append(welcome, embeddingSetup, providerSetup, messages, aboutView);
 
   const footer = createHtmlElement(doc, "footer", "zai-footer");
   const indexingBanner = createIndexingStatusBanner(doc);
@@ -184,6 +230,105 @@ function createSidebar(doc: Document, options: AssistantSidebarRenderOptions) {
 
   sidebar.append(top, main, footer);
   return sidebar;
+}
+
+function createAboutView(doc: Document) {
+  const view = createHtmlElement(doc, "article", "zai-about-view");
+  view.hidden = true;
+
+  const team = createHtmlElement(doc, "section", "zai-about-section");
+  team.append(
+    createHtmlElement(
+      doc,
+      "p",
+      "zai-about-section-text",
+      "ZAIA entsteht im Rahmen des Moduls “Wirtschaftsinformatik-Projekt” an der Universität Potsdam. Hinter dem Plugin steht ein studentisches Projektteam, das Konzeption, Design, Entwicklung und Projektmanagement gemeinsam umsetzt:",
+    ),
+  );
+  const teamGrid = createHtmlElement(doc, "div", "zai-about-team-grid");
+  teamGrid.append(
+    ...ABOUT_TEAM_MEMBERS.map((member) => {
+      const card = createHtmlElement(doc, "section", "zai-about-team-card");
+      card.append(
+        createHtmlElement(doc, "h4", "zai-about-team-name", member.name),
+        createHtmlElement(doc, "p", "zai-about-team-role", member.role),
+      );
+      return card;
+    }),
+  );
+  team.append(teamGrid);
+
+  const links = createHtmlElement(doc, "section", "zai-about-section");
+  links.append(
+    createHtmlElement(
+      doc,
+      "h3",
+      "zai-about-section-title",
+      "Folge dem Projekt",
+    ),
+  );
+  const linkGrid = createHtmlElement(doc, "div", "zai-about-links");
+  linkGrid.append(...ABOUT_LINKS.map((link) => createAboutLinkCard(doc, link)));
+  links.append(linkGrid);
+
+  view.append(team, links);
+  return view;
+}
+
+function createAboutSection(
+  doc: Document,
+  title: string,
+  paragraphs: string[],
+) {
+  const section = createHtmlElement(doc, "section", "zai-about-section");
+  section.append(
+    createHtmlElement(doc, "h3", "zai-about-section-title", title),
+  );
+  section.append(
+    ...paragraphs.map((text) =>
+      createHtmlElement(doc, "p", "zai-about-section-text", text),
+    ),
+  );
+  return section;
+}
+
+function createAboutLinkCard(
+  doc: Document,
+  link: { label: string; description: string; url: string; icon: string },
+) {
+  const card = createHtmlElement(doc, "a", "zai-about-link-card");
+  const anchor = card as HTMLAnchorElement;
+  anchor.href = link.url;
+  anchor.dataset.aboutUrl = link.url;
+  anchor.setAttribute("aria-label", `${link.label}: ${link.description}`);
+  anchor.append(
+    createAboutLinkIcon(doc, link.icon),
+    createHtmlElement(doc, "span", "zai-about-link-title", link.label),
+    createHtmlElement(
+      doc,
+      "span",
+      "zai-about-link-description",
+      link.description,
+    ),
+  );
+  anchor.addEventListener("click", (event) => {
+    event.preventDefault();
+    if (link.url.endsWith("_URL")) return;
+    Zotero.launchURL(link.url);
+  });
+  return anchor;
+}
+
+function createAboutLinkIcon(doc: Document, icon: string) {
+  const wrap = createHtmlElement(doc, "span", "zai-about-link-icon");
+  if (icon === "instagram") {
+    wrap.append(createInstagramIcon(doc));
+  } else if (icon === "github") {
+    wrap.append(createGitHubIcon(doc));
+  } else {
+    wrap.append(createGlobeIcon(doc));
+  }
+  return wrap;
 }
 
 function createButton(doc: Document, className: string, text?: string) {
@@ -742,6 +887,63 @@ function createQuestionIcon(doc: Document) {
   return svg;
 }
 
+function createInstagramIcon(doc: Document) {
+  const svg = createIconSvg(doc, "18");
+
+  const frame = doc.createElementNS(SVG_NS, "rect");
+  frame.setAttribute("x", "2");
+  frame.setAttribute("y", "2");
+  frame.setAttribute("width", "20");
+  frame.setAttribute("height", "20");
+  frame.setAttribute("rx", "5");
+  frame.setAttribute("ry", "5");
+
+  const lens = doc.createElementNS(SVG_NS, "circle");
+  lens.setAttribute("cx", "12");
+  lens.setAttribute("cy", "12");
+  lens.setAttribute("r", "4");
+
+  const dot = doc.createElementNS(SVG_NS, "path");
+  dot.setAttribute("d", "M17.5 6.5h.01");
+
+  svg.append(frame, lens, dot);
+  return svg;
+}
+
+function createGlobeIcon(doc: Document) {
+  const svg = createIconSvg(doc, "18");
+
+  const globe = doc.createElementNS(SVG_NS, "circle");
+  globe.setAttribute("cx", "12");
+  globe.setAttribute("cy", "12");
+  globe.setAttribute("r", "10");
+
+  const meridian = doc.createElementNS(SVG_NS, "path");
+  meridian.setAttribute("d", "M12 2a15.3 15.3 0 0 1 0 20 15.3 15.3 0 0 1 0-20");
+
+  const equator = doc.createElementNS(SVG_NS, "path");
+  equator.setAttribute("d", "M2 12h20");
+
+  svg.append(globe, meridian, equator);
+  return svg;
+}
+
+function createGitHubIcon(doc: Document) {
+  const svg = createIconSvg(doc, "18");
+
+  const mark = doc.createElementNS(SVG_NS, "path");
+  mark.setAttribute(
+    "d",
+    "M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4",
+  );
+
+  const branch = doc.createElementNS(SVG_NS, "path");
+  branch.setAttribute("d", "M9 18c-4.51 2-5-2-7-2");
+
+  svg.append(mark, branch);
+  return svg;
+}
+
 function createGearIcon(doc: Document) {
   const svg = createIconSvg(doc, "18");
 
@@ -872,7 +1074,11 @@ function formatDuration(ms: number): string {
  * Erzeugt den Indizierungs-Status-Banner, der direkt über dem Kompositor angezeigt wird.
  */
 function createIndexingStatusBanner(doc: Document) {
-  const banner = createHtmlElement(doc, "div", "zai-indexing-banner zai-indexing-banner--idle");
+  const banner = createHtmlElement(
+    doc,
+    "div",
+    "zai-indexing-banner zai-indexing-banner--idle",
+  );
   banner.hidden = true;
 
   const activeIndicator = createHtmlElement(doc, "span", "zai-indexing-active");
@@ -883,9 +1089,17 @@ function createIndexingStatusBanner(doc: Document) {
   activeText.textContent = "Achtung: Indexierung aktiv";
   activeIndicator.append(activeIcon, activeText);
 
-  const successIndicator = createHtmlElement(doc, "span", "zai-indexing-success");
+  const successIndicator = createHtmlElement(
+    doc,
+    "span",
+    "zai-indexing-success",
+  );
   successIndicator.hidden = true;
-  const successText = createHtmlElement(doc, "span", "zai-indexing-success-text");
+  const successText = createHtmlElement(
+    doc,
+    "span",
+    "zai-indexing-success-text",
+  );
   successIndicator.append(successText);
 
   banner.append(activeIndicator, successIndicator);
@@ -898,7 +1112,10 @@ function createIndexingStatusBanner(doc: Document) {
     activeText.textContent = text;
     activeIndicator.hidden = false;
     banner.hidden = false;
-    banner.classList.remove("zai-indexing-banner--success", "zai-indexing-banner--idle");
+    banner.classList.remove(
+      "zai-indexing-banner--success",
+      "zai-indexing-banner--idle",
+    );
     banner.classList.add("zai-indexing-banner--active");
   }
 
@@ -907,7 +1124,10 @@ function createIndexingStatusBanner(doc: Document) {
     successText.textContent = text;
     successIndicator.hidden = false;
     banner.hidden = false;
-    banner.classList.remove("zai-indexing-banner--active", "zai-indexing-banner--idle");
+    banner.classList.remove(
+      "zai-indexing-banner--active",
+      "zai-indexing-banner--idle",
+    );
     banner.classList.add("zai-indexing-banner--success");
 
     hideSuccessTimeout = setTimeout(() => {
@@ -922,40 +1142,64 @@ function createIndexingStatusBanner(doc: Document) {
     showActive("Achtung: Indexierung aktiv…");
   });
 
-  const unsubProgress = indexingEvents.on("progress", ({ indexed, total, estimatedRemainingMs }) => {
-    let msg = `Achtung: Indexierung aktiv – ${indexed} / ${total} Papern indexiert`;
-    if (estimatedRemainingMs !== undefined && estimatedRemainingMs > 0) {
-      msg += ` (noch ca. ${formatDuration(estimatedRemainingMs)})`;
-    }
-    showActive(msg);
-  });
+  const unsubProgress = indexingEvents.on(
+    "progress",
+    ({ indexed, total, estimatedRemainingMs }) => {
+      let msg = `Achtung: Indexierung aktiv – ${indexed} / ${total} Papern indexiert`;
+      if (estimatedRemainingMs !== undefined && estimatedRemainingMs > 0) {
+        msg += ` (noch ca. ${formatDuration(estimatedRemainingMs)})`;
+      }
+      showActive(msg);
+    },
+  );
 
   const unsubFinished = indexingEvents.on("finished", ({ indexed, total }) => {
-    showSuccess(`✓ Indexierung abgeschlossen (${indexed ?? 0} / ${total ?? "?"} Papern)`);
+    showSuccess(
+      `✓ Indexierung abgeschlossen (${indexed ?? 0} / ${total ?? "?"} Papern)`,
+    );
   });
 
-  const unsubSingleDone = indexingEvents.on("singleDone", ({ paperTitle }) => {
-    showSuccess(`✓ Erfolgreich indexiert: ${paperTitle ?? "Paper"}`);
-  });
+  const unsubSingleDone = indexingEvents.on(
+    "singleDone",
+    ({ paperTitle, skipped, unchanged }) => {
+      if (unchanged) {
+        showSuccess(`✓ Bereits aktuell indexiert: ${paperTitle ?? "Paper"}`);
+        return;
+      }
+      if (skipped) {
+        showSuccess(`Indexierung übersprungen: ${paperTitle ?? "Paper"}`);
+        return;
+      }
+      showSuccess(`✓ Erfolgreich indexiert: ${paperTitle ?? "Paper"}`);
+    },
+  );
 
   const unsubDeleted = indexingEvents.on("deleted", ({ paperTitle }) => {
     showSuccess(`✓ Aus dem Index entfernt: ${paperTitle ?? "Paper"}`);
   });
 
-  import("../core/BackgroundIndexer").then((mod) => {
-    const currentState = mod.backgroundIndexer.indexingState;
-    if (currentState.status === "running") {
-      let msg = `Achtung: Indexierung aktiv – ${currentState.indexed} / ${currentState.total} Papern indexiert`;
-      if (currentState.estimatedRemainingMs !== undefined && currentState.estimatedRemainingMs > 0) {
-        msg += ` (noch ca. ${formatDuration(currentState.estimatedRemainingMs)})`;
+  import("../core/BackgroundIndexer")
+    .then((mod) => {
+      const currentState = mod.backgroundIndexer.indexingState;
+      if (currentState.status === "running") {
+        let msg = `Achtung: Indexierung aktiv – ${currentState.indexed} / ${currentState.total} Papern indexiert`;
+        if (
+          currentState.estimatedRemainingMs !== undefined &&
+          currentState.estimatedRemainingMs > 0
+        ) {
+          msg += ` (noch ca. ${formatDuration(currentState.estimatedRemainingMs)})`;
+        }
+        showActive(msg);
+      } else if (
+        currentState.status === "done" &&
+        currentState.newlyIndexed > 0
+      ) {
+        showSuccess(
+          `✓ Indexierung abgeschlossen (${currentState.indexed} / ${currentState.total} Papern)`,
+        );
       }
-      showActive(msg);
-    } else if (currentState.status === "done" && currentState.newlyIndexed > 0) {
-      showSuccess(`✓ Indexierung abgeschlossen (${currentState.indexed} / ${currentState.total} Papern)`);
-    }
-  }).catch((err) => {
-
-  });
+    })
+    .catch((err) => {});
 
   const observer = new doc.defaultView!.MutationObserver(() => {
     if (!banner.isConnected) {
@@ -969,7 +1213,10 @@ function createIndexingStatusBanner(doc: Document) {
     }
   });
   if (banner.ownerDocument.body) {
-    observer.observe(banner.ownerDocument.body, { childList: true, subtree: true });
+    observer.observe(banner.ownerDocument.body, {
+      childList: true,
+      subtree: true,
+    });
   }
 
   return banner;
