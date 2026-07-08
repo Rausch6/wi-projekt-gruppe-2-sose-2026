@@ -923,7 +923,7 @@ function createIndexingStatusBanner(doc: Document) {
   });
 
   const unsubProgress = indexingEvents.on("progress", ({ indexed, total, estimatedRemainingMs }) => {
-    let msg = `Achtung: Indexierung aktiv – ${indexed} / ${total} Papern indexiert`;
+    let msg = `Achtung: Indexierung aktiv ${indexed} / ${total} Papern indexiert`;
     if (estimatedRemainingMs !== undefined && estimatedRemainingMs > 0) {
       msg += ` (noch ca. ${formatDuration(estimatedRemainingMs)})`;
     }

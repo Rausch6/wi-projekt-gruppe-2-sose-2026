@@ -3,6 +3,7 @@ import { PdfExtractor } from "./PdfExtractor";
 import { chunkPaperText, type TextChunk } from "./TextChunker";
 import { embeddingProvider } from "../ai/EmbeddingProvider.js";
 import { indexingEvents } from "./IndexingEventBus";
+import { config } from "../../package.json";
 
 declare const Zotero: any;
 
@@ -180,8 +181,13 @@ export class BackgroundIndexer {
 
       const abstractText = this.getAbstractText(item);
       const extractedDoc = await PdfExtractor.extractDocument(item);
+      const addon = (globalThis as any).Zotero?.[config.addonInstance] || (globalThis as any).addon;
+      const addonSettings = addon?.data?.settings;
       const chunks = extractedDoc?.pages?.length
-        ? chunkPaperText(extractedDoc.pages)
+        ? chunkPaperText(extractedDoc.pages, {
+            targetTokens: addonSettings?.chunkTargetTokens,
+            overlapTokens: addonSettings?.chunkOverlapTokens,
+          })
         : [];
 
       if (!abstractText && chunks.length === 0) {
