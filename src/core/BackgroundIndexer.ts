@@ -325,17 +325,7 @@ export class BackgroundIndexer {
       });
   }
 
-  private getAbstractText(item: Zotero.Item) {
-    if (!item.isRegularItem()) return "";
-
-    return String(item.getField("abstractNote") || "")
-      .replace(/\r\n?/g, "\n")
-      .replace(/[ \t]+/g, " ")
-      .trim();
-  }
-
-  private createIndexHashSource(abstractText: string, chunks: TextChunk[]) {
-    const abstractSource = abstractText ? `abstract:${abstractText}` : "";
+  private createIndexHashSource(chunks: TextChunk[]) {
     const fulltextSource = chunks
       .map(
         (chunk) =>
