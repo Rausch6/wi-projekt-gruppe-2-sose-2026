@@ -69,15 +69,28 @@ type RequestMessage = {
   content: string;
 };
 
+type AIUsage = {
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
+};
+
+type AIStreamEvent = {
+  type?: unknown;
+  content?: unknown;
+  usage?: AIUsage | null;
+};
+
+type AIChatResult = {
+  content?: unknown;
+  usage?: AIUsage | null;
+};
+
 export type AssistantChatMessage = {
   id: number;
   role: ChatRole;
   content: string;
-  tokenUsage?: {
-    promptTokens: number | null;
-    completionTokens: number | null;
-    totalTokens: number | null;
-  };
+  tokenUsage?: AIUsage;
 };
 
 type PendingSimulationPrompt = {
@@ -122,6 +135,8 @@ type ModelLoadState = {
   requestID?: number;
 };
 
+type SidebarView = "chat" | "about";
+
 const hosts = new Set<HTMLElement>();
 const messages: AssistantChatMessage[] = [];
 const chatSummaries: StoredChat[] = [];
@@ -143,6 +158,7 @@ const modelOptionsByProvider = new Map<LLMProvider, ModelOption[]>([
 const modelLoadStates = new Map<LLMProvider, ModelLoadState>();
 const providerConnectionRequestIDs = new Map<LLMProvider, number>();
 const localModelInstallEventWindows = new WeakSet<Window>();
+const sidebarViews = new WeakMap<HTMLElement, SidebarView>();
 
 let nextMessageID = 1;
 let nextModelLoadRequestID = 1;
@@ -203,6 +219,9 @@ export function bindAssistantChat(host: HTMLElement) {
   const deleteButton = host.querySelector<HTMLButtonElement>(
     ".zai-chat-delete-button",
   );
+  const viewTargetButtons = Array.from(
+    host.querySelectorAll("[data-view-target]"),
+  ) as HTMLButtonElement[];
   const modelDropdown = host.querySelector<HTMLElement>(
     ".zai-model-select-wrap",
   );
@@ -332,6 +351,10 @@ export function bindAssistantChat(host: HTMLElement) {
     });
   });
   backButton?.addEventListener("click", () => {
+    if (getSidebarView(host) === "about") {
+      setSidebarView(host, "chat");
+      return;
+    }
     if (!requestRunning) returnToWelcome();
   });
   favoriteButton?.addEventListener("click", () => {
@@ -355,6 +378,11 @@ export function bindAssistantChat(host: HTMLElement) {
       );
     });
   });
+  for (const viewTargetButton of viewTargetButtons) {
+    viewTargetButton.addEventListener("click", () => {
+      setSidebarView(host, getSidebarViewTarget(viewTargetButton));
+    });
+  }
   textarea?.addEventListener("keydown", (event) => {
     const keyboardEvent = event as KeyboardEvent;
     if (keyboardEvent.key === "Enter" && !keyboardEvent.shiftKey) {
@@ -496,6 +524,23 @@ export function bindAssistantChat(host: HTMLElement) {
     hosts.add(host);
     addPaperLibraryOptionToManualContext(option);
   });
+  paperContextList?.addEventListener("click", (event) => {
+    const removeButton = (
+      event.target as Element | null
+    )?.closest<HTMLButtonElement>(
+      ".zai-paper-context-remove-button[data-context-key]",
+    );
+    const key = removeButton?.dataset.contextKey;
+    if (!key) return;
+
+    const entry = getAutomaticPaperContextEntries().find(
+      (entry) => getPaperContextKey(entry) === key,
+    );
+    if (!entry) return;
+
+    hosts.add(host);
+    void removeAutomaticPaperContextEntry(entry);
+  });
   manualPaperContextList?.addEventListener("click", (event) => {
     const removeButton = (
       event.target as Element | null
@@ -512,6 +557,20 @@ export function bindAssistantChat(host: HTMLElement) {
   if (metadataControl?.ownerDocument) {
     ensureMetadataPopoverOutsideHandler(metadataControl.ownerDocument);
   }
+}
+
+function getSidebarView(host: HTMLElement): SidebarView {
+  return sidebarViews.get(host) ?? "chat";
+}
+
+function getSidebarViewTarget(button: HTMLButtonElement): SidebarView {
+  return button.dataset.viewTarget === "about" ? "about" : "chat";
+}
+
+function setSidebarView(host: HTMLElement, view: SidebarView) {
+  hosts.add(host);
+  sidebarViews.set(host, view);
+  renderHost(host);
 }
 
 function ensureLocalModelInstallEventHandler(win: Window | null) {
@@ -758,6 +817,64 @@ export function clearChat() {
   returnToWelcome();
 }
 
+export async function createChatAndFocusComposer() {
+  const chat = await createChat();
+  focusAssistantComposer();
+  return chat;
+}
+
+export async function toggleActiveChatFavorite() {
+  const chatID = activeChatID;
+  if (!chatID) {
+    throw new Error("Es ist kein ZAIA-Chat aktiv.");
+  }
+
+  const nextFavorite = !getActiveChatSummary()?.isFavorite;
+  await setChatFavorite(chatID, nextFavorite);
+  return nextFavorite;
+}
+
+export function focusAssistantComposer(owner?: Window | null) {
+  const host = getPreferredAssistantHost(owner);
+  const textarea = host?.querySelector<HTMLTextAreaElement>(".zai-input");
+  textarea?.focus();
+  return Boolean(textarea);
+}
+
+export function focusModelSelection(owner?: Window | null) {
+  const host = getPreferredAssistantHost(owner);
+  if (!host) return false;
+
+  setModelPickerExpanded(true);
+  void ensureModelOptionsLoaded(getActiveProvider());
+
+  const dropdown = host.querySelector<HTMLElement>(".zai-model-select-wrap");
+  if (dropdown) {
+    openModelDropdown(dropdown);
+    dropdown.querySelector<HTMLButtonElement>(".zai-model-select")?.focus();
+    return true;
+  }
+
+  return false;
+}
+
+export function openContextWindow(owner?: Window | null) {
+  const host = getPreferredAssistantHost(owner);
+  if (!host || !isAssistantHostReadyForPopover(host)) return false;
+
+  const metadataControl = host.querySelector<HTMLElement>(
+    ".zai-metadata-control",
+  );
+  if (!metadataControl || !isElementReadyForPopover(metadataControl)) {
+    return false;
+  }
+
+  syncPaperContextControls(host);
+  void ensurePaperLibraryOptionsLoaded();
+  openMetadataPopover(metadataControl);
+  return true;
+}
+
 function returnToWelcome() {
   activeChatID = null;
   showAllChats = false;
@@ -836,7 +953,7 @@ async function requestStreamingAssistantResponse(
   for await (const event of addon.api.ai.chatStream(requestMessages, {
     providerId: getActiveProvider(),
     model: getActiveModel(),
-  }) as AsyncIterable<{ type?: unknown; content?: unknown }>) {
+  }) as AsyncIterable<AIStreamEvent>) {
     if (isActiveChatRequestCancelled(requestID)) break;
     if (!event || typeof event !== "object") continue;
 
@@ -857,7 +974,8 @@ async function requestStreamingAssistantResponse(
 
     if (event.type === "done") {
       if (event.usage && assistantMessage) {
-        assistantMessage.tokenUsage = event.usage as AssistantChatMessage["tokenUsage"];
+        assistantMessage.tokenUsage =
+          event.usage as AssistantChatMessage["tokenUsage"];
       }
       break;
     }
@@ -877,7 +995,7 @@ async function requestBufferedAssistantResponse(
   const result = (await addon.api.ai.chat(requestMessages, {
     providerId: getActiveProvider(),
     model: getActiveModel(),
-  })) as { content?: unknown };
+  })) as AIChatResult;
 
   if (isActiveChatRequestCancelled(requestID)) return null;
 
@@ -887,7 +1005,8 @@ async function requestBufferedAssistantResponse(
 
   const assistantMessage = appendAssistantDelta(result.content.trim());
   if (assistantMessage && "usage" in result && result.usage) {
-    assistantMessage.tokenUsage = result.usage as AssistantChatMessage["tokenUsage"];
+    assistantMessage.tokenUsage =
+      result.usage as AssistantChatMessage["tokenUsage"];
   }
   return finalizeActiveAssistantMessage() ?? assistantMessage ?? failNoAnswer();
 }
@@ -1586,7 +1705,7 @@ async function getActivePaperReference(): Promise<PaperReference | null> {
   return null;
 }
 
-function appendAssistantDelta(delta: string) {
+function appendAssistantDelta(delta: string): AssistantChatMessage | null {
   const activeResponse = activeAssistantResponse;
   if (!activeResponse) {
     return appendMessage("assistant", delta);
@@ -1914,6 +2033,58 @@ function resetMessages() {
   nextMessageID = 1;
 }
 
+function getPreferredAssistantHost(owner?: Window | null) {
+  const connectedHosts = [...hosts].filter((host) => {
+    if (!host.isConnected) {
+      hosts.delete(host);
+      return false;
+    }
+
+    return true;
+  });
+
+  if (owner) {
+    const ownedHost = connectedHosts.find(
+      (host) => host.ownerDocument.defaultView === owner,
+    );
+    if (ownedHost) return ownedHost;
+
+    const containedHost = connectedHosts.find((host) =>
+      owner.document.contains(host),
+    );
+    if (containedHost) return containedHost;
+
+    const documentHost = owner.document.querySelector<HTMLElement>(
+      ".zotero-ai-assistant-host",
+    );
+    if (documentHost) {
+      hosts.add(documentHost);
+      return documentHost;
+    }
+  }
+
+  return connectedHosts[0] ?? null;
+}
+
+function isAssistantHostReadyForPopover(host: HTMLElement) {
+  if (host.hidden || host.getAttribute("aria-hidden") === "true") {
+    return false;
+  }
+
+  return isElementReadyForPopover(host);
+}
+
+function isElementReadyForPopover(element: HTMLElement) {
+  const win = element.ownerDocument.defaultView;
+  const style = win?.getComputedStyle(element);
+  if (!style || style.display === "none" || style.visibility === "hidden") {
+    return false;
+  }
+
+  const rect = element.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
 function getSelectedItemChatInput(): CreateChatInput {
   try {
     const item = ItemManager.filterItems()[0];
@@ -1985,9 +2156,15 @@ function renderHost(host: HTMLElement) {
   const sendButton = host.querySelector<HTMLButtonElement>(".zai-send-button");
   const textarea = host.querySelector<HTMLTextAreaElement>(".zai-input");
   const status = host.querySelector<HTMLElement>(".zai-chat-status");
+  const aboutView = host.querySelector<HTMLElement>(".zai-about-view");
+  const viewTargetButtons = Array.from(
+    host.querySelectorAll("[data-view-target]"),
+  ) as HTMLButtonElement[];
 
   if (!main || !messageList) return;
 
+  const currentView = getSidebarView(host);
+  const showAbout = currentView === "about";
   const activeProvider = getActiveProvider();
   const providerConnection =
     addon.data.runtime.providerConnections[activeProvider];
@@ -2003,62 +2180,87 @@ function renderHost(host: HTMLElement) {
   const showWelcome =
     !activeChatID && !showEmbeddingSetup && !showProviderSetup;
   const showChat = !showWelcome && !showEmbeddingSetup && !showProviderSetup;
-  top?.classList.toggle("zai-top-chat-active", showChat);
+  top?.classList.toggle("zai-top-chat-active", showChat && !showAbout);
+  top?.classList.toggle("zai-top-about-active", showAbout);
   main.classList.toggle(
     "zai-main-empty",
-    showWelcome || showEmbeddingSetup || showProviderSetup,
+    !showAbout && (showWelcome || showEmbeddingSetup || showProviderSetup),
   );
-  main.classList.toggle("zai-main-chat-active", showChat);
-  modelPicker?.toggleAttribute("hidden", showEmbeddingSetup);
-  footer?.toggleAttribute("hidden", showEmbeddingSetup);
-  welcome?.toggleAttribute("hidden", !showWelcome);
-  syncEmbeddingSetup(host, showEmbeddingSetup, embeddingConnection);
+  main.classList.toggle("zai-main-chat-active", showChat && !showAbout);
+  main.classList.toggle("zai-main-about-active", showAbout);
+  modelPicker?.toggleAttribute("hidden", showAbout || showEmbeddingSetup);
+  footer?.toggleAttribute("hidden", showAbout || showEmbeddingSetup);
+  welcome?.toggleAttribute("hidden", showAbout || !showWelcome);
+  syncEmbeddingSetup(
+    host,
+    !showAbout && showEmbeddingSetup,
+    embeddingConnection,
+  );
   syncProviderSetup(
     host,
     activeProvider,
     providerConnection,
-    showProviderSetup,
+    !showAbout && showProviderSetup,
   );
-  messageList.toggleAttribute("hidden", !showChat);
-  chatList?.toggleAttribute("hidden", !showWelcome);
+  messageList.toggleAttribute("hidden", showAbout || !showChat);
+  aboutView?.toggleAttribute("hidden", !showAbout);
+  for (const viewTargetButton of viewTargetButtons) {
+    const isActive = getSidebarViewTarget(viewTargetButton) === currentView;
+    viewTargetButton.classList.toggle(
+      "zai-header-icon-button-active",
+      isActive,
+    );
+    viewTargetButton.setAttribute("aria-current", isActive ? "page" : "false");
+  }
+  chatList?.toggleAttribute("hidden", showAbout || !showWelcome);
   const showSeeAll = showWelcome && chatSummaries.length > 3;
   const canStopOllama = activeProvider === "ollama" && providerReady;
-  const showChatListStopOllama = showWelcome && canStopOllama;
-  const showActiveChatStopOllama = showChat && canStopOllama;
+  const showChatListStopOllama = !showAbout && showWelcome && canStopOllama;
+  const showActiveChatStopOllama = !showAbout && showChat && canStopOllama;
   chatListActions?.toggleAttribute(
     "hidden",
-    !showSeeAll && !showChatListStopOllama,
+    showAbout || (!showSeeAll && !showChatListStopOllama),
   );
-  seeAll?.toggleAttribute("hidden", !showSeeAll);
+  seeAll?.toggleAttribute("hidden", showAbout || !showSeeAll);
   chatListStopOllamaButton?.toggleAttribute("hidden", !showChatListStopOllama);
   activeChatStopOllamaButton?.toggleAttribute(
     "hidden",
     !showActiveChatStopOllama,
   );
-  activeChatBar?.toggleAttribute("hidden", !showChat);
+  activeChatBar?.toggleAttribute("hidden", !showAbout && !showChat);
 
   if (activeChatTitle) {
-    const title = getActiveChatTitle();
+    const title = showAbout ? "Über ZAIA" : getActiveChatTitle();
     activeChatTitle.textContent = title;
     activeChatTitle.classList.toggle(
       "zai-active-chat-title-pending",
-      Boolean(activeChatID && pendingGeneratedTitleChatIDs.has(activeChatID)),
+      !showAbout &&
+        Boolean(activeChatID && pendingGeneratedTitleChatIDs.has(activeChatID)),
     );
   }
-  if (backButton) backButton.disabled = requestRunning;
+  if (backButton) {
+    backButton.disabled = !showAbout && requestRunning;
+    backButton.setAttribute(
+      "aria-label",
+      showAbout ? "Zurück zum Chat" : "Zurück zur Startansicht",
+    );
+    backButton.setAttribute("title", showAbout ? "Zurück zum Chat" : "Zurück");
+  }
   const activeChatSummary = getActiveChatSummary();
   const isActiveFavorite = Boolean(activeChatSummary?.isFavorite);
   if (favoriteButton) {
     const favoriteLabel = isActiveFavorite
       ? "Favorit entfernen"
       : "Chat favorisieren";
-    favoriteButton.disabled = requestRunning || !activeChatID;
+    favoriteButton.toggleAttribute("hidden", showAbout);
+    favoriteButton.disabled = requestRunning || !activeChatID || showAbout;
     favoriteButton.setAttribute("aria-label", favoriteLabel);
     favoriteButton.setAttribute("aria-pressed", String(isActiveFavorite));
     favoriteButton.setAttribute("title", favoriteLabel);
   }
   if (deleteButton) {
-    deleteButton.disabled = requestRunning || !activeChatID;
+    deleteButton.toggleAttribute("hidden", showAbout);
+    deleteButton.disabled = requestRunning || !activeChatID || showAbout;
   }
   if (seeAll) {
     seeAll.textContent = showAllChats ? "Weniger anzeigen" : "Alle ansehen";
@@ -2071,7 +2273,7 @@ function renderHost(host: HTMLElement) {
     stopOllamaButton.setAttribute("aria-label", label);
     stopOllamaButton.setAttribute("title", label);
   }
-  if (chatList && showWelcome) renderChatList(host, chatList);
+  if (chatList && !showAbout && showWelcome) renderChatList(host, chatList);
   syncPaperContextControls(host);
 
   const renderedMessages = messages
@@ -2094,7 +2296,7 @@ function renderHost(host: HTMLElement) {
     status.classList.toggle("zai-chat-status-simulation", simulationEnabled);
   }
 
-  main.scrollTop = showWelcome ? 0 : main.scrollHeight;
+  main.scrollTop = showWelcome || showAbout ? 0 : main.scrollHeight;
 }
 
 function shouldShowProviderSetup(
@@ -2422,7 +2624,7 @@ function createMessageElement(
       tokenInfo.style.color = "var(--fill-quaternary)";
       tokenInfo.style.marginTop = "4px";
       tokenInfo.style.textAlign = "right";
-      
+
       let text = `Tokens: ${totalTokens} Total`;
       if (promptTokens != null && completionTokens != null) {
         text = `Tokens: ${promptTokens} Prompt / ${completionTokens} Antwort (${totalTokens} Total)`;
@@ -2994,26 +3196,20 @@ function createPaperContextRow(doc: Document, entry: PaperContextEntry) {
   text.append(title, meta);
   row.append(text);
 
-  if (entry.source === "manual") {
-    const removeButton = createControllerHtmlElement(
-      doc,
-      "button",
-      "zai-paper-context-remove-button",
-      "-",
-    ) as HTMLButtonElement;
-    removeButton.type = "button";
-    removeButton.dataset.contextKey = getPaperContextKey(entry);
-    removeButton.setAttribute("aria-label", `${entry.title} entfernen`);
-    row.append(removeButton);
-  } else {
-    row.append(
-      createControllerHtmlElement(
-        doc,
-        "span",
-        "zai-paper-context-source zai-paper-context-source-automatic",
-      ),
-    );
-  }
+  const removeButton = createControllerHtmlElement(
+    doc,
+    "button",
+    "zai-paper-context-remove-button",
+    "-",
+  ) as HTMLButtonElement;
+  removeButton.type = "button";
+  removeButton.dataset.contextKey = getPaperContextKey(entry);
+  removeButton.setAttribute("aria-label", `${entry.title} entfernen`);
+  removeButton.title =
+    entry.source === "automatic"
+      ? "Paper aus Zotero-Auswahl entfernen"
+      : "Paper entfernen";
+  row.append(removeButton);
 
   return row;
 }
@@ -3118,6 +3314,20 @@ function addPaperLibraryOptionToManualContext(option: PaperLibraryOption) {
     source: "manual",
   });
   paperLibrarySearchValue = "";
+  syncAllPaperContextControls();
+}
+
+async function removeAutomaticPaperContextEntry(entry: PaperContextEntry) {
+  const key = getPaperContextKey(entry);
+  manualPaperContextEntries.delete(key);
+
+  const removed = await ItemManager.removeItemFromSelection(entry);
+  if (!removed) {
+    Zotero.debug(
+      `ZAIA: Automatischer Paper-Kontext konnte nicht entfernt werden: ${key}`,
+    );
+  }
+
   syncAllPaperContextControls();
 }
 

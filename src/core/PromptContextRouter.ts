@@ -261,22 +261,28 @@ function applyPromptHeuristics(
       ),
       contentFocus: "relevant_chunks",
       requestedFields: inferMetadataFields(normalizedPrompt),
+      itemID: undefined,
+      itemIDs: undefined,
     };
   }
 
   if (isSummaryPrompt(normalizedPrompt)) {
+    const route =
+      (decision.route === "single_paper" && hasSinglePaperIntent) ||
+      decision.route === "filtered_papers"
+        ? decision.route
+        : "all_papers";
+
     return {
       ...decision,
-      route:
-        (decision.route === "single_paper" && hasSinglePaperIntent) ||
-        decision.route === "filtered_papers"
-          ? decision.route
-          : "all_papers",
+      route,
       reason: appendReason(
         decision.reason,
         "Heuristik: Zusammenfassung soll Abstract-orientierten Kontext nutzen.",
       ),
       contentFocus: "abstracts",
+      itemID: route === "single_paper" ? decision.itemID : undefined,
+      itemIDs: route === "single_paper" ? decision.itemIDs : undefined,
     };
   }
 
@@ -290,6 +296,8 @@ function applyPromptHeuristics(
         "Heuristik: Bibliothekssuche soll Abstract-orientierten Kontext nutzen.",
       ),
       contentFocus: "abstracts",
+      itemID: undefined,
+      itemIDs: undefined,
     };
   }
 

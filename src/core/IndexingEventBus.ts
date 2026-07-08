@@ -20,6 +20,9 @@ export interface IndexingStatusEvent {
   indexed?: number;
   total?: number;
   newlyIndexed?: number;
+  itemID?: number;
+  skipped?: boolean;
+  unchanged?: boolean;
   paperTitle?: string;
 }
 
@@ -29,7 +32,7 @@ type IndexingEventMap = {
   singleStarted: IndexingStatusEvent;
   singleDone: IndexingStatusEvent;
   deleted: IndexingStatusEvent;
-  error: { message: string; paperTitle?: string };
+  error: { message: string; itemID?: number; paperTitle?: string };
   finished: IndexingStatusEvent;
 };
 
@@ -60,9 +63,7 @@ class IndexingEventBus {
     this.listeners.get(event)?.forEach((listener) => {
       try {
         listener(data);
-      } catch (_e) {
-    
-      }
+      } catch (_e) {}
     });
   }
 }

@@ -1,124 +1,324 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet href="chrome://global/skin/global.css" type="text/css"?>
 <!DOCTYPE html>
+
 <html
   xmlns="http://www.w3.org/1999/xhtml"
   windowtype="__addonRef__-index-manager-window"
 >
   <head>
     <meta charset="utf-8" />
-    <title data-l10n-id="index-manager-title">KI-Index Manager</title>
+    <title data-l10n-id="index-manager-title">ZAIA Index Manager</title>
     <style>
       :root {
-        --zotero-background: #ffffff;
-        --zotero-text: #000000;
-        --border-color: #d0d0d0;
-        --hover-color: #f0f0f0;
+        color-scheme: light dark;
+        min-height: 600px;
+        min-width: 800px;
+        --zaia-bg: Canvas;
+        --zaia-surface: -moz-Dialog;
+        --zaia-surface-soft: color-mix(in srgb, CanvasText 4%, Canvas);
+        --zaia-border: color-mix(in srgb, CanvasText 18%, transparent);
+        --zaia-border-strong: color-mix(in srgb, CanvasText 28%, transparent);
+        --zaia-text: CanvasText;
+        --zaia-muted: color-mix(in srgb, CanvasText 64%, transparent);
+        --zaia-selected: color-mix(in srgb, AccentColor 18%, transparent);
+        --zaia-selected-border: color-mix(
+          in srgb,
+          AccentColor 55%,
+          var(--zaia-border)
+        );
+        --zaia-warning: color-mix(in srgb, #b45309 18%, Canvas);
+        --zaia-danger: color-mix(in srgb, #b91c1c 16%, Canvas);
+        --zaia-success: color-mix(in srgb, #047857 14%, Canvas);
       }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --zotero-background: #2a2a2e;
-          --zotero-text: #f9f9fa;
-          --border-color: #4a4a4f;
-          --hover-color: #38383d;
-        }
+
+      * {
+        box-sizing: border-box;
       }
+
+      html,
+      body {
+        height: 100%;
+        min-height: 600px;
+        min-width: 800px;
+      }
+
       body {
         margin: 0;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        background: var(--zotero-background);
-        color: var(--zotero-text);
-        display: flex;
-        flex-direction: column;
+        padding: 0;
+        background: var(--zaia-bg);
+        color: var(--zaia-text);
+        font: message-box;
         height: 100vh;
         overflow: hidden;
       }
-      header {
-        padding: 12px 16px;
-        border-bottom: 1px solid var(--border-color);
+
+      .index-manager-window {
+        height: 100vh;
+        min-height: 600px;
+        min-width: 800px;
+        width: 100vw;
+        display: grid;
+        grid-template-rows: auto 1fr;
+      }
+
+      .window-header {
         display: flex;
-        justify-content: space-between;
         align-items: center;
-        background: var(--hover-color);
+        justify-content: space-between;
+        gap: 20px;
+        padding: 20px 24px 18px;
+        border-bottom: 1px solid var(--zaia-border);
+        background: var(--zaia-surface);
       }
-      h1 {
+
+      .window-title {
         margin: 0;
-        font-size: 1.1em;
+        font-size: 1.34rem;
+        font-weight: 650;
+        letter-spacing: 0;
       }
-      .actions {
+
+      .header-actions {
         display: flex;
-        gap: 8px;
+        gap: 10px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
       }
-      button {
-        padding: 4px 12px;
-        border-radius: 4px;
-        border: 1px solid var(--border-color);
-        background: var(--zotero-background);
-        color: var(--zotero-text);
-        cursor: pointer;
-        font-size: 0.9em;
-      }
-      button:hover {
-        background: var(--hover-color);
-      }
-      .table-container {
-        flex: 1;
+
+      .window-content {
+        display: grid;
+        grid-template-rows: auto auto minmax(220px, 1fr);
+        gap: 20px;
+        padding: 24px;
+        min-height: 0;
+        overflow-x: hidden;
         overflow-y: auto;
       }
-      table {
+
+      .filter-strip {
+        display: grid;
+        grid-template-columns:
+          minmax(220px, 1.7fr) minmax(150px, 1fr)
+          minmax(130px, 0.7fr);
+        gap: 16px;
+        align-items: end;
+      }
+
+      .filter-field {
+        display: grid;
+        gap: 8px;
+      }
+
+      .filter-field label {
+        font-weight: 650;
+      }
+
+      .filter-field input,
+      .filter-field select {
         width: 100%;
-        border-collapse: collapse;
+        min-height: 30px;
       }
-      th, td {
-        padding: 8px 12px;
+
+      .action-status {
+        min-height: 22px;
+        padding: 9px 12px;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        color: var(--zaia-muted);
+        background: var(--zaia-surface-soft);
+      }
+
+      .action-status:empty {
+        display: none;
+      }
+
+      .action-status.success {
+        color: CanvasText;
+        border-color: color-mix(in srgb, #047857 30%, transparent);
+        background: var(--zaia-success);
+      }
+
+      .action-status.warning {
+        color: CanvasText;
+        border-color: color-mix(in srgb, #b45309 34%, transparent);
+        background: var(--zaia-warning);
+      }
+
+      .action-status.error {
+        color: CanvasText;
+        border-color: color-mix(in srgb, #b91c1c 34%, transparent);
+        background: var(--zaia-danger);
+      }
+
+      .index-board {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+        gap: 18px;
+        align-items: stretch;
+        height: 100%;
+        min-height: 220px;
+      }
+
+      .index-panel {
+        height: 100%;
+        min-height: 220px;
+        border: 1px solid var(--zaia-border);
+        border-radius: 7px;
+        background: var(--zaia-surface);
+        display: grid;
+        grid-template-rows: auto 1fr;
+      }
+
+      .panel-header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 18px 18px 14px;
+        border-bottom: 1px solid var(--zaia-border);
+      }
+
+      .panel-title {
+        margin: 0;
+        font-size: 1.1rem;
+        font-weight: 700;
+        letter-spacing: 0;
+      }
+
+      .panel-count {
+        color: var(--zaia-muted);
+        white-space: nowrap;
+      }
+
+      .paper-list-wrap {
+        position: relative;
+        min-height: 112px;
+        overflow: hidden;
+      }
+
+      .paper-list {
+        height: 100%;
+        min-height: 0;
+        overflow: auto;
+        padding: 16px;
+        display: grid;
+        align-content: start;
+        gap: 12px;
+      }
+
+      .paper-row {
+        width: 100%;
+        min-height: 72px;
         text-align: left;
-        border-bottom: 1px solid var(--border-color);
+        border: 1px solid var(--zaia-border);
+        border-radius: 6px;
+        background: var(--zaia-bg);
+        color: var(--zaia-text);
+        padding: 12px 14px;
+        display: grid;
+        gap: 7px;
+        cursor: default;
+        min-width: 0;
+        overflow: hidden;
       }
-      th {
-        position: sticky;
-        top: 0;
-        background: var(--hover-color);
-        font-weight: 600;
-        font-size: 0.9em;
-        z-index: 10;
+
+      .paper-row:hover {
+        border-color: var(--zaia-border-strong);
+        background: var(--zaia-surface-soft);
       }
-      tr:hover td {
-        background: var(--hover-color);
+
+      .paper-row.selected {
+        border-color: var(--zaia-selected-border);
+        background: var(--zaia-selected);
       }
-      .col-status {
-        width: 80px;
-        text-align: center;
+
+      .paper-row.is-queued {
+        opacity: 0.72;
       }
-      .col-title {
-        width: auto;
+
+      .paper-row:disabled {
+        color: var(--zaia-text);
       }
-      .col-author {
-        width: 25%;
+
+      .paper-row-title {
+        display: -webkit-box;
+        font-weight: 650;
+        line-height: 1.35;
+        min-width: 0;
+        overflow: hidden;
+        overflow-wrap: anywhere;
+        text-overflow: ellipsis;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
       }
-      .col-year {
-        width: 60px;
+
+      .paper-row-meta {
+        color: var(--zaia-muted);
+        line-height: 1.35;
+        overflow-wrap: anywhere;
       }
-      .status-badge {
-        display: inline-block;
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        background-color: #ccc;
+
+      .transfer-controls {
+        align-self: center;
+        display: grid;
+        gap: 12px;
+        padding: 0 2px;
       }
-      .status-badge.indexed {
-        background-color: #28a745;
+
+      .transfer-controls button {
+        min-width: 40px;
+        min-height: 32px;
+        font-size: 1.18rem;
+        line-height: 1;
       }
-      .status-badge.unindexed {
-        background-color: #dc3545;
-      }
+
       .empty-state {
-        padding: 40px;
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        padding: 24px;
         text-align: center;
-        color: #888;
+        line-height: 1.35;
+        color: var(--zaia-muted);
+        pointer-events: none;
       }
-      input[type="checkbox"] {
-        cursor: pointer;
-        width: 16px;
-        height: 16px;
+
+      .empty-state[hidden] {
+        display: none;
+      }
+
+      @media (max-width: 760px) {
+        .window-header {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .header-actions {
+          justify-content: flex-start;
+        }
+
+        .filter-strip {
+          grid-template-columns: 1fr;
+        }
+
+        .index-board {
+          grid-template-columns: 1fr;
+          grid-template-rows: minmax(180px, auto) auto minmax(180px, auto);
+          gap: 16px;
+          overflow-y: auto;
+        }
+
+        .index-panel {
+          height: auto;
+          min-height: 180px;
+        }
+
+        .transfer-controls {
+          justify-self: center;
+          grid-template-columns: repeat(2, auto);
+        }
       }
     </style>
     <script type="application/javascript">
@@ -142,9 +342,7 @@
             var args = getDialogArguments();
             var addonInstance = args.addonInstance || "__addonInstance__";
 
-            return owner &&
-              owner.Zotero &&
-              owner.Zotero[addonInstance]
+            return owner && owner.Zotero && owner.Zotero[addonInstance]
               ? owner.Zotero[addonInstance]
               : null;
           }
@@ -183,29 +381,135 @@
     </script>
   </head>
   <body>
-    <header>
-      <h1 data-l10n-id="index-manager-title">KI-Index Manager</h1>
-      <div class="actions">
-        <button id="btn-refresh" data-l10n-id="index-manager-refresh">Aktualisieren</button>
-      </div>
-    </header>
-    <div class="table-container">
-      <table>
-        <thead>
-          <tr>
-            <th class="col-status" data-l10n-id="index-manager-col-status">Indexiert</th>
-            <th class="col-title" data-l10n-id="index-manager-col-title">Titel</th>
-            <th class="col-author" data-l10n-id="index-manager-col-author">Autor</th>
-            <th class="col-year" data-l10n-id="index-manager-col-year">Jahr</th>
-          </tr>
-        </thead>
-        <tbody id="papers-tbody">
-          <!-- Dynamically populated -->
-        </tbody>
-      </table>
-      <div id="empty-state" class="empty-state" style="display: none;">
-        Keine unterstützten Dokumente in der Bibliothek gefunden.
-      </div>
+    <div class="index-manager-window">
+      <header class="window-header">
+        <h1 class="window-title" data-l10n-id="index-manager-title">
+          ZAIA Index Manager
+        </h1>
+        <div class="header-actions">
+          <button
+            id="btn-rebuild-index"
+            data-l10n-id="index-manager-rebuild-index"
+          >
+            Index neu aufbauen
+          </button>
+          <button id="btn-clear-index" data-l10n-id="index-manager-clear-index">
+            Index leeren
+          </button>
+          <button id="btn-refresh" data-l10n-id="index-manager-refresh">
+            Liste aktualisieren
+          </button>
+        </div>
+      </header>
+
+      <main class="window-content">
+        <section class="filter-strip" aria-label="Index-Filter">
+          <div class="filter-field">
+            <label for="index-search-input" data-l10n-id="index-manager-search"
+              >Suche</label
+            >
+            <input
+              id="index-search-input"
+              type="search"
+              placeholder="Titel, Autor oder Jahr suchen"
+              autocomplete="off"
+            />
+          </div>
+          <div class="filter-field">
+            <label
+              for="index-type-filter"
+              data-l10n-id="index-manager-filter-type"
+              >Typ</label
+            >
+            <select id="index-type-filter"></select>
+          </div>
+          <div class="filter-field">
+            <label
+              for="index-year-filter"
+              data-l10n-id="index-manager-filter-year"
+              >Jahr</label
+            >
+            <select id="index-year-filter"></select>
+          </div>
+        </section>
+
+        <div
+          id="index-action-status"
+          class="action-status"
+          role="status"
+          aria-live="polite"
+        ></div>
+
+        <section
+          class="index-board"
+          aria-label="Indexierte und nicht indexierte Paper"
+        >
+          <section class="index-panel" aria-labelledby="unindexed-panel-title">
+            <div class="panel-header">
+              <h2
+                id="unindexed-panel-title"
+                class="panel-title"
+                data-l10n-id="index-manager-unindexed-title"
+              >
+                Nicht indexiert
+              </h2>
+              <span id="unindexed-count" class="panel-count">0</span>
+            </div>
+            <div class="paper-list-wrap">
+              <div
+                id="unindexed-list"
+                class="paper-list"
+                role="listbox"
+                aria-multiselectable="true"
+              ></div>
+              <div id="unindexed-empty" class="empty-state">
+                Keine passenden nicht indexierten Paper.
+              </div>
+            </div>
+          </section>
+
+          <div class="transfer-controls" aria-label="Paper verschieben">
+            <button
+              id="btn-index-selected"
+              title="Ausgewählte Paper indexieren"
+              aria-label="Ausgewählte Paper indexieren"
+            >
+              →
+            </button>
+            <button
+              id="btn-unindex-selected"
+              title="Ausgewählte Paper aus dem Index entfernen"
+              aria-label="Ausgewählte Paper aus dem Index entfernen"
+            >
+              ←
+            </button>
+          </div>
+
+          <section class="index-panel" aria-labelledby="indexed-panel-title">
+            <div class="panel-header">
+              <h2
+                id="indexed-panel-title"
+                class="panel-title"
+                data-l10n-id="index-manager-indexed-title"
+              >
+                Indexiert
+              </h2>
+              <span id="indexed-count" class="panel-count">0</span>
+            </div>
+            <div class="paper-list-wrap">
+              <div
+                id="indexed-list"
+                class="paper-list"
+                role="listbox"
+                aria-multiselectable="true"
+              ></div>
+              <div id="indexed-empty" class="empty-state">
+                Keine passenden indexierten Paper.
+              </div>
+            </div>
+          </section>
+        </section>
+      </main>
     </div>
   </body>
 </html>

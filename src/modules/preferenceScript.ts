@@ -2,7 +2,10 @@ import { config } from "../../package.json";
 import {
   EMBEDDING_DEFAULT_BASE_URL,
   EMBEDDING_DEFAULT_MODEL,
+  REQUIRED_EMBEDDING_MODEL,
 } from "../ai/EmbeddingProvider.js";
+import type { EmbeddingConnectionResult } from "../ai/embeddingConnectionStatus";
+import type { ProviderConnectionResult } from "../ai/providerConnectionStatus";
 import {
   KISSKI_DEFAULT_BASE_URL,
   KISSKI_DEFAULT_MODEL,
@@ -11,15 +14,41 @@ import {
   OLLAMA_DEFAULT_BASE_URL,
   OLLAMA_DEFAULT_MODEL,
 } from "../ai/providers/OllamaProvider.js";
+import type { LLMProvider, PluginSettings } from "../addon";
+import { DEFAULT_METADATA_FIELD_SELECTION } from "../core/MetadataFieldSelection";
 
-import { backgroundIndexer } from "../core/BackgroundIndexer";
-import { vectorStore } from "../core/OramaService";
-import { indexingEvents } from "../core/IndexingEventBus";
+const HTML_NS = "http://www.w3.org/1999/xhtml";
 
-const OLLAMA_INSTALL_COMMANDS = {
-  unix: "curl -fsSL https://ollama.com/install.sh | sh",
-  windows: "irm https://ollama.com/install.ps1 | iex",
+type StatusState = "loading" | "success" | "warning" | "error";
+type PreferenceValue = string | number | boolean;
+type ModelSelectState = "idle" | "loaded" | "empty" | "error";
+type ModelOption = {
+  id: string;
+  name: string;
 };
+type ModelSelectUpdate = {
+  selectedAvailable: boolean;
+};
+
+const DEFAULT_SETTINGS = {
+  provider: "kisski",
+  apiKey: "",
+  baseUrl: KISSKI_DEFAULT_BASE_URL,
+  model: KISSKI_DEFAULT_MODEL,
+  sendPaperContextToKisski: true,
+  contextRouterProvider: "ollama",
+  embeddingSearchEnabled: true,
+  embeddingBaseUrl: EMBEDDING_DEFAULT_BASE_URL,
+  embeddingModel: EMBEDDING_DEFAULT_MODEL,
+  maxItems: 200,
+  metadataFieldSelection: DEFAULT_METADATA_FIELD_SELECTION,
+  ollamaBaseUrl: OLLAMA_DEFAULT_BASE_URL,
+  ollamaModel: OLLAMA_DEFAULT_MODEL,
+  autoDeleteOldChats: true,
+  chunkTargetTokens: 512,
+  chunkOverlapTokens: 100,
+  chunkCount: 3,
+} satisfies PluginSettings;
 
 const FIELD_NAMES = [
   "api-key",
@@ -29,15 +58,30 @@ const FIELD_NAMES = [
   "context-router-provider",
   "embedding-search-enabled",
   "embedding-base-url",
-  "embedding-model",
   "ollama-base-url",
   "ollama-model",
   "max-items",
   "auto-delete-old-chats",
-  "chunk-target-tokens",
-  "chunk-overlap-tokens",
-  "chunk-count",
 ] as const;
+
+const INDEX_MANAGER_DEFAULT_WIDTH = 800;
+const INDEX_MANAGER_DEFAULT_HEIGHT = 600;
+const INDEX_MANAGER_MIN_WIDTH = INDEX_MANAGER_DEFAULT_WIDTH;
+const INDEX_MANAGER_MIN_HEIGHT = INDEX_MANAGER_DEFAULT_HEIGHT;
+
+const PREFERENCE_FIELD_NAMES: Partial<Record<keyof PluginSettings, string>> = {
+  apiKey: "api-key",
+  baseUrl: "base-url",
+  model: "model",
+  sendPaperContextToKisski: "send-paper-context-to-kisski",
+  contextRouterProvider: "context-router-provider",
+  embeddingSearchEnabled: "embedding-search-enabled",
+  embeddingBaseUrl: "embedding-base-url",
+  maxItems: "max-items",
+  ollamaBaseUrl: "ollama-base-url",
+  ollamaModel: "ollama-model",
+  autoDeleteOldChats: "auto-delete-old-chats",
+};
 
 export async function registerPrefsScripts(window: Window) {
   addon.data.prefs = {
@@ -46,194 +90,236 @@ export async function registerPrefsScripts(window: Window) {
     rows: [],
   };
 
+  migrateHiddenPreferences();
+  applySettingsToFields(window, addon.data.settings);
   bindPreferenceEvents(window);
 }
 
 function bindPreferenceEvents(window: Window) {
   for (const fieldName of FIELD_NAMES) {
-    getElement<HTMLInputElement>(window, fieldName)?.addEventListener(
-      "change",
-      () => syncRuntimeSettings(window),
-    );
+    getElement<HTMLInputElement | HTMLSelectElement>(
+      window,
+      fieldName,
+    )?.addEventListener("change", () => syncRuntimeSettings(window));
   }
 
-  getElement(window, "load-models")?.addEventListener("command", () => {
-    void loadModels(window);
+  bindCommand(window, "load-cloud-models", () => {
+    void loadModels(window, "kisski");
   });
-
-  getElement(window, "test-embedding-service")?.addEventListener(
-    "command",
-    () => {
-      void testEmbeddingService(window);
-    },
-  );
-
-  getElement(window, "copy-ollama-install-command")?.addEventListener(
-    "command",
-    () => {
-      void copyOllamaInstallCommand(window);
-    },
-  );
-
-  getElement(window, "download-ollama-model")?.addEventListener(
-    "command",
-    () => {
-      void downloadOllamaModel(window);
-    },
-  );
-
-  // --- Index-Verwaltungs-Buttons ---
-  getElement(window, "rebuild-index")?.addEventListener("command", () => {
-    void rebuildIndex(window);
+  bindCommand(window, "test-cloud-connection", () => {
+    void testProviderConnection(window, "kisski");
   });
-  getElement(window, "clear-index")?.addEventListener("command", () => {
-    void clearIndex(window);
+  bindCommand(window, "load-local-models", () => {
+    void loadModels(window, "ollama");
   });
-  getElement(window, "open-index-manager")?.addEventListener("command", () => {
-    void openIndexManager(window);
+  bindCommand(window, "test-local-connection", () => {
+    void testProviderConnection(window, "ollama");
   });
-  
-  // Initial stats update
-  void updateIndexStats(window);
-
-  // Dynamic updates
-  const updateFn = () => { void updateIndexStats(window); };
-  indexingEvents.on("finished", updateFn);
-  indexingEvents.on("singleDone", updateFn);
-  indexingEvents.on("deleted", updateFn);
-  indexingEvents.on("progress", updateFn);
+  bindCommand(window, "test-embedding-service", () => {
+    void testEmbeddingService(window);
+  });
+  bindCommand(window, "open-index-manager", () => {
+    openIndexManager(window);
+  });
+  bindCommand(window, "reset-preferences", () => {
+    resetPreferences(window);
+  });
 }
 
-function openIndexManager(window: Window) {
-  const url = `chrome://${config.addonRef}/content/indexManager.xhtml`;
-  const features = "chrome,titlebar,toolbar,centerscreen,resizable=yes,width=800,height=600";
-  window.openDialog(url, "_blank", features, { owner: window });
-}
-
-async function updateIndexStats(window: Window) {
-  const statusEl = getElement<HTMLElement>(window, "indexing-db-status");
-  if (!statusEl) return;
-  
-  try {
-    const stats = await vectorStore.getDatabaseStats();
-    statusEl.textContent = `Vektordatenbank: ${stats.papers} Paper / ${stats.chunks} Chunks.`;
-  } catch (err) {
-    statusEl.textContent = `Vektordatenbank-Status konnte nicht geladen werden.`;
-  }
+function bindCommand(
+  window: Window,
+  name: string,
+  handler: (event: Event) => void,
+) {
+  getElement(window, name)?.addEventListener("command", handler);
 }
 
 function syncRuntimeSettings(window: Window) {
-  const apiKey = getElement<HTMLInputElement>(window, "api-key")?.value ?? "";
-  const baseUrl =
-    getElement<HTMLInputElement>(window, "base-url")?.value.trim() ||
-    KISSKI_DEFAULT_BASE_URL;
-  const model =
-    getElement<HTMLInputElement>(window, "model")?.value.trim() ||
-    KISSKI_DEFAULT_MODEL;
-  const sendPaperContextToKisski =
-    getElement<HTMLInputElement>(window, "send-paper-context-to-kisski")
-      ?.checked ?? true;
-  const contextRouterProviderValue =
-    getElement<HTMLSelectElement>(window, "context-router-provider")?.value ??
-    "ollama";
-  const contextRouterProvider =
-    contextRouterProviderValue === "kisski" ? "kisski" : "ollama";
-  const embeddingSearchEnabled =
-    getElement<HTMLInputElement>(window, "embedding-search-enabled")?.checked ??
-    true;
-  const embeddingBaseUrl =
-    getElement<HTMLInputElement>(window, "embedding-base-url")?.value.trim() ||
-    EMBEDDING_DEFAULT_BASE_URL;
-  const embeddingModel =
-    getElement<HTMLInputElement>(window, "embedding-model")?.value.trim() ||
-    EMBEDDING_DEFAULT_MODEL;
-  const ollamaBaseUrl =
-    getElement<HTMLInputElement>(window, "ollama-base-url")?.value.trim() ||
-    OLLAMA_DEFAULT_BASE_URL;
-  const ollamaModel =
-    getElement<HTMLInputElement>(window, "ollama-model")?.value.trim() ||
-    OLLAMA_DEFAULT_MODEL;
-  const maxItemsValue =
-    getElement<HTMLInputElement>(window, "max-items")?.value ?? "200";
-  const autoDeleteOldChats =
-    getElement<HTMLInputElement>(window, "auto-delete-old-chats")?.checked ??
-    true;
+  const nextSettings = readSettingsFromFields(window);
 
-  const chunkTargetTokensValue =
-    getElement<HTMLInputElement>(window, "chunk-target-tokens")?.value ?? "512";
-  const chunkOverlapTokensValue =
-    getElement<HTMLInputElement>(window, "chunk-overlap-tokens")?.value ?? "100";
-  const chunkCountValue =
-    getElement<HTMLInputElement>(window, "chunk-count")?.value ?? "3";
+  Object.assign(addon.data.settings, nextSettings);
+  configureProvidersFromSettings();
+}
 
-  Object.assign(addon.data.settings, {
-    provider: addon.data.settings.provider,
-    apiKey,
-    baseUrl,
-    model,
-    sendPaperContextToKisski,
+function readSettingsFromFields(window: Window): PluginSettings {
+  const provider = addon.data.settings.provider || DEFAULT_SETTINGS.provider;
+  const contextRouterProvider = readProviderValue(
+    window,
+    "context-router-provider",
+    "ollama",
+  );
+
+  return {
+    provider,
+    apiKey: readTextValue(window, "api-key", ""),
+    baseUrl: readTextValue(window, "base-url", KISSKI_DEFAULT_BASE_URL),
+    model: readTextValue(window, "model", KISSKI_DEFAULT_MODEL),
+    sendPaperContextToKisski: readBooleanValue(
+      window,
+      "send-paper-context-to-kisski",
+      true,
+    ),
     contextRouterProvider,
-    embeddingSearchEnabled,
-    embeddingBaseUrl,
-    embeddingModel,
-    ollamaBaseUrl,
-    ollamaModel,
-    maxItems: Number.parseInt(maxItemsValue, 10) || 200,
-    autoDeleteOldChats,
-    metadataFieldSelection: addon.data.settings.metadataFieldSelection,
-    chunkTargetTokens: Number.parseInt(chunkTargetTokensValue, 10) || 512,
-    chunkOverlapTokens: Number.parseInt(chunkOverlapTokensValue, 10) || 100,
-    chunkCount: Number.parseInt(chunkCountValue, 10) || 3,
+    embeddingSearchEnabled: readBooleanValue(
+      window,
+      "embedding-search-enabled",
+      true,
+    ),
+    embeddingBaseUrl: readTextValue(
+      window,
+      "embedding-base-url",
+      EMBEDDING_DEFAULT_BASE_URL,
+    ),
+    embeddingModel: EMBEDDING_DEFAULT_MODEL,
+    maxItems: readNumberValue(window, "max-items", 200, 1, 1000),
+    metadataFieldSelection:
+      addon.data.settings.metadataFieldSelection ||
+      DEFAULT_METADATA_FIELD_SELECTION,
+    ollamaBaseUrl: readTextValue(
+      window,
+      "ollama-base-url",
+      OLLAMA_DEFAULT_BASE_URL,
+    ),
+    ollamaModel: readTextValue(window, "ollama-model", OLLAMA_DEFAULT_MODEL),
+    autoDeleteOldChats: readBooleanValue(window, "auto-delete-old-chats", true),
+    chunkTargetTokens:
+      addon.data.settings.chunkTargetTokens ||
+      DEFAULT_SETTINGS.chunkTargetTokens,
+    chunkOverlapTokens:
+      addon.data.settings.chunkOverlapTokens ||
+      DEFAULT_SETTINGS.chunkOverlapTokens,
+    chunkCount: addon.data.settings.chunkCount || DEFAULT_SETTINGS.chunkCount,
+  };
+}
+
+function configureProvidersFromSettings() {
+  const settings = addon.data.settings;
+
+  addon.api.ai.setActiveProvider(settings.provider);
+  addon.api.ai.configureProvider("kisski", {
+    apiKey: settings.apiKey,
+    baseUrl: settings.baseUrl,
+    model: settings.model,
   });
-  addon.api.configureAI();
+  addon.api.ai.configureProvider("ollama", {
+    baseUrl: settings.ollamaBaseUrl,
+    model: settings.ollamaModel,
+  });
   addon.api.configureEmbeddings();
 }
 
-export function getOllamaInstallCommand(window: Window) {
-  const platform = window.navigator.platform.toLowerCase();
-  const userAgent = window.navigator.userAgent.toLowerCase();
-  const isWindows = platform.includes("win") || userAgent.includes("windows");
-
-  return isWindows
-    ? OLLAMA_INSTALL_COMMANDS.windows
-    : OLLAMA_INSTALL_COMMANDS.unix;
-}
-
-async function copyOllamaInstallCommand(window: Window) {
-  const status = getElement<HTMLElement>(window, "ollama-setup-status");
-  const command = getOllamaInstallCommand(window);
-
-  try {
-    await window.navigator.clipboard.writeText(command);
-    setStatus(status, "Ollama install command copied.");
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    setStatus(status, `Copy failed: ${message}`);
+function migrateHiddenPreferences() {
+  const storedEmbeddingModel = getPluginPreference("embeddingModel");
+  if (storedEmbeddingModel !== EMBEDDING_DEFAULT_MODEL) {
+    setPluginPreference("embeddingModel", EMBEDDING_DEFAULT_MODEL);
+    addon.data.settings.embeddingModel = EMBEDDING_DEFAULT_MODEL;
   }
 }
 
-async function downloadOllamaModel(window: Window) {
-  const status = getElement<HTMLElement>(window, "ollama-setup-status");
-  const button = getElement<HTMLButtonElement>(window, "download-ollama-model");
+async function loadModels(window: Window, provider: LLMProvider) {
+  const status = getProviderStatusElement(window, provider);
+  const button = getElement<HTMLButtonElement>(
+    window,
+    provider === "kisski" ? "load-cloud-models" : "load-local-models",
+  );
 
   syncRuntimeSettings(window);
-  const model = addon.data.settings.ollamaModel || OLLAMA_DEFAULT_MODEL;
-  setStatus(status, `Downloading ${model}...`);
-  if (button) button.disabled = true;
+  const selectedModel = getConfiguredModel(provider);
+  setButtonBusy(button, true);
+  setModelSelectBusy(window, provider, true);
+  setStatus(
+    status,
+    provider === "kisski"
+      ? "Cloud-Modelle werden geladen..."
+      : "Lokale Modelle werden geladen...",
+    "loading",
+  );
 
   try {
-    const provider = addon.api.ai.getProvider("ollama");
-    if (typeof provider.pullModel !== "function") {
-      throw new Error("Ollama provider does not support model downloads.");
+    const models = normalizeModelOptions(
+      await addon.api.ai.listModels(provider),
+      provider,
+    );
+    const update = setModelSelectOptions(
+      window,
+      provider,
+      models,
+      selectedModel,
+      models.length ? "loaded" : "empty",
+    );
+
+    if (!models.length) {
+      setStatus(
+        status,
+        `${getModelProviderLabel(provider)}: Keine Modelle gefunden.${
+          selectedModel ? " Gespeichertes Modell bleibt ausgewählt." : ""
+        }`,
+        "warning",
+      );
+      return;
     }
 
-    await provider.pullModel(model);
-    setStatus(status, `${model} is ready.`);
+    if (!update.selectedAvailable) {
+      setStatus(
+        status,
+        `${models.length} ${
+          models.length === 1 ? "Modell" : "Modelle"
+        } geladen. Das gespeicherte Modell ist nicht in der Liste.`,
+        "warning",
+      );
+      return;
+    }
+
+    setStatus(
+      status,
+      `${models.length} ${models.length === 1 ? "Modell" : "Modelle"} geladen.`,
+      "success",
+    );
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    setStatus(status, `Download failed: ${message}`);
+    setStatus(
+      status,
+      `Modelle konnten nicht geladen werden: ${getErrorMessage(error)}`,
+      "error",
+    );
+    setModelSelectOptions(window, provider, [], selectedModel, "error");
   } finally {
-    if (button) button.disabled = false;
+    setButtonBusy(button, false);
+    setModelSelectBusy(window, provider, false);
+  }
+}
+
+async function testProviderConnection(window: Window, provider: LLMProvider) {
+  const status = getProviderStatusElement(window, provider);
+  const button = getElement<HTMLButtonElement>(
+    window,
+    provider === "kisski" ? "test-cloud-connection" : "test-local-connection",
+  );
+
+  syncRuntimeSettings(window);
+  setButtonBusy(button, true);
+  setStatus(
+    status,
+    provider === "kisski"
+      ? "Cloud-Verbindung wird geprüft..."
+      : "Ollama-Verbindung wird geprüft...",
+    "loading",
+  );
+
+  try {
+    const result = await addon.api.checkProviderConnection(provider);
+    setStatus(
+      status,
+      formatProviderConnectionResult(result),
+      result.ok ? "success" : "error",
+    );
+  } catch (error) {
+    setStatus(
+      status,
+      `Verbindungstest fehlgeschlagen: ${getErrorMessage(error)}`,
+      "error",
+    );
+  } finally {
+    setButtonBusy(button, false);
   }
 }
 
@@ -245,53 +331,378 @@ async function testEmbeddingService(window: Window) {
   );
 
   syncRuntimeSettings(window);
-  setStatus(status, "Testing embedding service...");
-  if (button) button.disabled = true;
+  setButtonBusy(button, true);
+  setStatus(status, "Embedding-Verbindung wird geprüft...", "loading");
 
   try {
-    const [embedding] = await addon.api.embeddings.embedTexts(
-      ["semantic paper search"],
-      { inputType: "query", timeout: 30_000 },
+    const result = await addon.api.checkEmbeddingConnection();
+    setStatus(
+      status,
+      formatEmbeddingConnectionResult(result),
+      result.ok ? "success" : "error",
     );
-    setStatus(status, `Embedding service ready (${embedding.length} dims).`);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    setStatus(status, `Embedding test failed: ${message}`);
+    setStatus(
+      status,
+      `Embedding-Test fehlgeschlagen: ${getErrorMessage(error)}`,
+      "error",
+    );
   } finally {
-    if (button) button.disabled = false;
+    setButtonBusy(button, false);
   }
 }
 
-async function loadModels(window: Window) {
-  const status = getElement<HTMLElement>(window, "connection-status");
-  const dataList = window.document.getElementById(
-    `${config.addonRef}-model-options`,
+function openIndexManager(window: Window) {
+  const url = `chrome://${config.addonRef}/content/indexManager.xhtml`;
+  const features = [
+    "chrome",
+    "titlebar",
+    "toolbar",
+    "centerscreen",
+    "resizable=yes",
+    `width=${INDEX_MANAGER_DEFAULT_WIDTH}`,
+    `height=${INDEX_MANAGER_DEFAULT_HEIGHT}`,
+    `minwidth=${INDEX_MANAGER_MIN_WIDTH}`,
+    `minheight=${INDEX_MANAGER_MIN_HEIGHT}`,
+  ].join(",");
+
+  window.openDialog(url, "_blank", features, {
+    addonInstance: config.addonInstance,
+    owner: window,
+  });
+}
+
+function resetPreferences(window: Window) {
+  const status = getElement<HTMLElement>(window, "reset-status");
+  const confirmed = window.confirm(
+    "Alle ZAIA-Einstellungen werden auf Standardwerte zurückgesetzt. Der KISSKI API-Key wird dabei entfernt. Fortfahren?",
+  );
+  if (!confirmed) return;
+
+  for (const [key, value] of Object.entries(DEFAULT_SETTINGS) as Array<
+    [keyof PluginSettings, PreferenceValue]
+  >) {
+    setPluginPreference(key, value);
+  }
+
+  Object.assign(addon.data.settings, DEFAULT_SETTINGS);
+  applySettingsToFields(window, addon.data.settings);
+  configureProvidersFromSettings();
+  setStatus(status, "Standardwerte wurden wiederhergestellt.", "success");
+}
+
+function applySettingsToFields(window: Window, settings: PluginSettings) {
+  setModelSelectOptions(window, "kisski", [], settings.model, "idle");
+  setModelSelectOptions(window, "ollama", [], settings.ollamaModel, "idle");
+
+  for (const [key, fieldName] of Object.entries(
+    PREFERENCE_FIELD_NAMES,
+  ) as Array<[keyof PluginSettings, string]>) {
+    setFieldValue(window, fieldName, settings[key] as PreferenceValue);
+  }
+}
+
+function setFieldValue(window: Window, name: string, value: PreferenceValue) {
+  const element = getElement<HTMLInputElement | HTMLSelectElement>(
+    window,
+    name,
+  );
+  if (!element) return;
+
+  if (
+    element instanceof window.HTMLInputElement &&
+    element.type === "checkbox"
+  ) {
+    element.checked = Boolean(value);
+    return;
+  }
+
+  element.value = String(value);
+}
+
+function readTextValue(window: Window, name: string, fallback: string) {
+  const element = getElement<HTMLInputElement | HTMLSelectElement>(
+    window,
+    name,
+  );
+  return element?.value.trim() || fallback;
+}
+
+function readBooleanValue(window: Window, name: string, fallback: boolean) {
+  return getElement<HTMLInputElement>(window, name)?.checked ?? fallback;
+}
+
+function readNumberValue(
+  window: Window,
+  name: string,
+  fallback: number,
+  min: number,
+  max: number,
+) {
+  const rawValue = getElement<HTMLInputElement>(window, name)?.value ?? "";
+  const parsedValue = Number.parseInt(rawValue, 10);
+  if (!Number.isFinite(parsedValue)) return fallback;
+  return Math.min(max, Math.max(min, parsedValue));
+}
+
+function readProviderValue(
+  window: Window,
+  name: string,
+  fallback: LLMProvider,
+): LLMProvider {
+  const value = getElement<HTMLSelectElement>(window, name)?.value;
+  return value === "ollama" || value === "kisski" ? value : fallback;
+}
+
+function normalizeModelOptions(
+  models: unknown,
+  provider: LLMProvider,
+): ModelOption[] {
+  if (!Array.isArray(models)) return [];
+
+  const seen = new Set<string>();
+  const options: ModelOption[] = [];
+
+  for (const model of models) {
+    const record = model as { id?: unknown; name?: unknown };
+    const id = typeof record.id === "string" ? record.id.trim() : "";
+    if (!id || seen.has(id)) continue;
+    if (provider === "ollama" && isLocalEmbeddingModel(id)) continue;
+
+    const name =
+      typeof record.name === "string" && record.name.trim()
+        ? record.name.trim()
+        : id;
+
+    seen.add(id);
+    options.push({ id, name });
+  }
+
+  return options.sort((first, second) =>
+    first.name.localeCompare(second.name, undefined, { sensitivity: "base" }),
+  );
+}
+
+function setModelSelectOptions(
+  window: Window,
+  provider: LLMProvider,
+  models: ModelOption[],
+  selectedModel: string,
+  state: ModelSelectState,
+): ModelSelectUpdate {
+  const select = getModelSelect(window, provider);
+  const selectedValue = selectedModel.trim();
+  if (!select) {
+    return { selectedAvailable: false };
+  }
+
+  const selectedAvailable = models.some((model) => model.id === selectedValue);
+  const options = [
+    createModelPlaceholderOption(
+      window,
+      getModelPlaceholderText(provider, state),
+      !selectedValue,
+    ),
+  ];
+
+  if (selectedValue && !selectedAvailable) {
+    options.push(
+      createModelOption(
+        window,
+        selectedValue,
+        `${selectedValue} (gespeichert)`,
+        true,
+      ),
+    );
+  }
+
+  options.push(
+    ...models.map((model) =>
+      createModelOption(
+        window,
+        model.id,
+        formatModelOptionLabel(model),
+        model.id === selectedValue,
+      ),
+    ),
   );
 
-  syncRuntimeSettings(window);
-  setStatus(status, "Loading models...");
+  select.replaceChildren(...options);
+  select.value = selectedValue;
+  select.disabled = !selectedValue && !models.length;
+  select.dataset.state = state;
 
-  try {
-    const models = await addon.api.ai.listModels("kisski");
-    dataList?.replaceChildren(
-      ...models.map((model: { id: string }) => {
-        const option = window.document.createElementNS(
-          "http://www.w3.org/1999/xhtml",
-          "option",
-        ) as HTMLOptionElement;
-        option.value = model.id;
-        return option;
-      }),
-    );
-    setStatus(status, `${models.length} models available.`);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    setStatus(status, `Connection failed: ${message}`);
+  return {
+    selectedAvailable: !selectedValue || selectedAvailable,
+  };
+}
+
+function createModelPlaceholderOption(
+  window: Window,
+  label: string,
+  selected: boolean,
+) {
+  const option = createModelOption(window, "", label, selected);
+  option.disabled = true;
+  return option;
+}
+
+function createModelOption(
+  window: Window,
+  value: string,
+  label: string,
+  selected: boolean,
+) {
+  const option = window.document.createElementNS(
+    HTML_NS,
+    "option",
+  ) as HTMLOptionElement;
+  option.value = value;
+  option.textContent = label;
+  option.selected = selected;
+  return option;
+}
+
+function formatModelOptionLabel(model: ModelOption) {
+  return model.name === model.id ? model.id : `${model.name} (${model.id})`;
+}
+
+function isLocalEmbeddingModel(model: string) {
+  const value = model.trim().toLowerCase();
+  if (!value) return false;
+
+  return (
+    value === REQUIRED_EMBEDDING_MODEL.toLowerCase() ||
+    /(^|[-_/.:])embed(?:ding)?($|[-_/.:])/i.test(value)
+  );
+}
+
+function formatProviderConnectionResult(result: ProviderConnectionResult) {
+  const providerLabel = result.provider === "ollama" ? "Ollama" : "Cloud";
+  const model = result.model ? ` (${result.model})` : "";
+
+  if (result.ok) {
+    return `${providerLabel}-Verbindung ist bereit${model}.`;
+  }
+
+  switch (result.issue) {
+    case "api-key-missing":
+      return "API-Key fehlt.";
+    case "base-url-missing":
+      return "Base URL fehlt.";
+    case "model-missing":
+      return "Modell fehlt.";
+    case "model-not-available":
+      return `Cloud ist erreichbar, aber das Modell ${result.model ?? ""} ist nicht verfügbar.`;
+    case "model-not-installed":
+      return `Ollama ist erreichbar, aber das Modell ${result.model ?? ""} ist nicht installiert.`;
+    case "provider-unreachable":
+      return `${providerLabel} ist nicht erreichbar.`;
+    case "invalid-response":
+      return `${providerLabel} hat eine unerwartete Antwort gesendet.`;
+    default:
+      return result.error || result.message || "Verbindung ist nicht bereit.";
   }
 }
 
-function setStatus(element: HTMLElement | null, message: string) {
-  if (element) element.textContent = message;
+function formatEmbeddingConnectionResult(result: EmbeddingConnectionResult) {
+  const model = result.model ?? REQUIRED_EMBEDDING_MODEL;
+
+  if (result.ok) {
+    return `Embedding-Verbindung ist bereit (${model}).`;
+  }
+
+  switch (result.issue) {
+    case "base-url-missing":
+      return "Embedding Base URL fehlt.";
+    case "model-missing":
+    case "model-not-installed":
+      return `Das benötigte Embedding-Modell ${model} ist in Ollama nicht installiert.`;
+    case "provider-unreachable":
+      return "Ollama ist für Embeddings nicht erreichbar.";
+    case "invalid-response":
+      return "Der Embedding-Dienst hat eine unerwartete Antwort gesendet.";
+    default:
+      return (
+        result.error ||
+        result.message ||
+        "Embedding-Verbindung ist nicht bereit."
+      );
+  }
+}
+
+function getModelSelect(window: Window, provider: LLMProvider) {
+  return getElement<HTMLSelectElement>(window, getModelFieldName(provider));
+}
+
+function getModelFieldName(provider: LLMProvider) {
+  return provider === "ollama" ? "ollama-model" : "model";
+}
+
+function getConfiguredModel(provider: LLMProvider) {
+  return provider === "ollama"
+    ? addon.data.settings.ollamaModel
+    : addon.data.settings.model;
+}
+
+function getModelProviderLabel(provider: LLMProvider) {
+  return provider === "ollama" ? "Ollama" : "Cloud";
+}
+
+function getModelPlaceholderText(
+  provider: LLMProvider,
+  state: ModelSelectState,
+) {
+  switch (state) {
+    case "loaded":
+      return "Modell auswählen";
+    case "empty":
+      return "Keine Modelle gefunden";
+    case "error":
+      return "Modelle konnten nicht geladen werden";
+    default:
+      return provider === "ollama"
+        ? "Lokale Modelle laden, um auszuwählen"
+        : "Cloud-Modelle laden, um auszuwählen";
+  }
+}
+
+function getProviderStatusElement(window: Window, provider: LLMProvider) {
+  return getElement<HTMLElement>(
+    window,
+    provider === "ollama" ? "local-status" : "cloud-status",
+  );
+}
+
+function setButtonBusy(button: HTMLButtonElement | null, busy: boolean) {
+  if (button) button.disabled = busy;
+}
+
+function setModelSelectBusy(
+  window: Window,
+  provider: LLMProvider,
+  busy: boolean,
+) {
+  const select = getModelSelect(window, provider);
+  if (!select) return;
+
+  select.disabled = busy || (!select.value && select.options.length <= 1);
+  select.setAttribute("aria-busy", String(busy));
+}
+
+function setStatus(
+  element: HTMLElement | null,
+  message: string,
+  state?: StatusState,
+) {
+  if (!element) return;
+
+  element.textContent = message;
+  if (state) {
+    element.dataset.state = state;
+  } else {
+    delete element.dataset.state;
+  }
 }
 
 function getElement<T extends Element = Element>(window: Window, name: string) {
@@ -300,60 +711,21 @@ function getElement<T extends Element = Element>(window: Window, name: string) {
   );
 }
 
-async function rebuildIndex(window: Window) {
-  const status = getElement<HTMLElement>(window, "indexing-action-status");
-  const rebuildBtn = getElement<HTMLButtonElement>(window, "rebuild-index");
-  const clearBtn = getElement<HTMLButtonElement>(window, "clear-index");
-
-  const confirmed = window.confirm(
-    "Der gesamte Vektor-Index wird geleert und neu aufgebaut.\n\nDies kann je nach Bibliotheksgröße einige Minuten dauern. Fortfahren?",
-  );
-  if (!confirmed) return;
-
-  if (rebuildBtn) rebuildBtn.disabled = true;
-  if (clearBtn) clearBtn.disabled = true;
-  setStatus(status, "Leere Index…");
-
+function getPluginPreference(key: keyof PluginSettings) {
   try {
-    await vectorStore.clearIndex();
-    setStatus(status, "Index geleert. Neu-Indexierung läuft im Hintergrund…");
-    backgroundIndexer.indexAllLibraryItems().catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      setStatus(status, `Fehler bei Neu-Indexierung: ${msg}`);
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    setStatus(status, `Fehler beim Leeren: ${message}`);
-  } finally {
-    if (rebuildBtn) rebuildBtn.disabled = false;
-    if (clearBtn) clearBtn.disabled = false;
-    void updateIndexStats(window);
+    return Zotero.Prefs.get(`${config.prefsPrefix}.${key}`, true);
+  } catch {
+    return undefined;
   }
 }
 
-async function clearIndex(window: Window) {
-  const status = getElement<HTMLElement>(window, "indexing-action-status");
-  const rebuildBtn = getElement<HTMLButtonElement>(window, "rebuild-index");
-  const clearBtn = getElement<HTMLButtonElement>(window, "clear-index");
+function setPluginPreference(
+  key: keyof PluginSettings,
+  value: PreferenceValue,
+) {
+  Zotero.Prefs.set(`${config.prefsPrefix}.${key}`, value, true);
+}
 
-  const confirmed = window.confirm(
-    "Der gesamte Vektor-Index wird unwiderruflich geleert.\n\nDie Dokumente müssen danach erneut indexiert werden. Fortfahren?",
-  );
-  if (!confirmed) return;
-
-  if (rebuildBtn) rebuildBtn.disabled = true;
-  if (clearBtn) clearBtn.disabled = true;
-  setStatus(status, "Leere Index…");
-
-  try {
-    await vectorStore.clearIndex();
-    setStatus(status, "Index erfolgreich geleert.");
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    setStatus(status, `Fehler: ${message}`);
-  } finally {
-    if (rebuildBtn) rebuildBtn.disabled = false;
-    if (clearBtn) clearBtn.disabled = false;
-    void updateIndexStats(window);
-  }
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
