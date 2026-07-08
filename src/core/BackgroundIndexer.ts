@@ -178,21 +178,21 @@ export class BackgroundIndexer {
         indexingEvents.emit("singleStarted", { mode: "single", paperTitle });
       }
 
-      const abstractText = this.getAbstractText(item);
       const extractedDoc = await PdfExtractor.extractDocument(item);
       const chunks = extractedDoc?.pages?.length
         ? chunkPaperText(extractedDoc.pages)
         : [];
 
-      if (!abstractText && chunks.length === 0) {
+      if (chunks.length === 0) {
+        await vectorStore.deleteByZoteroItemId(targetId.toString());
         Zotero.debug(
-          `[BackgroundIndexer] No abstract or PDF text found for item ${targetId}.`,
+          `[BackgroundIndexer] No PDF text found for item ${targetId}. Existing vector entries were removed.`,
         );
         return;
       }
 
       const textHash = this.cyrb53(
-        this.createIndexHashSource(abstractText, chunks),
+        this.createIndexHashSource(chunks),
       ).toString();
       const existingHash = vectorStore.getTextHash(targetId.toString());
 
@@ -206,35 +206,6 @@ export class BackgroundIndexer {
       await vectorStore.deleteByZoteroItemId(targetId.toString());
 
       const oramaChunks: ChunkDocument[] = [];
-
-      if (abstractText) {
-        let embedding: number[];
-        try {
-          [embedding] = await embeddingProvider.embedTexts([abstractText], {
-            inputType: "passage",
-          });
-        } catch (embeddingError) {
-          Zotero.debug(
-            `[BackgroundIndexer] Embedding fehlgeschlagen für Abstract von Item ${targetId}, wird übersprungen: ${embeddingError}`,
-          );
-          embedding = [];
-        }
-
-        if (embedding.length > 0) {
-          Zotero.debug(
-            `[BackgroundIndexer] Abstract embedded successfully! Length of vector: ${embedding.length}`,
-          );
-
-          oramaChunks.push({
-            id: `doc_${targetId}_abstract`,
-            zoteroItemId: targetId.toString(),
-            sourceType: "abstract",
-            content: abstractText,
-            pageNumber: 0,
-            embedding,
-          });
-        }
-      }
 
       for (const chunk of chunks) {
         let embedding: number[];
@@ -294,17 +265,7 @@ export class BackgroundIndexer {
     }
   }
 
-  private getAbstractText(item: Zotero.Item) {
-    if (!item.isRegularItem()) return "";
-
-    return String(item.getField("abstractNote") || "")
-      .replace(/\r\n?/g, "\n")
-      .replace(/[ \t]+/g, " ")
-      .trim();
-  }
-
-  private createIndexHashSource(abstractText: string, chunks: TextChunk[]) {
-    const abstractSource = abstractText ? `abstract:${abstractText}` : "";
+  private createIndexHashSource(chunks: TextChunk[]) {
     const fulltextSource = chunks
       .map(
         (chunk) =>
@@ -312,7 +273,7 @@ export class BackgroundIndexer {
       )
       .join("\n\n");
 
-    return [abstractSource, fulltextSource].filter(Boolean).join("\n\n");
+    return fulltextSource;
   }
 
   private cyrb53(str: string, seed = 0): number {

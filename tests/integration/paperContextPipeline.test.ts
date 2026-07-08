@@ -85,7 +85,7 @@ describe("paper context pipeline integration", () => {
             document: {
               id: `${zoteroItemId}_chunk_1`,
               zoteroItemId,
-              sourceType: "abstract",
+              sourceType: "fulltext",
               content:
                 zoteroItemId === "101"
                   ? "AI in marketing improves segmentation and campaign decisions."
