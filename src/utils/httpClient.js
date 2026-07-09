@@ -83,6 +83,9 @@ async function sendWithFetch(method, url, options) {
 
     return createResponse(response.status, headers, bodyText);
   } catch (cause) {
+    if (options.signal?.aborted && cause?.name === "AbortError") {
+      throw cause;
+    }
     if (cause instanceof HttpTimeoutError || cause?.name === "AbortError") {
       throw new HttpTimeoutError(url, options.timeout);
     }
@@ -94,6 +97,16 @@ async function fetchTextWithTimeout(method, url, options) {
   const controller = createAbortController();
   let timedOut = false;
   let timer;
+
+  const userSignal = options.signal;
+  const onUserAbort = () => {
+    if (controller) controller.abort();
+  };
+
+  if (userSignal) {
+    if (userSignal.aborted) throw new DOMException("Aborted", "AbortError");
+    userSignal.addEventListener("abort", onUserAbort);
+  }
 
   try {
     if (controller) {
@@ -124,11 +137,13 @@ async function fetchTextWithTimeout(method, url, options) {
       options.timeout,
     );
   } catch (cause) {
+    if (userSignal?.aborted) throw cause;
     if (timedOut || cause instanceof HttpTimeoutError) {
       throw new HttpTimeoutError(url, options.timeout);
     }
     throw cause;
   } finally {
+    if (userSignal) userSignal.removeEventListener("abort", onUserAbort);
     if (timer) clearTimeout(timer);
   }
 }
@@ -148,6 +163,16 @@ async function sendStreamWithFetch(method, url, options) {
   const startedAt = Date.now();
   let timedOut = false;
   let timer;
+
+  const userSignal = options.signal;
+  const onUserAbort = () => {
+    if (controller) controller.abort();
+  };
+
+  if (userSignal) {
+    if (userSignal.aborted) throw new DOMException("Aborted", "AbortError");
+    userSignal.addEventListener("abort", onUserAbort);
+  }
 
   try {
     const request = fetch(url, {
@@ -237,6 +262,9 @@ async function sendStreamWithFetch(method, url, options) {
     };
   } catch (cause) {
     if (timer) clearTimeout(timer);
+    if (userSignal?.aborted && cause?.name === "AbortError") {
+      throw cause;
+    }
     if (cause instanceof HttpTimeoutError || timedOut) {
       throw new HttpTimeoutError(url, options.timeout);
     }
@@ -250,6 +278,8 @@ async function sendStreamWithFetch(method, url, options) {
       throw cause;
     }
     throw new HttpNetworkError(url, cause);
+  } finally {
+    if (userSignal) userSignal.removeEventListener("abort", onUserAbort);
   }
 }
 

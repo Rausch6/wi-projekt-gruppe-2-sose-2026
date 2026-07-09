@@ -118,6 +118,19 @@ function bindPreferenceEvents(window: Window) {
   bindCommand(window, "test-embedding-service", () => {
     void testEmbeddingService(window);
   });
+  bindCommand(window, "start-indexing", () => {
+    void addon.api.backgroundIndexer.indexAllLibraryItems()
+      .then((stats: { newlyIndexed: number, alreadyIndexed: number, total: number }) => {
+        if (stats.newlyIndexed === 0 && stats.total > 0) {
+          window.alert("Alle unterstützten Dokumente sind bereits indexiert.");
+        } else if (stats.total === 0) {
+          window.alert("Keine unterstützten Dokumente (PDFs) in der Bibliothek gefunden.");
+        }
+      })
+      .catch((err: any) => {
+        window.alert(`Indexierung fehlgeschlagen: ${err}`);
+      });
+  });
   bindCommand(window, "open-index-manager", () => {
     openIndexManager(window);
   });

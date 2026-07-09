@@ -74,6 +74,7 @@ export class EmbeddingProvider {
         return await requestOllamaEmbeddings(baseUrl, inputTexts, {
           model,
           timeout,
+          signal: options.signal,
         });
       } catch (cause) {
         throw normalizeEmbeddingError(cause, this.id);
@@ -84,12 +85,14 @@ export class EmbeddingProvider {
       return await requestOpenAIEmbeddings(baseUrl, inputTexts, {
         model,
         timeout,
+        signal: options.signal,
       });
     } catch (cause) {
       if (shouldTryNativeEmbed(cause)) {
         try {
           return await requestNativeEmbeddings(baseUrl, inputTexts, {
             timeout,
+            signal: options.signal,
           });
         } catch (fallbackCause) {
           throw normalizeEmbeddingError(fallbackCause, this.id);
@@ -112,6 +115,7 @@ async function requestOpenAIEmbeddings(baseUrl, inputTexts, options) {
     {
       timeout: options.timeout,
       mode: "local",
+      signal: options.signal,
     },
   );
   await assertHttpOk(url, response);
@@ -128,6 +132,7 @@ async function requestNativeEmbeddings(baseUrl, inputTexts, options) {
     {
       timeout: options.timeout,
       mode: "local",
+      signal: options.signal,
     },
   );
   await assertHttpOk(url, response);
@@ -147,6 +152,7 @@ async function requestOllamaEmbeddings(baseUrl, inputTexts, options) {
     {
       timeout: options.timeout,
       mode: "local",
+      signal: options.signal,
     },
   );
   await assertHttpOk(url, response);

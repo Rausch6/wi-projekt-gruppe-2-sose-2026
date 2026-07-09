@@ -11,6 +11,7 @@ import {
 declare const Zotero: any;
 declare const IOUtils: any;
 declare const OS: any;
+declare const PathUtils: any;
 
 const VECTOR_SIZE = 1024;
 
@@ -271,11 +272,11 @@ export class OramaService {
   }
 
   private get dbFilePath() {
-    return Zotero.DataDirectory.dir + "/orama_vector_index_v2.json";
+    return PathUtils.join(Zotero.DataDirectory.dir, "orama_vector_index_v2.json");
   }
 
   private get hashFilePath() {
-    return Zotero.DataDirectory.dir + "/orama_text_hashes_v2.json";
+    return PathUtils.join(Zotero.DataDirectory.dir, "orama_text_hashes_v2.json");
   }
 
   private scheduleSave() {

@@ -5,7 +5,7 @@ import type { PageTextChunk } from "./PdfExtractor";
 declare const Zotero: any;
 import { config } from "../../package.json";
 // Fallback auf globales Zotero.Addontemplate (falls addon nicht exportiert wird)
-const getAddon = () => (globalThis as any).Zotero?.[config.addonName] || (globalThis as any).addon;
+const getAddon = () => (globalThis as any).Zotero?.[config.addonInstance] || (globalThis as any).addon;
 
 export interface TextChunk {
   id: string;
@@ -61,11 +61,12 @@ export function chunkPaperText(
   let defaultOverlap = 100;
 
   try {
-    const targetPref = Zotero.Prefs.get("extensions.zotero.addontemplate.chunkTargetTokens");
-    const overlapPref = Zotero.Prefs.get("extensions.zotero.addontemplate.chunkOverlapTokens");
-    
-    if (typeof targetPref === "number" && targetPref > 0) defaultTarget = targetPref;
-    if (typeof overlapPref === "number" && overlapPref >= 0) defaultOverlap = overlapPref;
+    const addonSettings = getAddon()?.data?.settings;
+    const targetSetting = addonSettings?.chunkTargetTokens;
+    const overlapSetting = addonSettings?.chunkOverlapTokens;
+
+    if (typeof targetSetting === "number" && targetSetting > 0) defaultTarget = targetSetting;
+    if (typeof overlapSetting === "number" && overlapSetting >= 0) defaultOverlap = overlapSetting;
   } catch (_e) {
     // Fallback auf Konstanten
   }

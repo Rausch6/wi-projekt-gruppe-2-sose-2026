@@ -1087,7 +1087,40 @@ function createIndexingStatusBanner(doc: Document) {
   activeIcon.textContent = "⏳";
   const activeText = createHtmlElement(doc, "span", "zai-indexing-active-text");
   activeText.textContent = "Achtung: Indexierung aktiv";
-  activeIndicator.append(activeIcon, activeText);
+
+  const stopButton = createHtmlElement(doc, "button", "zai-indexing-stop-btn");
+  stopButton.textContent = "Abbrechen";
+  stopButton.title = "Indexierung abbrechen";
+  stopButton.style.marginLeft = "12px";
+  stopButton.style.cursor = "pointer";
+  stopButton.style.background = "transparent";
+  stopButton.style.color = "inherit";
+  stopButton.style.border = "1px solid currentColor";
+  stopButton.style.borderRadius = "4px";
+  stopButton.style.padding = "2px 8px";
+  stopButton.style.fontSize = "0.9em";
+  stopButton.style.opacity = "0.8";
+  
+  // Hover effect using simple mouse events since it's inline styled
+  stopButton.addEventListener("mouseenter", () => {
+    stopButton.style.opacity = "1";
+    stopButton.style.background = "rgba(128, 128, 128, 0.2)";
+  });
+  stopButton.addEventListener("mouseleave", () => {
+    stopButton.style.opacity = "0.8";
+    stopButton.style.background = "transparent";
+  });
+  stopButton.addEventListener("click", () => {
+    import("../core/BackgroundIndexer")
+      .then((mod) => {
+        mod.backgroundIndexer.abort();
+      })
+      .catch((err) => {
+        Zotero.debug("Error aborting indexer: " + err);
+      });
+  });
+
+  activeIndicator.append(activeIcon, activeText, stopButton);
 
   const successIndicator = createHtmlElement(
     doc,
@@ -1142,16 +1175,13 @@ function createIndexingStatusBanner(doc: Document) {
     showActive("Achtung: Indexierung aktiv…");
   });
 
-  const unsubProgress = indexingEvents.on(
-    "progress",
-    ({ indexed, total, estimatedRemainingMs }) => {
-      let msg = `Achtung: Indexierung aktiv – ${indexed} / ${total} Papern indexiert`;
-      if (estimatedRemainingMs !== undefined && estimatedRemainingMs > 0) {
-        msg += ` (noch ca. ${formatDuration(estimatedRemainingMs)})`;
-      }
-      showActive(msg);
-    },
-  );
+  const unsubProgress = indexingEvents.on("progress", ({ indexed, total, estimatedRemainingMs }) => {
+    let msg = `Achtung: Indexierung aktiv ${indexed} / ${total} Papern indexiert`;
+    if (estimatedRemainingMs !== undefined && estimatedRemainingMs > 0) {
+      msg += ` (noch ca. ${formatDuration(estimatedRemainingMs)})`;
+    }
+    showActive(msg);
+  });
 
   const unsubFinished = indexingEvents.on("finished", ({ indexed, total }) => {
     showSuccess(

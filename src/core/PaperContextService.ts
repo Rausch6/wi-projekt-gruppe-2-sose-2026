@@ -141,10 +141,10 @@ export class PaperContextService {
 
     const itemIdStr = item.id.toString();
 
-    Zotero.debug(
-      `[PaperContextService] Starte dokumentbezogene Suche für Item ${itemIdStr} (Hybrid/Fulltext)`,
-    );
     const chunkLimit = getChunkCountSetting();
+    Zotero.debug(
+      `[PaperContextService] Starte dokumentbezogene Suche für Item ${itemIdStr} (Hybrid/Fulltext) mit max. ${chunkLimit} Chunks`,
+    );
     const searchResults = await vectorStore.searchSimilar(
       queryVector,
       chunkLimit,
@@ -228,10 +228,10 @@ export class PaperContextService {
     }
 
     try {
-      Zotero.debug(
-        `[PaperContextService] Starte bibliotheksweite Suche (Hybrid/Fulltext)`,
-      );
       const globalChunkLimit = getChunkCountSetting();
+      Zotero.debug(
+        `[PaperContextService] Starte bibliotheksweite Suche (Hybrid/Fulltext) mit max. ${globalChunkLimit} Chunks`,
+      );
       searchResults = await vectorStore.searchSimilar(
         queryVector,
         globalChunkLimit,
@@ -320,7 +320,13 @@ export class PaperContextService {
       );
     }
 
-    const chunksPerItem = Math.max(2, Math.ceil(getChunkCountSetting() / 2));
+    const chunkLimit = getChunkCountSetting();
+    const chunksPerItem = uniqueItemIDs.length > 0 
+      ? Math.max(2, Math.floor(chunkLimit / uniqueItemIDs.length)) 
+      : chunkLimit;
+    Zotero.debug(
+      `[PaperContextService] Starte Router-gesteuerte Vektorsuche für ${uniqueItemIDs.length} Items mit max. ${chunksPerItem} Chunks pro Item`,
+    );
     let hitGroups = await Promise.all(
       uniqueItemIDs.map(async (itemID) => {
         try {
@@ -938,7 +944,10 @@ async function getCachedPaper(item: Zotero.Item) {
 
   const paper = {
     cacheKey,
-    chunks: chunkPaperText(document.pages),
+    chunks: chunkPaperText(document.pages, {
+      targetTokens: ((globalThis as any).Zotero?.[config.addonInstance] || (globalThis as any).addon)?.data?.settings?.chunkTargetTokens,
+      overlapTokens: ((globalThis as any).Zotero?.[config.addonInstance] || (globalThis as any).addon)?.data?.settings?.chunkOverlapTokens,
+    }),
     title: document.title,
     creators: document.creators,
     year: document.year,
@@ -996,7 +1005,7 @@ function formatPageLabel(chunk: TextChunk) {
  */
 function getChunkCountSetting(): number {
   try {
-    const addon = (globalThis as any).Zotero?.[config.addonName];
+    const addon = (globalThis as any).Zotero?.[config.addonInstance] || (globalThis as any).addon;
     const count = addon?.data?.settings?.chunkCount;
     if (typeof count === "number" && count > 0) return count;
   } catch {
