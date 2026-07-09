@@ -1089,12 +1089,27 @@ function createIndexingStatusBanner(doc: Document) {
   activeText.textContent = "Achtung: Indexierung aktiv";
 
   const stopButton = createHtmlElement(doc, "button", "zai-indexing-stop-btn");
-  stopButton.textContent = "🛑";
+  stopButton.textContent = "Abbrechen";
   stopButton.title = "Indexierung abbrechen";
-  stopButton.style.marginLeft = "8px";
+  stopButton.style.marginLeft = "12px";
   stopButton.style.cursor = "pointer";
-  stopButton.style.background = "none";
-  stopButton.style.border = "none";
+  stopButton.style.background = "transparent";
+  stopButton.style.color = "inherit";
+  stopButton.style.border = "1px solid currentColor";
+  stopButton.style.borderRadius = "4px";
+  stopButton.style.padding = "2px 8px";
+  stopButton.style.fontSize = "0.9em";
+  stopButton.style.opacity = "0.8";
+  
+  // Hover effect using simple mouse events since it's inline styled
+  stopButton.addEventListener("mouseenter", () => {
+    stopButton.style.opacity = "1";
+    stopButton.style.background = "rgba(128, 128, 128, 0.2)";
+  });
+  stopButton.addEventListener("mouseleave", () => {
+    stopButton.style.opacity = "0.8";
+    stopButton.style.background = "transparent";
+  });
   stopButton.addEventListener("click", () => {
     import("../core/BackgroundIndexer")
       .then((mod) => {

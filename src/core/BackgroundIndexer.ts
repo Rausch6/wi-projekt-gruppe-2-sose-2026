@@ -3,6 +3,7 @@ import { PdfExtractor } from "./PdfExtractor";
 import { chunkPaperText, type TextChunk } from "./TextChunker";
 import { embeddingProvider } from "../ai/EmbeddingProvider.js";
 import { indexingEvents } from "./IndexingEventBus";
+import { createAbortController } from "../utils/AbortController";
 import { config } from "../../package.json";
 
 declare const Zotero: any;
@@ -32,7 +33,7 @@ export class BackgroundIndexer {
   private isProcessing = false;
   private currentlyIndexing = new Set<number>();
   private isSingleMode = true;
-  private abortRequested = false;
+  private abortController: AbortController | null = null;
 
   public indexingState: IndexingState = { status: "idle" };
 
@@ -121,7 +122,7 @@ export class BackgroundIndexer {
    * Bricht die laufende Indexierung ab.
    */
   public abort() {
-    this.abortRequested = true;
+    this.abortController?.abort();
   }
 
   /**
@@ -130,6 +131,7 @@ export class BackgroundIndexer {
   private async processQueue() {
     if (this.isProcessing || this.queue.length === 0) return;
     this.isProcessing = true;
+    this.abortController = createAbortController();
     indexingEvents.emit("started", { mode: "single" });
 
     let itemsProcessed = 0;
@@ -142,19 +144,12 @@ export class BackgroundIndexer {
     };
 
     while (this.queue.length > 0) {
-      if (this.abortRequested) {
-        this.abortRequested = false;
-        this.queue = [];
-        Zotero.debug("[BackgroundIndexer] Einzel-Indexierung abgebrochen.");
-        break;
-      }
-
       const itemId = this.queue.shift();
       if (!itemId) continue;
 
       try {
         const startItem = Date.now();
-        await this.indexItem(itemId);
+        await this.indexItem(itemId, { signal: this.abortController.signal });
         const itemTime = Date.now() - startItem;
 
         itemsProcessed++;
@@ -182,7 +177,12 @@ export class BackgroundIndexer {
           total: currentTotal,
           estimatedRemainingMs,
         });
-      } catch (error) {
+      } catch (error: any) {
+        if (error?.name === "AbortError") {
+          Zotero.debug("[BackgroundIndexer] Einzel-Indexierung durch Nutzer abgebrochen.");
+          this.queue = [];
+          break;
+        }
         Zotero.debug(
           `[BackgroundIndexer] Error indexing item ${itemId}: ${error}`,
         );
@@ -205,44 +205,42 @@ export class BackgroundIndexer {
    * Text extrahieren, chunken, einbetten und speichern.
    * Child-Attachments werden auf den Parent umgeleitet, um Duplikate zu vermeiden.
    */
-  private async indexItem(rawItemId: number): Promise<IndexItemResult> {
-    let item = await Zotero.Items.getAsync(rawItemId);
-    if (!item) return { indexed: false, skipped: true };
-
-    if (item.isNote()) return { indexed: false, skipped: true };
-
-    if (item.isAttachment() && item.parentID) {
-      const parentItem = await Zotero.Items.getAsync(item.parentID);
-      if (parentItem) {
-        item = parentItem;
-        Zotero.debug(
-          `[BackgroundIndexer] Event für Attachment ${rawItemId} auf Parent ${item.id} umgeleitet.`,
-        );
-      }
+  private async indexItem(
+    itemId: number,
+    options?: { signal?: AbortSignal },
+  ): Promise<IndexItemResult> {
+    if (this.currentlyIndexing.has(itemId)) {
+      return { indexed: vectorStore.getIndexedItemIds().has(itemId.toString()), skipped: true };
     }
-
-    if (
-      !item.isAttachment() ||
-      item.attachmentContentType !== "application/pdf"
-    ) {
-      if (!item.isRegularItem()) return { indexed: false, skipped: true };
-    }
-
-    const targetId = item.id;
-
-    if (this.currentlyIndexing.has(targetId)) {
-      Zotero.debug(
-        `[BackgroundIndexer] Item ${targetId} wird bereits indexiert. Überspringe doppelten Aufruf.`,
-      );
-      return {
-        indexed: vectorStore.getIndexedItemIds().has(targetId.toString()),
-        skipped: true,
-        targetId,
-      };
-    }
-    this.currentlyIndexing.add(targetId);
+    this.currentlyIndexing.add(itemId);
 
     try {
+      if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+      let item = await Zotero.Items.getAsync(itemId);
+      if (!item) return { indexed: false, skipped: true };
+
+      if (item.isNote()) return { indexed: false, skipped: true };
+
+      if (item.isAttachment() && item.parentID) {
+        const parentItem = await Zotero.Items.getAsync(item.parentID);
+        if (parentItem) {
+          item = parentItem;
+          Zotero.debug(
+            `[BackgroundIndexer] Event für Attachment ${itemId} auf Parent ${item.id} umgeleitet.`,
+          );
+        }
+      }
+
+      if (
+        !item.isAttachment() ||
+        item.attachmentContentType !== "application/pdf"
+      ) {
+        if (!item.isRegularItem()) return { indexed: false, skipped: true };
+      }
+
+      const targetId = item.id;
+
       Zotero.debug(
         `[BackgroundIndexer] Starting extraction for item ${targetId}...`,
       );
@@ -261,6 +259,8 @@ export class BackgroundIndexer {
           paperTitle,
         });
       }
+
+      if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
       const extractedDoc = await PdfExtractor.extractDocument(item);
       const addon = (globalThis as any).Zotero?.[config.addonInstance] || (globalThis as any).addon;
@@ -299,20 +299,30 @@ export class BackgroundIndexer {
       const oramaChunks: ChunkDocument[] = [];
 
       for (const chunk of chunks) {
-        let embedding: number[];
-        try {
-          [embedding] = await embeddingProvider.embedTexts([chunk.text], {
-            inputType: "passage",
-          });
-        } catch (embeddingError) {
-          Zotero.debug(
-            `[BackgroundIndexer] Embedding fehlgeschlagen für Chunk ${chunk.id}, wird übersprungen: ${embeddingError}`,
-          );
-          continue;
+        if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+        let embedding: number[] = [];
+        let retryCount = 0;
+        const maxRetries = 2;
+
+        while (retryCount <= maxRetries) {
+          try {
+            [embedding] = await embeddingProvider.embedTexts([chunk.text], {
+              inputType: "passage",
+              timeout: 20_000,
+              signal: options?.signal,
+            });
+            break;
+          } catch (err: any) {
+            if (options?.signal?.aborted) throw err;
+            if (retryCount >= maxRetries) throw err;
+            retryCount++;
+            Zotero.debug(`[BackgroundIndexer] Retry ${retryCount} for chunk ${chunk.id}`);
+          }
         }
 
         Zotero.debug(
-          `[BackgroundIndexer] Chunk ${chunk.id} embedded successfully! Length of vector: ${embedding ? embedding.length : "undefined"}`,
+          `[BackgroundIndexer] Chunk ${chunk.id} embedded successfully!`,
         );
 
         oramaChunks.push({
@@ -323,24 +333,11 @@ export class BackgroundIndexer {
           pageNumber: chunk.pageStart || 0,
           embedding,
         });
-
-        // Heartbeat every 5 chunks to ensure the user sees logs
-        if (oramaChunks.length % 5 === 0) {
-          Zotero.debug(
-            `[BackgroundIndexer] Heartbeat: Still processing item ${targetId}, ${oramaChunks.length} chunks done...`,
-          );
-        }
       }
 
       if (oramaChunks.length > 0) {
-        Zotero.debug(
-          `[BackgroundIndexer] Now adding ${oramaChunks.length} chunks to Orama for item ${targetId}...`,
-        );
         await vectorStore.addChunks(oramaChunks);
         vectorStore.setTextHash(targetId.toString(), textHash);
-        Zotero.debug(
-          `[BackgroundIndexer] Successfully indexed ${oramaChunks.length} chunks for item ${targetId}.`,
-        );
 
         if (this.isSingleMode) {
           this.emitSingleDone(targetId);
@@ -350,7 +347,7 @@ export class BackgroundIndexer {
       this.emitSingleDone(targetId, { skipped: true });
       return { indexed: false, skipped: true, targetId };
     } finally {
-      this.currentlyIndexing.delete(targetId);
+      this.currentlyIndexing.delete(itemId);
     }
   }
 
@@ -427,6 +424,7 @@ export class BackgroundIndexer {
       "[BackgroundIndexer] Starte Erst-Indexierung der Bibliothek...",
     );
     this.isSingleMode = false;
+    this.abortController = createAbortController();
     this.indexingState = { status: "running", indexed: 0, total: 0 };
     indexingEvents.emit("started", { mode: "full" });
 
@@ -497,18 +495,14 @@ export class BackgroundIndexer {
     let emaMsPerItem = 0;
 
     for (const item of itemsToIndex) {
-      if (this.abortRequested) {
-        this.abortRequested = false;
-        Zotero.debug("[BackgroundIndexer] Bibliotheks-Indexierung abgebrochen.");
-        break;
-      }
-
       try {
         const startItem = Date.now();
         const wasIndexed = vectorStore
           .getIndexedItemIds()
           .has(item.id.toString());
-        await this.indexItem(item.id);
+        if (!wasIndexed) {
+          await this.indexItem(item.id, { signal: this.abortController.signal });
+        }
         const isIndexed = vectorStore
           .getIndexedItemIds()
           .has(item.id.toString());
@@ -551,9 +545,13 @@ export class BackgroundIndexer {
           estimatedRemainingMs,
           paperTitle,
         });
-      } catch (err) {
+      } catch (err: any) {
+        if (err?.name === "AbortError") {
+          Zotero.debug("[BackgroundIndexer] Bibliotheks-Indexierung durch Nutzer abgebrochen.");
+          break;
+        }
         Zotero.debug(
-          `[BackgroundIndexer] Fehler bei Erst-Indexierung von Item ${item.id}: ${err}`,
+          `[BackgroundIndexer] Error in batch processing for item ${item.id}: ${err}`,
         );
         indexingEvents.emit("error", { message: String(err) });
       }
