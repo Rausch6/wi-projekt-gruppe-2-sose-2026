@@ -59,7 +59,7 @@
         min-width: 800px;
         width: 100vw;
         display: grid;
-        grid-template-rows: auto 1fr;
+        grid-template-rows: auto minmax(0, 1fr);
       }
 
       .window-header {
@@ -89,6 +89,10 @@
       .window-content {
         display: grid;
         grid-template-rows: auto auto minmax(220px, 1fr);
+        grid-template-areas:
+          "filters"
+          "status"
+          "board";
         gap: 20px;
         padding: 24px;
         min-height: 0;
@@ -97,6 +101,7 @@
       }
 
       .filter-strip {
+        grid-area: filters;
         display: grid;
         grid-template-columns:
           minmax(220px, 1.7fr) minmax(150px, 1fr)
@@ -121,6 +126,7 @@
       }
 
       .action-status {
+        grid-area: status;
         min-height: 22px;
         padding: 9px 12px;
         border: 1px solid transparent;
@@ -152,22 +158,24 @@
       }
 
       .index-board {
+        grid-area: board;
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
         gap: 18px;
         align-items: stretch;
         height: 100%;
-        min-height: 220px;
+        min-height: 0;
       }
 
       .index-panel {
         height: 100%;
-        min-height: 220px;
+        min-height: 0;
         border: 1px solid var(--zaia-border);
         border-radius: 7px;
         background: var(--zaia-surface);
         display: grid;
-        grid-template-rows: auto 1fr;
+        grid-template-rows: auto minmax(0, 1fr);
+        overflow: hidden;
       }
 
       .panel-header {
@@ -193,7 +201,7 @@
 
       .paper-list-wrap {
         position: relative;
-        min-height: 112px;
+        min-height: 0;
         overflow: hidden;
       }
 
@@ -242,15 +250,13 @@
       }
 
       .paper-row-title {
-        display: -webkit-box;
+        display: block;
         font-weight: 650;
         line-height: 1.35;
         min-width: 0;
         overflow: hidden;
-        overflow-wrap: anywhere;
         text-overflow: ellipsis;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
+        white-space: nowrap;
       }
 
       .paper-row-meta {
@@ -305,14 +311,14 @@
 
         .index-board {
           grid-template-columns: 1fr;
-          grid-template-rows: minmax(180px, auto) auto minmax(180px, auto);
+          grid-template-rows: minmax(180px, 1fr) auto minmax(180px, 1fr);
           gap: 16px;
           overflow-y: auto;
         }
 
         .index-panel {
-          height: auto;
-          min-height: 180px;
+          height: 100%;
+          min-height: 0;
         }
 
         .transfer-controls {
