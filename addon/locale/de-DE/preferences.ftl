@@ -44,6 +44,8 @@ pref-auto-delete-old-chats = Nicht-favorisierte Chats nach 14 Tagen automatisch 
 
 pref-max-items = Maximale Zotero-Einträge für Kontextauswahl
 pref-max-items-notice = Höhere Werte können die Kontextauswahl verlangsamen.
+pref-indexing-start =
+    .label = Fehlende Dokumente indexieren
 pref-indexing-open-manager =
     .label = Indexierte Paper verwalten
 pref-debug-version-label = Release

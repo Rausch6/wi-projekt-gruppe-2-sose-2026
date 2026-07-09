@@ -1087,7 +1087,25 @@ function createIndexingStatusBanner(doc: Document) {
   activeIcon.textContent = "⏳";
   const activeText = createHtmlElement(doc, "span", "zai-indexing-active-text");
   activeText.textContent = "Achtung: Indexierung aktiv";
-  activeIndicator.append(activeIcon, activeText);
+
+  const stopButton = createHtmlElement(doc, "button", "zai-indexing-stop-btn");
+  stopButton.textContent = "🛑";
+  stopButton.title = "Indexierung abbrechen";
+  stopButton.style.marginLeft = "8px";
+  stopButton.style.cursor = "pointer";
+  stopButton.style.background = "none";
+  stopButton.style.border = "none";
+  stopButton.addEventListener("click", () => {
+    import("../core/BackgroundIndexer")
+      .then((mod) => {
+        mod.backgroundIndexer.abort();
+      })
+      .catch((err) => {
+        Zotero.debug("Error aborting indexer: " + err);
+      });
+  });
+
+  activeIndicator.append(activeIcon, activeText, stopButton);
 
   const successIndicator = createHtmlElement(
     doc,

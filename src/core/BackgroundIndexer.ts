@@ -32,6 +32,7 @@ export class BackgroundIndexer {
   private isProcessing = false;
   private currentlyIndexing = new Set<number>();
   private isSingleMode = true;
+  private abortRequested = false;
 
   public indexingState: IndexingState = { status: "idle" };
 
@@ -117,6 +118,13 @@ export class BackgroundIndexer {
   }
 
   /**
+   * Bricht die laufende Indexierung ab.
+   */
+  public abort() {
+    this.abortRequested = true;
+  }
+
+  /**
    * Arbeitet die Warteschlange asynchron ab.
    */
   private async processQueue() {
@@ -124,12 +132,56 @@ export class BackgroundIndexer {
     this.isProcessing = true;
     indexingEvents.emit("started", { mode: "single" });
 
+    let itemsProcessed = 0;
+    let emaMsPerItem = 0;
+
+    this.indexingState = {
+      status: "running",
+      indexed: 0,
+      total: this.queue.length,
+    };
+
     while (this.queue.length > 0) {
+      if (this.abortRequested) {
+        this.abortRequested = false;
+        this.queue = [];
+        Zotero.debug("[BackgroundIndexer] Einzel-Indexierung abgebrochen.");
+        break;
+      }
+
       const itemId = this.queue.shift();
       if (!itemId) continue;
 
       try {
+        const startItem = Date.now();
         await this.indexItem(itemId);
+        const itemTime = Date.now() - startItem;
+
+        itemsProcessed++;
+
+        if (itemsProcessed === 1) {
+          emaMsPerItem = itemTime;
+        } else {
+          emaMsPerItem = emaMsPerItem * 0.5 + itemTime * 0.5;
+        }
+
+        const remainingItems = this.queue.length;
+        const currentTotal = itemsProcessed + remainingItems;
+        const estimatedRemainingMs = emaMsPerItem * remainingItems;
+
+        this.indexingState = {
+          status: "running",
+          indexed: itemsProcessed,
+          total: currentTotal,
+          estimatedRemainingMs,
+        };
+
+        indexingEvents.emit("progress", {
+          mode: "single",
+          indexed: itemsProcessed,
+          total: currentTotal,
+          estimatedRemainingMs,
+        });
       } catch (error) {
         Zotero.debug(
           `[BackgroundIndexer] Error indexing item ${itemId}: ${error}`,
@@ -141,6 +193,12 @@ export class BackgroundIndexer {
       }
     }
 
+    this.indexingState = {
+      status: "done",
+      indexed: itemsProcessed,
+      newlyIndexed: itemsProcessed,
+      total: itemsProcessed,
+    };
     this.isProcessing = false;
   }
   /**
@@ -364,7 +422,7 @@ export class BackgroundIndexer {
    * Bereits indexierte Items werden übersprungen.
    * Diese Methode nur einmalig beim ersten Start der Erweiterung aufgerufen.
    */
-  async indexAllLibraryItems(): Promise<void> {
+  async indexAllLibraryItems(): Promise<{ newlyIndexed: number, alreadyIndexed: number, total: number }> {
     Zotero.debug(
       "[BackgroundIndexer] Starte Erst-Indexierung der Bibliothek...",
     );
@@ -439,6 +497,12 @@ export class BackgroundIndexer {
     let emaMsPerItem = 0;
 
     for (const item of itemsToIndex) {
+      if (this.abortRequested) {
+        this.abortRequested = false;
+        Zotero.debug("[BackgroundIndexer] Bibliotheks-Indexierung abgebrochen.");
+        break;
+      }
+
       try {
         const startItem = Date.now();
         const wasIndexed = vectorStore
@@ -514,6 +578,8 @@ export class BackgroundIndexer {
       newlyIndexed: indexedNew,
       total: targetItems.length,
     });
+    
+    return { newlyIndexed: indexedNew, alreadyIndexed: alreadyIndexedCount, total: targetItems.length };
   }
 
   private countIndexedTargetItems(items: Zotero.Item[]): number {

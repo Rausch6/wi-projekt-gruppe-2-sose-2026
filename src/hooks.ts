@@ -126,12 +126,6 @@ async function onStartup() {
 
     backgroundIndexer.initialize();
     Zotero.debug("[ZAIA-Startup] backgroundIndexer initialized.");
-
-    backgroundIndexer.indexAllLibraryItems().catch((err) => {
-      Zotero.debug(
-        `[BackgroundIndexer] Erst-Indexierung fehlgeschlagen: ${err}`,
-      );
-    });
   } catch (err: any) {
     Zotero.debug(
       `[ZAIA-Startup] CRITICAL ERROR IN ONSTARTUP: ${err}\n${err.stack}`,
