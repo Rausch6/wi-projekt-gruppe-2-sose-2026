@@ -100,12 +100,114 @@
         overflow-y: auto;
       }
 
+      .indexing-banner {
+        grid-area: status;
+        align-items: center;
+        display: flex;
+        gap: 8px;
+        min-height: 22px;
+        padding: 9px 12px;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        color: var(--zaia-muted);
+        background: var(--zaia-surface-soft);
+        transition:
+          background-color 0.25s ease,
+          border-color 0.25s ease;
+      }
+
+      .indexing-banner[hidden] {
+        display: none !important;
+      }
+
+      .indexing-banner--active,
+      .indexing-banner--warning {
+        color: CanvasText;
+        border-color: color-mix(in srgb, #b45309 34%, transparent);
+        background: var(--zaia-warning);
+      }
+
+      .indexing-banner--success {
+        color: CanvasText;
+        border-color: color-mix(in srgb, #047857 30%, transparent);
+        background: var(--zaia-success);
+        animation: indexing-fade-in 0.25s ease;
+      }
+
+      .indexing-banner--error {
+        color: CanvasText;
+        border-color: color-mix(in srgb, #b91c1c 34%, transparent);
+        background: var(--zaia-danger);
+      }
+
+      .indexing-banner-active {
+        align-items: center;
+        display: inline-flex;
+        gap: 8px;
+        width: 100%;
+      }
+
+      .indexing-banner-active[hidden] {
+        display: none !important;
+      }
+
+      .indexing-banner-spinner {
+        animation: indexing-spin 2s linear infinite;
+        display: inline-block;
+        flex-shrink: 0;
+      }
+
+      .indexing-banner-text {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      #btn-cancel-indexing {
+        margin-left: 8px;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+
+      .action-status {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .action-status[hidden] {
+        display: none;
+      }
+
+      @keyframes indexing-spin {
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @keyframes indexing-fade-in {
+        from {
+          opacity: 0;
+          transform: translateY(-2px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
       .filter-strip {
         grid-area: filters;
         display: grid;
         grid-template-columns:
-          minmax(220px, 1.7fr) minmax(150px, 1fr)
-          minmax(130px, 0.7fr);
+          minmax(220px, 1.5fr) minmax(180px, 1.1fr)
+          minmax(150px, 0.9fr) minmax(130px, 0.7fr);
         gap: 16px;
         align-items: end;
       }
@@ -123,38 +225,6 @@
       .filter-field select {
         width: 100%;
         min-height: 30px;
-      }
-
-      .action-status {
-        grid-area: status;
-        min-height: 22px;
-        padding: 9px 12px;
-        border: 1px solid transparent;
-        border-radius: 6px;
-        color: var(--zaia-muted);
-        background: var(--zaia-surface-soft);
-      }
-
-      .action-status:empty {
-        display: none;
-      }
-
-      .action-status.success {
-        color: CanvasText;
-        border-color: color-mix(in srgb, #047857 30%, transparent);
-        background: var(--zaia-success);
-      }
-
-      .action-status.warning {
-        color: CanvasText;
-        border-color: color-mix(in srgb, #b45309 34%, transparent);
-        background: var(--zaia-warning);
-      }
-
-      .action-status.error {
-        color: CanvasText;
-        border-color: color-mix(in srgb, #b91c1c 34%, transparent);
-        background: var(--zaia-danger);
       }
 
       .index-board {
@@ -295,6 +365,64 @@
         display: none;
       }
 
+      .initial-index-prompt-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: color-mix(in srgb, Canvas 72%, transparent);
+      }
+
+      .initial-index-prompt {
+        width: min(460px, 100%);
+        max-height: min(520px, calc(100vh - 48px));
+        border: 1px solid var(--zaia-border-strong);
+        border-radius: 7px;
+        background: var(--zaia-surface);
+        color: var(--zaia-text);
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        overflow: hidden;
+        box-shadow: 0 12px 34px color-mix(in srgb, CanvasText 18%, transparent);
+      }
+
+      .initial-index-prompt h2 {
+        margin: 0;
+        padding: 18px 20px 14px;
+        border-bottom: 1px solid var(--zaia-border);
+        font-size: 1.08rem;
+        letter-spacing: 0;
+      }
+
+      .initial-index-library-list {
+        display: grid;
+        gap: 10px;
+        min-height: 0;
+        overflow: auto;
+        padding: 16px 20px;
+      }
+
+      .initial-index-library-option {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .initial-index-library-option span {
+        overflow-wrap: anywhere;
+      }
+
+      .initial-index-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        padding: 14px 20px 18px;
+        border-top: 1px solid var(--zaia-border);
+      }
+
       @media (max-width: 760px) {
         .window-header {
           align-items: flex-start;
@@ -422,29 +550,49 @@
             />
           </div>
           <div class="filter-field">
-            <label
-              for="index-type-filter"
-              data-l10n-id="index-manager-filter-type"
-              >Typ</label
+            <label data-l10n-id="index-manager-filter-library"
+              >Bibliotheken</label
             >
+            <select id="index-library-filter"></select>
+          </div>
+          <div class="filter-field">
+            <label data-l10n-id="index-manager-filter-type">Typ</label>
             <select id="index-type-filter"></select>
           </div>
           <div class="filter-field">
-            <label
-              for="index-year-filter"
-              data-l10n-id="index-manager-filter-year"
-              >Jahr</label
-            >
+            <label data-l10n-id="index-manager-filter-year">Jahr</label>
             <select id="index-year-filter"></select>
           </div>
         </section>
 
         <div
-          id="index-action-status"
-          class="action-status"
+          id="indexing-banner"
+          class="indexing-banner"
           role="status"
           aria-live="polite"
-        ></div>
+          hidden="hidden"
+        >
+          <span
+            class="indexing-banner-active"
+            id="indexing-banner-active"
+            hidden="hidden"
+          >
+            <span class="indexing-banner-spinner" aria-hidden="true">⏳</span>
+            <span
+              class="indexing-banner-text"
+              id="indexing-banner-active-text"
+              >Achtung: Indexierung aktiv</span
+            >
+            <button
+              id="btn-cancel-indexing"
+              data-l10n-id="index-manager-cancel-indexing"
+              title="Indexierung abbrechen"
+            >
+              Abbrechen
+            </button>
+          </span>
+          <span id="index-action-status" class="action-status" hidden="hidden"></span>
+        </div>
 
         <section
           class="index-board"

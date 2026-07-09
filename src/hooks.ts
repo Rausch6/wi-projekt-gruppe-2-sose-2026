@@ -95,6 +95,10 @@ function loadSettings() {
     ollamaBaseUrl: getStringSetting("ollamaBaseUrl", "http://localhost:11434"),
     ollamaModel: getStringSetting("ollamaModel", "qwen2.5:3b"),
     autoDeleteOldChats: getBooleanSetting("autoDeleteOldChats", true),
+    initialIndexPromptShown: getBooleanSetting(
+      "initialIndexPromptShown",
+      false,
+    ),
     chunkTargetTokens: getNumberSetting("chunkTargetTokens", 512),
     chunkOverlapTokens: getNumberSetting("chunkOverlapTokens", 100),
     chunkCount: getNumberSetting("chunkCount", 3),

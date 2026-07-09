@@ -1,16 +1,24 @@
 import { backgroundIndexer } from "../core/BackgroundIndexer";
 import { indexingEvents } from "../core/IndexingEventBus";
+import {
+  LibraryScopeManager,
+  type LibraryScope,
+} from "../core/LibraryScopeManager";
 import { vectorStore } from "../core/OramaService";
+import { config } from "../../package.json";
 
 type VectorStore = typeof vectorStore;
 type BackgroundIndexerService = typeof backgroundIndexer;
 
 const STATUS_AUTO_HIDE_DELAY_MS = 5000;
+const ALL_FILTER_VALUE = "__all__";
 
 type IndexSide = "indexed" | "unindexed";
 
-type PaperRecord = {
+export type PaperRecord = {
   itemID: number;
+  libraryID: number;
+  libraryName: string;
   title: string;
   author: string;
   year: string;
@@ -19,13 +27,20 @@ type PaperRecord = {
   searchText: string;
 };
 
+type LibraryFilterOption = Pick<LibraryScope, "libraryID" | "name" | "type">;
+
 type IndexManagerElements = {
   searchInput: HTMLInputElement;
+  libraryFilter: HTMLSelectElement;
   typeFilter: HTMLSelectElement;
   yearFilter: HTMLSelectElement;
   status: HTMLElement;
+  indexingBanner: HTMLElement;
+  indexingBannerActive: HTMLElement;
+  indexingBannerActiveText: HTMLElement;
   refreshButton: HTMLButtonElement;
   rebuildButton: HTMLButtonElement;
+  cancelIndexingButton: HTMLButtonElement;
   clearIndexButton: HTMLButtonElement;
   indexSelectedButton: HTMLButtonElement;
   unindexSelectedButton: HTMLButtonElement;
@@ -39,13 +54,21 @@ type IndexManagerElements = {
 
 type IndexManagerState = {
   papers: PaperRecord[];
+  libraries: LibraryFilterOption[];
+  selectedLibraryIDs: Set<number>;
+  libraryFilterInitialized: boolean;
+  availableTypes: string[];
+  availableYears: string[];
+  selectedItemTypes: Set<string>;
+  selectedYears: Set<string>;
+  typeFilterInitialized: boolean;
+  yearFilterInitialized: boolean;
   queuedItemIDs: Set<number>;
   selectedIndexed: Set<number>;
   selectedUnindexed: Set<number>;
   search: string;
-  itemType: string;
-  year: string;
   busy: boolean;
+  fullIndexRunning: boolean;
 };
 
 const indexingEventCleanups = new WeakMap<Window, () => void>();
@@ -66,13 +89,21 @@ export async function initializeIndexManagerWindow(
 
   const state: IndexManagerState = {
     papers: [],
+    libraries: [],
+    selectedLibraryIDs: new Set<number>(),
+    libraryFilterInitialized: false,
+    availableTypes: [],
+    availableYears: [],
+    selectedItemTypes: new Set<string>(),
+    selectedYears: new Set<string>(),
+    typeFilterInitialized: false,
+    yearFilterInitialized: false,
     queuedItemIDs: new Set<number>(),
     selectedIndexed: new Set<number>(),
     selectedUnindexed: new Set<number>(),
     search: "",
-    itemType: "all",
-    year: "all",
     busy: false,
+    fullIndexRunning: backgroundIndexer.isFullIndexRunning(),
   };
 
   indexingEventCleanups.get(window)?.();
@@ -83,6 +114,7 @@ export async function initializeIndexManagerWindow(
 
   bindEvents(window, elements, state, vectorStore, backgroundIndexer);
   await reloadPapers(window, elements, state, vectorStore, backgroundIndexer);
+  void maybeShowInitialIndexPrompt(window, elements, state, backgroundIndexer);
 }
 
 export function handleIndexManagerWindowUnload(
@@ -96,11 +128,18 @@ export function handleIndexManagerWindowUnload(
 function getRequiredElements(document: Document): IndexManagerElements | null {
   const elements = {
     searchInput: document.getElementById("index-search-input"),
+    libraryFilter: document.getElementById("index-library-filter"),
     typeFilter: document.getElementById("index-type-filter"),
     yearFilter: document.getElementById("index-year-filter"),
     status: document.getElementById("index-action-status"),
+    indexingBanner: document.getElementById("indexing-banner"),
+    indexingBannerActive: document.getElementById("indexing-banner-active"),
+    indexingBannerActiveText: document.getElementById(
+      "indexing-banner-active-text",
+    ),
     refreshButton: document.getElementById("btn-refresh"),
     rebuildButton: document.getElementById("btn-rebuild-index"),
+    cancelIndexingButton: document.getElementById("btn-cancel-indexing"),
     clearIndexButton: document.getElementById("btn-clear-index"),
     indexSelectedButton: document.getElementById("btn-index-selected"),
     unindexSelectedButton: document.getElementById("btn-unindex-selected"),
@@ -132,14 +171,33 @@ function bindEvents(
     renderIndexManager(window, elements, state);
   });
 
+  elements.libraryFilter.addEventListener("change", () => {
+    const value = elements.libraryFilter.value;
+    state.selectedLibraryIDs =
+      value === ALL_FILTER_VALUE
+        ? new Set(state.libraries.map((library) => library.libraryID))
+        : new Set([Number.parseInt(value, 10)].filter(Number.isFinite));
+    clearSelections(state);
+    updateFilterOptions(window, elements, state);
+    renderIndexManager(window, elements, state);
+  });
+
   elements.typeFilter.addEventListener("change", () => {
-    state.itemType = elements.typeFilter.value;
+    const value = elements.typeFilter.value;
+    state.selectedItemTypes =
+      value === ALL_FILTER_VALUE
+        ? new Set(state.availableTypes)
+        : new Set([value]);
     clearSelections(state);
     renderIndexManager(window, elements, state);
   });
 
   elements.yearFilter.addEventListener("change", () => {
-    state.year = elements.yearFilter.value;
+    const value = elements.yearFilter.value;
+    state.selectedYears =
+      value === ALL_FILTER_VALUE
+        ? new Set(state.availableYears)
+        : new Set([value]);
     clearSelections(state);
     renderIndexManager(window, elements, state);
   });
@@ -155,13 +213,12 @@ function bindEvents(
   });
 
   elements.rebuildButton.addEventListener("click", () => {
-    void rebuildIndex(
-      window,
-      elements,
-      state,
-      vectorStoreService,
-      backgroundIndexerService,
-    );
+    void rebuildIndex(window, elements, state, backgroundIndexerService);
+  });
+
+  elements.cancelIndexingButton.addEventListener("click", () => {
+    backgroundIndexerService.abort();
+    setStatus(elements.status, "Abbruch angefordert ...", "warning");
   });
 
   elements.clearIndexButton.addEventListener("click", () => {
@@ -198,23 +255,28 @@ function bindIndexingEvents(
   };
 
   const unsubStarted = indexingEvents.on("started", ({ mode }) => {
-    setStatus(
-      elements.status,
+    if (mode === "full") {
+      state.fullIndexRunning = true;
+      renderIndexManager(window, elements, state);
+    }
+    showIndexingActive(
+      elements,
       mode === "full"
         ? "Bibliotheks-Indexierung läuft ..."
         : "Indexierung läuft ...",
-      "warning",
     );
   });
 
   const unsubProgress = indexingEvents.on(
     "progress",
-    ({ indexed, total, estimatedRemainingMs }) => {
-      let message = `Indexierung läuft - ${indexed} / ${total} Paper im Index`;
+    ({ indexed, total, estimatedRemainingMs, paperTitle }) => {
+      let message = paperTitle
+        ? `"${paperTitle}" wird indexiert - ${indexed} / ${total} Paper im Index`
+        : `Indexierung läuft - ${indexed} / ${total} Paper im Index`;
       if (estimatedRemainingMs !== undefined && estimatedRemainingMs > 0) {
         message += `, noch ca. ${formatDuration(estimatedRemainingMs)}`;
       }
-      setStatus(elements.status, message, "warning");
+      showIndexingActive(elements, message);
     },
   );
 
@@ -225,12 +287,11 @@ function bindIndexingEvents(
         state.queuedItemIDs.add(itemID);
       }
       renderIndexManager(window, elements, state);
-      setStatus(
-        elements.status,
+      showIndexingActive(
+        elements,
         paperTitle
           ? `"${paperTitle}" wird indexiert ...`
           : "Paper wird indexiert ...",
-        "warning",
       );
     },
   );
@@ -280,11 +341,30 @@ function bindIndexingEvents(
 
   const unsubFinished = indexingEvents.on("finished", ({ indexed, total }) => {
     state.queuedItemIDs.clear();
+    state.fullIndexRunning = false;
     reloadAndShowStatus(
       `Indexierung abgeschlossen - ${indexed ?? 0} / ${total ?? "?"} Paper im Index.`,
       "success",
     );
   });
+
+  const initialState = backgroundIndexerService.indexingState;
+  if (initialState.status === "running") {
+    let message = `Indexierung läuft - ${initialState.indexed} / ${initialState.total} Paper im Index`;
+    if (
+      initialState.estimatedRemainingMs !== undefined &&
+      initialState.estimatedRemainingMs > 0
+    ) {
+      message += `, noch ca. ${formatDuration(initialState.estimatedRemainingMs)}`;
+    }
+    showIndexingActive(elements, message);
+  } else if (initialState.status === "done" && initialState.newlyIndexed > 0) {
+    setStatus(
+      elements.status,
+      `Indexierung abgeschlossen - ${initialState.indexed} / ${initialState.total} Paper im Index.`,
+      "success",
+    );
+  }
 
   return () => {
     unsubStarted();
@@ -308,9 +388,14 @@ async function reloadPapers(
   setStatus(elements.status, "Paper werden geladen ...", "");
 
   try {
-    state.papers = await collectPapers(vectorStoreService);
+    const result = await collectPapers(vectorStoreService);
+    state.libraries = result.libraries;
+    state.papers = result.papers;
+    state.fullIndexRunning = backgroundIndexerService.isFullIndexRunning();
+    syncSelectedLibraries(state);
     trimQueuedItems(state);
     trimSelections(state);
+    renderLibraryFilter(window, elements, state);
     updateFilterOptions(window, elements, state);
     renderIndexManager(window, elements, state);
 
@@ -337,40 +422,72 @@ async function reloadPapers(
 
 async function collectPapers(
   vectorStoreService: VectorStore,
-): Promise<PaperRecord[]> {
-  const items = await Zotero.Items.getAll(
-    Zotero.Libraries.userLibraryID,
-    false,
-    false,
-    false,
-  );
+): Promise<{ libraries: LibraryFilterOption[]; papers: PaperRecord[] }> {
   const indexedItemIds = vectorStoreService.getIndexedItemIds();
+  const libraries = LibraryScopeManager.listLibraryScopes().map((scope) => ({
+    libraryID: scope.libraryID,
+    name: scope.name,
+    type: scope.type,
+  }));
+  const papers: PaperRecord[] = [];
 
-  return items
-    .filter(isIndexableItem)
-    .map((item: any) => {
-      const title = getItemTitle(item);
-      const author = getItemCreators(item);
-      const year = getItemField(item, "year", "-");
-      const itemType = getItemType(item);
-      const indexed = indexedItemIds.has(String(item.id));
+  for (const library of libraries) {
+    let items: any[] = [];
+    try {
+      items = await Zotero.Items.getAll(library.libraryID, false, false, false);
+    } catch (error) {
+      logError(error);
+      continue;
+    }
 
-      return {
-        itemID: item.id,
-        title,
-        author,
-        year,
-        itemType,
-        indexed,
-        searchText: normalizeSearchText([title, author, year, itemType]),
-      };
-    })
-    .sort((left: PaperRecord, right: PaperRecord) =>
-      left.title.localeCompare(right.title, undefined, { sensitivity: "base" }),
+    papers.push(
+      ...items.filter(isIndexableItem).map((item: any) => {
+        const title = getItemTitle(item);
+        const author = getItemCreators(item);
+        const year = getItemField(item, "year", "-");
+        const itemType = getItemType(item);
+        const indexed = indexedItemIds.has(String(item.id));
+
+        return {
+          itemID: item.id,
+          libraryID: library.libraryID,
+          libraryName: library.name,
+          title,
+          author,
+          year,
+          itemType,
+          indexed,
+          searchText: normalizeSearchText([
+            title,
+            author,
+            year,
+            itemType,
+            library.name,
+          ]),
+        };
+      }),
     );
+  }
+
+  return {
+    libraries,
+    papers: papers.sort(
+      (left: PaperRecord, right: PaperRecord) =>
+        left.libraryName.localeCompare(right.libraryName, undefined, {
+          sensitivity: "base",
+        }) ||
+        left.title.localeCompare(right.title, undefined, {
+          sensitivity: "base",
+        }),
+    ),
+  };
 }
 
 function isIndexableItem(item: any): boolean {
+  if (isDeletedItem(item)) {
+    return false;
+  }
+
   if (item.isNote?.()) {
     return false;
   }
@@ -391,6 +508,14 @@ function isIndexableItem(item: any): boolean {
   }
 
   return Boolean(item.isPDFAttachment?.());
+}
+
+function isDeletedItem(item: any): boolean {
+  try {
+    return Boolean(item.deleted ?? item.getField?.("deleted"));
+  } catch {
+    return false;
+  }
 }
 
 function getItemTitle(item: any): string {
@@ -464,52 +589,156 @@ function updateFilterOptions(
   elements: IndexManagerElements,
   state: IndexManagerState,
 ): void {
+  const libraryFilteredPapers = getLibraryFilteredPapers(state);
   const types = uniqueSorted(
-    state.papers.map((paper) => paper.itemType).filter(Boolean),
+    libraryFilteredPapers.map((paper) => paper.itemType).filter(Boolean),
   );
   const years = uniqueSorted(
-    state.papers
+    libraryFilteredPapers
       .map((paper) => paper.year)
       .filter((year) => year && year !== "-"),
     true,
   );
 
-  replaceSelectOptions(window, elements.typeFilter, [
-    { value: "all", label: "Alle Typen" },
-    ...toOptions(types),
-  ]);
-  replaceSelectOptions(window, elements.yearFilter, [
-    { value: "all", label: "Alle Jahre" },
-    ...toOptions(years),
-  ]);
+  syncStringFilterSelection(
+    state.selectedItemTypes,
+    types,
+    state.availableTypes,
+    state.typeFilterInitialized,
+  );
+  syncStringFilterSelection(
+    state.selectedYears,
+    years,
+    state.availableYears,
+    state.yearFilterInitialized,
+  );
+  state.availableTypes = types;
+  state.availableYears = years;
+  state.typeFilterInitialized = true;
+  state.yearFilterInitialized = true;
 
-  if (!types.includes(state.itemType)) {
-    state.itemType = "all";
-  }
-  if (!years.includes(state.year)) {
-    state.year = "all";
+  renderAllFilterDropdowns(window, elements, state);
+}
+
+function syncSelectedLibraries(state: IndexManagerState): void {
+  const libraryIDs = new Set(
+    state.libraries.map((library) => library.libraryID),
+  );
+  if (!state.libraryFilterInitialized) {
+    state.selectedLibraryIDs = new Set(libraryIDs);
+    state.libraryFilterInitialized = true;
+    return;
   }
 
-  elements.typeFilter.value = state.itemType;
-  elements.yearFilter.value = state.year;
+  const filteredLibraryIDs = new Set(
+    [...state.selectedLibraryIDs].filter((libraryID) =>
+      libraryIDs.has(libraryID),
+    ),
+  );
+  state.selectedLibraryIDs =
+    filteredLibraryIDs.size > 0 ? filteredLibraryIDs : new Set(libraryIDs);
+}
+
+function syncStringFilterSelection(
+  selectedValues: Set<string>,
+  nextValues: string[],
+  previousValues: string[],
+  initialized: boolean,
+): void {
+  const wasAllSelected =
+    initialized &&
+    previousValues.length > 0 &&
+    previousValues.every((value) => selectedValues.has(value));
+  const nextValueSet = new Set(nextValues);
+
+  if (!initialized || wasAllSelected) {
+    selectedValues.clear();
+    for (const value of nextValues) selectedValues.add(value);
+    return;
+  }
+
+  for (const value of [...selectedValues]) {
+    if (!nextValueSet.has(value)) selectedValues.delete(value);
+  }
+}
+
+function renderLibraryFilter(
+  window: Window,
+  elements: IndexManagerElements,
+  state: IndexManagerState,
+): void {
+  const isAllSelected =
+    state.selectedLibraryIDs.size === state.libraries.length;
+  replaceSelectOptions(
+    window,
+    elements.libraryFilter,
+    [
+      { value: ALL_FILTER_VALUE, label: "Alle Bibliotheken" },
+      ...state.libraries.map((library) => ({
+        value: String(library.libraryID),
+        label: library.name,
+      })),
+    ],
+    isAllSelected
+      ? ALL_FILTER_VALUE
+      : String([...state.selectedLibraryIDs][0] ?? ALL_FILTER_VALUE),
+  );
+}
+
+function renderAllFilterDropdowns(
+  window: Window,
+  elements: IndexManagerElements,
+  state: IndexManagerState,
+): void {
+  renderLibraryFilter(window, elements, state);
+
+  const isTypeAllSelected =
+    state.selectedItemTypes.size === state.availableTypes.length;
+  replaceSelectOptions(
+    window,
+    elements.typeFilter,
+    [
+      { value: ALL_FILTER_VALUE, label: "Alle Typen" },
+      ...toOptions(state.availableTypes),
+    ],
+    isTypeAllSelected
+      ? ALL_FILTER_VALUE
+      : ([...state.selectedItemTypes][0] ?? ALL_FILTER_VALUE),
+  );
+
+  const isYearAllSelected =
+    state.selectedYears.size === state.availableYears.length;
+  replaceSelectOptions(
+    window,
+    elements.yearFilter,
+    [
+      { value: ALL_FILTER_VALUE, label: "Alle Jahre" },
+      ...toOptions(state.availableYears),
+    ],
+    isYearAllSelected
+      ? ALL_FILTER_VALUE
+      : ([...state.selectedYears][0] ?? ALL_FILTER_VALUE),
+  );
+}
+
+function toOptions(values: string[]): { value: string; label: string }[] {
+  return values.map((value) => ({ value, label: value }));
 }
 
 function replaceSelectOptions(
   window: Window,
   select: HTMLSelectElement,
   options: { value: string; label: string }[],
+  selectedValue: string,
 ): void {
   select.replaceChildren();
   for (const option of options) {
     const optionElement = window.document.createElement("option");
     optionElement.value = option.value;
     optionElement.textContent = option.label;
+    optionElement.selected = option.value === selectedValue;
     select.append(optionElement);
   }
-}
-
-function toOptions(values: string[]): { value: string; label: string }[] {
-  return values.map((value) => ({ value, label: value }));
 }
 
 function uniqueSorted(values: string[], descending = false): string[] {
@@ -527,6 +756,8 @@ function renderIndexManager(
   elements: IndexManagerElements,
   state: IndexManagerState,
 ): void {
+  renderAllFilterDropdowns(window, elements, state);
+  const libraryFilteredPapers = getLibraryFilteredPapers(state);
   const visiblePapers = getVisiblePapers(state);
   const unindexedPapers = visiblePapers.filter((paper) => !paper.indexed);
   const indexedPapers = visiblePapers.filter((paper) => paper.indexed);
@@ -552,21 +783,31 @@ function renderIndexManager(
   elements.indexedEmpty.hidden = indexedPapers.length > 0;
   elements.unindexedCount.textContent = formatCount(
     unindexedPapers.length,
-    state.papers.filter((paper) => !paper.indexed).length,
+    libraryFilteredPapers.filter((paper) => !paper.indexed).length,
   );
   elements.indexedCount.textContent = formatCount(
     indexedPapers.length,
-    state.papers.filter((paper) => paper.indexed).length,
+    libraryFilteredPapers.filter((paper) => paper.indexed).length,
   );
 
   elements.indexSelectedButton.disabled =
-    state.busy || getSelectedPapers(state, "unindexed").length === 0;
+    state.busy ||
+    state.fullIndexRunning ||
+    getSelectedPapers(state, "unindexed").length === 0;
   elements.unindexSelectedButton.disabled =
-    state.busy || getSelectedPapers(state, "indexed").length === 0;
+    state.busy ||
+    state.fullIndexRunning ||
+    getSelectedPapers(state, "indexed").length === 0;
   elements.refreshButton.disabled = state.busy;
-  elements.rebuildButton.disabled = state.busy || state.papers.length === 0;
+  elements.rebuildButton.disabled =
+    state.busy ||
+    state.fullIndexRunning ||
+    state.selectedLibraryIDs.size === 0 ||
+    libraryFilteredPapers.length === 0;
   elements.clearIndexButton.disabled =
-    state.busy || state.papers.every((paper) => !paper.indexed);
+    state.busy ||
+    state.fullIndexRunning ||
+    state.papers.every((paper) => !paper.indexed);
 }
 
 function renderPaperList(
@@ -614,14 +855,32 @@ function renderPaperList(
 }
 
 function getVisiblePapers(state: IndexManagerState): PaperRecord[] {
-  return state.papers.filter((paper) => {
+  return getLibraryFilteredPapers(state).filter((paper) => {
     const matchesSearch =
       !state.search || paper.searchText.includes(state.search);
-    const matchesType =
-      state.itemType === "all" || paper.itemType === state.itemType;
-    const matchesYear = state.year === "all" || paper.year === state.year;
+    const matchesType = state.selectedItemTypes.has(paper.itemType);
+    const matchesYear =
+      paper.year === "-"
+        ? state.selectedYears.size === state.availableYears.length
+        : state.selectedYears.has(paper.year);
     return matchesSearch && matchesType && matchesYear;
   });
+}
+
+function getLibraryFilteredPapers(state: IndexManagerState): PaperRecord[] {
+  return filterPapersByLibrary(state.papers, state.selectedLibraryIDs);
+}
+
+function getSelectedLibraryIDs(state: IndexManagerState): number[] {
+  return [...state.selectedLibraryIDs].filter(Number.isFinite);
+}
+
+export function filterPapersByLibrary<T extends { libraryID: number }>(
+  papers: T[],
+  selectedLibraryIDs: Set<number>,
+): T[] {
+  if (selectedLibraryIDs.size === 0) return [];
+  return papers.filter((paper) => selectedLibraryIDs.has(paper.libraryID));
 }
 
 function togglePaperSelection(
@@ -694,7 +953,9 @@ async function indexSelectedPapers(
     logError(error);
     setStatus(
       elements.status,
-      "Ausgewählte Paper konnten nicht zur Indexierung übergeben werden.",
+      error instanceof Error
+        ? error.message
+        : "Ausgewählte Paper konnten nicht zur Indexierung übergeben werden.",
       "error",
     );
   } finally {
@@ -763,11 +1024,29 @@ async function rebuildIndex(
   window: Window,
   elements: IndexManagerElements,
   state: IndexManagerState,
-  vectorStoreService: VectorStore,
   backgroundIndexerService: BackgroundIndexerService,
 ): Promise<void> {
+  if (backgroundIndexerService.isFullIndexRunning()) {
+    setStatus(
+      elements.status,
+      "Es läuft bereits eine Indexierung. Bitte warten oder abbrechen.",
+      "warning",
+    );
+    return;
+  }
+
+  const libraryIDs = getSelectedLibraryIDs(state);
+  if (libraryIDs.length === 0) {
+    setStatus(
+      elements.status,
+      "Wähle mindestens eine Bibliothek für den Neuaufbau aus.",
+      "warning",
+    );
+    return;
+  }
+
   const confirmed = window.confirm(
-    "Den gesamten ZAIA-Index neu aufbauen? Das kann einige Minuten dauern.",
+    "Den ZAIA-Index für die ausgewählten Bibliotheken komplett neu aufbauen? Das kann einige Minuten dauern.",
   );
   if (!confirmed) {
     return;
@@ -777,18 +1056,28 @@ async function rebuildIndex(
   setStatus(elements.status, "Index wird neu aufgebaut ...", "");
 
   try {
-    await vectorStoreService.clearIndex();
     void backgroundIndexerService
-      .indexAllLibraryItems()
+      .indexAllLibraryItems({ libraryIDs, rebuild: true })
       .catch((error: unknown) => {
         logError(error);
         setStatus(
           elements.status,
-          "Neu-Indexierung konnte nicht abgeschlossen werden.",
+          error instanceof Error
+            ? error.message
+            : "Neu-Indexierung konnte nicht abgeschlossen werden.",
           "error",
         );
+      })
+      .finally(() => {
+        state.fullIndexRunning = backgroundIndexerService.isFullIndexRunning();
+        renderIndexManager(window, elements, state);
       });
-    state.papers = state.papers.map((paper) => ({ ...paper, indexed: false }));
+    const selectedLibraryIDs = new Set(libraryIDs);
+    state.papers = state.papers.map((paper) =>
+      selectedLibraryIDs.has(paper.libraryID)
+        ? { ...paper, indexed: false }
+        : paper,
+    );
     state.queuedItemIDs.clear();
     state.selectedIndexed.clear();
     state.selectedUnindexed.clear();
@@ -842,6 +1131,143 @@ async function clearIndex(
   }
 }
 
+async function maybeShowInitialIndexPrompt(
+  window: Window,
+  elements: IndexManagerElements,
+  state: IndexManagerState,
+  backgroundIndexerService: BackgroundIndexerService,
+): Promise<void> {
+  if (!shouldShowInitialIndexPrompt() || state.libraries.length === 0) return;
+
+  const result = await showInitialIndexPrompt(window, state.libraries);
+  markInitialIndexPromptShown();
+
+  if (!result.confirmed) return;
+  if (result.libraryIDs.length === 0) {
+    setStatus(
+      elements.status,
+      "Keine Bibliothek ausgewählt. Es wurde nichts indexiert.",
+      "warning",
+    );
+    return;
+  }
+
+  setStatus(elements.status, "Indexierung wird gestartet ...", "warning");
+  void backgroundIndexerService
+    .indexAllLibraryItems({ libraryIDs: result.libraryIDs })
+    .catch((error: unknown) => {
+      logError(error);
+      setStatus(
+        elements.status,
+        error instanceof Error
+          ? error.message
+          : "Indexierung konnte nicht gestartet werden.",
+        "error",
+      );
+    })
+    .finally(() => {
+      state.fullIndexRunning = backgroundIndexerService.isFullIndexRunning();
+      renderIndexManager(window, elements, state);
+    });
+}
+
+export function shouldShowInitialIndexPrompt(): boolean {
+  try {
+    return (
+      Zotero.Prefs.get(
+        `${config.prefsPrefix}.initialIndexPromptShown`,
+        true,
+      ) !== true
+    );
+  } catch {
+    return true;
+  }
+}
+
+export function markInitialIndexPromptShown(): void {
+  Zotero.Prefs.set(`${config.prefsPrefix}.initialIndexPromptShown`, true, true);
+}
+
+function showInitialIndexPrompt(
+  window: Window,
+  libraries: LibraryFilterOption[],
+): Promise<{ confirmed: boolean; libraryIDs: number[] }> {
+  const doc = window.document;
+  const overlay = doc.createElement("div");
+  overlay.className = "initial-index-prompt-backdrop";
+  overlay.setAttribute("role", "presentation");
+
+  const dialog = doc.createElement("section");
+  dialog.className = "initial-index-prompt";
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  dialog.setAttribute("aria-labelledby", "initial-index-prompt-title");
+
+  const title = doc.createElement("h2");
+  title.id = "initial-index-prompt-title";
+  title.textContent = "Indexierung der gesamten Library starten?";
+
+  const list = doc.createElement("div");
+  list.className = "initial-index-library-list";
+
+  for (const library of libraries) {
+    const label = doc.createElement("label");
+    label.className = "initial-index-library-option";
+
+    const checkbox = doc.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = String(library.libraryID);
+    checkbox.checked = true;
+
+    const text = doc.createElement("span");
+    text.textContent = library.name;
+
+    label.append(checkbox, text);
+    list.append(label);
+  }
+
+  const actions = doc.createElement("div");
+  actions.className = "initial-index-actions";
+
+  const startButton = doc.createElement("button");
+  startButton.type = "button";
+  startButton.textContent = "Indexierung starten";
+
+  const skipButton = doc.createElement("button");
+  skipButton.type = "button";
+  skipButton.textContent = "Nicht jetzt";
+
+  actions.append(skipButton, startButton);
+  dialog.append(title, list, actions);
+  overlay.append(dialog);
+  doc.body.append(overlay);
+
+  return new Promise((resolve) => {
+    const cleanup = (confirmed: boolean) => {
+      const inputs = Array.from(
+        list.querySelectorAll("input[type='checkbox']"),
+      ) as HTMLInputElement[];
+      const libraryIDs = inputs
+        .filter((input) => input.checked)
+        .map((input) => Number.parseInt(input.value, 10))
+        .filter(Number.isFinite);
+
+      window.removeEventListener("keydown", onKeyDown);
+      overlay.remove();
+      resolve({ confirmed, libraryIDs });
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") cleanup(false);
+    };
+
+    startButton.addEventListener("click", () => cleanup(true), { once: true });
+    skipButton.addEventListener("click", () => cleanup(false), { once: true });
+    window.addEventListener("keydown", onKeyDown);
+    startButton.focus();
+  });
+}
+
 function setBusy(
   window: Window,
   elements: IndexManagerElements,
@@ -884,14 +1310,28 @@ function clearSelections(state: IndexManagerState): void {
   state.selectedUnindexed.clear();
 }
 
+/**
+ * Zeigt eine einmalige Meldung (Erfolg/Warnung/Fehler/neutral) im gemeinsamen
+ * Indexierungs-Banner an. Blendet dabei die persistente "aktiv"-Anzeige aus
+ * und blendet die Meldung nach STATUS_AUTO_HIDE_DELAY_MS wieder aus.
+ */
 function setStatus(
   statusEl: HTMLElement,
   message: string,
   type: "" | "success" | "warning" | "error",
 ): void {
   clearStatusHideTimer(statusEl);
+
+  const banner = statusEl.closest(".indexing-banner") as HTMLElement | null;
+  const activeEl = banner?.querySelector<HTMLElement>(
+    ".indexing-banner-active",
+  );
+  if (activeEl) activeEl.hidden = true;
+
   statusEl.textContent = message;
+  statusEl.hidden = !message;
   statusEl.className = type ? `action-status ${type}` : "action-status";
+  setBannerVisualState(banner, message ? type : null);
 
   if (!message) {
     return;
@@ -909,9 +1349,52 @@ function setStatus(
 
     statusHideTimers.delete(statusEl);
     statusEl.textContent = "";
+    statusEl.hidden = true;
     statusEl.className = "action-status";
+    if (!activeEl || activeEl.hidden) setBannerVisualState(banner, null);
   }, STATUS_AUTO_HIDE_DELAY_MS);
   statusHideTimers.set(statusEl, timerID);
+}
+
+/**
+ * Zeigt die persistente "Indexierung läuft"-Anzeige (Spinner, aktuelles
+ * Paper, Abbrechen-Button) im gemeinsamen Banner. Bleibt sichtbar, bis der
+ * nächste setStatus()- oder showIndexingActive()-Aufruf sie ersetzt.
+ */
+function showIndexingActive(
+  elements: IndexManagerElements,
+  text: string,
+): void {
+  clearStatusHideTimer(elements.status);
+  elements.status.hidden = true;
+  elements.status.textContent = "";
+  elements.status.className = "action-status";
+
+  elements.indexingBannerActiveText.textContent = text;
+  elements.indexingBannerActive.hidden = false;
+  setBannerVisualState(elements.indexingBanner, "active");
+}
+
+function setBannerVisualState(
+  banner: HTMLElement | null | undefined,
+  state: "active" | "success" | "warning" | "error" | "" | null,
+): void {
+  if (!banner) return;
+
+  banner.classList.remove(
+    "indexing-banner--active",
+    "indexing-banner--success",
+    "indexing-banner--warning",
+    "indexing-banner--error",
+  );
+
+  if (state === null) {
+    banner.hidden = true;
+    return;
+  }
+
+  banner.hidden = false;
+  if (state) banner.classList.add(`indexing-banner--${state}`);
 }
 
 function clearStatusHideTimer(statusEl: HTMLElement): void {
@@ -929,7 +1412,12 @@ function normalizeSearchText(values: string[]): string {
 }
 
 function formatMeta(paper: PaperRecord, queued = false): string {
-  const chunks = [paper.author, paper.year, paper.itemType].filter(Boolean);
+  const chunks = [
+    paper.author,
+    paper.year,
+    paper.itemType,
+    paper.libraryName,
+  ].filter(Boolean);
   if (queued) {
     chunks.push("Indexierung läuft");
   }

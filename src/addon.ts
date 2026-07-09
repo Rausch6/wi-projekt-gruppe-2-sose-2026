@@ -94,6 +94,7 @@ export type PluginSettings = {
   ollamaBaseUrl: string;
   ollamaModel: string;
   autoDeleteOldChats: boolean;
+  initialIndexPromptShown: boolean;
   chunkTargetTokens: number;
   chunkOverlapTokens: number;
   chunkCount: number;
@@ -211,6 +212,7 @@ class Addon {
         maxItems: 200,
         metadataFieldSelection: "title,creators,publicationDate",
         autoDeleteOldChats: true,
+        initialIndexPromptShown: false,
         chunkTargetTokens: 512,
         chunkOverlapTokens: 100,
         chunkCount: 3,
