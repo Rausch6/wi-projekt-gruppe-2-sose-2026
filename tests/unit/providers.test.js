@@ -14,6 +14,32 @@ function jsonResponse(payload, status = 200) {
   };
 }
 
+function streamResponse(chunks, status = 200) {
+  return {
+    status,
+    ok: status >= 200 && status < 300,
+    headers: {},
+    json: async () => JSON.parse(chunks.join("")),
+    text: async () => chunks.join(""),
+    streamText: async function* () {
+      for (const chunk of chunks) {
+        yield chunk;
+      }
+    },
+  };
+}
+
+function customStreamResponse(streamText, status = 200) {
+  return {
+    status,
+    ok: status >= 200 && status < 300,
+    headers: {},
+    json: async () => null,
+    text: async () => "",
+    streamText,
+  };
+}
+
 describe("AI providers", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -152,5 +178,80 @@ describe("AI providers", () => {
         totalTokens: 7,
       },
     });
+  });
+
+  it("Ollama streams model pull progress", async () => {
+    const provider = new OllamaProvider({ baseUrl: "http://localhost:11434" });
+    const controller = new AbortController();
+    const progress = [];
+    const streamPost = vi
+      .spyOn(httpClient, "streamPost")
+      .mockResolvedValue(
+        streamResponse([
+          '{"status":"pulling manifest"}\n',
+          '{"status":"pulling layer","completed":50,"total":100}\n',
+          '{"status":"success"}\n',
+        ]),
+      );
+
+    const result = await provider.pullModel("qwen2.5:7b", {
+      signal: controller.signal,
+      onProgress: (event) => progress.push(event),
+    });
+
+    expect(streamPost).toHaveBeenCalledWith(
+      "http://localhost:11434/api/pull",
+      { model: "qwen2.5:7b", stream: true },
+      expect.objectContaining({
+        mode: "local",
+        signal: controller.signal,
+      }),
+    );
+    expect(progress).toEqual([
+      expect.objectContaining({ status: "pulling manifest", percent: null }),
+      expect.objectContaining({
+        status: "pulling layer",
+        completed: 50,
+        total: 100,
+        percent: 50,
+      }),
+      expect.objectContaining({ status: "success", done: true }),
+    ]);
+    expect(result).toEqual({ status: "success" });
+  });
+
+  it("Ollama treats aborted model pulls as aborts", async () => {
+    const provider = new OllamaProvider({ baseUrl: "http://localhost:11434" });
+    const controller = new AbortController();
+    vi.spyOn(httpClient, "streamPost").mockResolvedValue(
+      customStreamResponse(async function* () {
+        controller.abort();
+        yield '{"status":"pulling manifest"}\n';
+      }),
+    );
+
+    await expect(
+      provider.pullModel("qwen2.5:7b", { signal: controller.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("Ollama deletes local models through the API", async () => {
+    const provider = new OllamaProvider({ baseUrl: "http://localhost:11434" });
+    const request = vi
+      .spyOn(httpClient, "request")
+      .mockResolvedValue(jsonResponse(null));
+
+    await expect(provider.deleteModel("qwen2.5:7b")).resolves.toEqual({
+      model: "qwen2.5:7b",
+    });
+
+    expect(request).toHaveBeenCalledWith(
+      "DELETE",
+      "http://localhost:11434/api/delete",
+      expect.objectContaining({
+        body: { model: "qwen2.5:7b" },
+        mode: "local",
+      }),
+    );
   });
 });

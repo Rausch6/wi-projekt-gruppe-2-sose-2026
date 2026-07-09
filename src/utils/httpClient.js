@@ -9,6 +9,7 @@
  * @property {Record<string, string>} [headers]
  * @property {unknown} [body]
  * @property {number} [timeout]
+ * @property {AbortSignal} [signal]
  * @property {TransportMode} [mode]
  */
 
@@ -95,10 +96,11 @@ async function sendWithFetch(method, url, options) {
 
 async function fetchTextWithTimeout(method, url, options) {
   const controller = createAbortController();
+  const userSignal = options.signal;
+  const fetchSignal = controller?.signal ?? userSignal;
   let timedOut = false;
   let timer;
 
-  const userSignal = options.signal;
   const onUserAbort = () => {
     if (controller) controller.abort();
   };
@@ -119,7 +121,7 @@ async function fetchTextWithTimeout(method, url, options) {
         method,
         headers: options.headers,
         body: options.body,
-        signal: controller.signal,
+        signal: fetchSignal,
       });
       return { response, bodyText: await response.text() };
     }
@@ -130,6 +132,7 @@ async function fetchTextWithTimeout(method, url, options) {
           method,
           headers: options.headers,
           body: options.body,
+          ...(fetchSignal ? { signal: fetchSignal } : {}),
         });
         return { response, bodyText: await response.text() };
       })(),
@@ -160,13 +163,25 @@ async function sendStreamWithFetch(method, url, options) {
   }
 
   const controller = createAbortController();
-  const startedAt = Date.now();
+  const userSignal = options.signal;
+  const fetchSignal = controller?.signal ?? userSignal;
   let timedOut = false;
   let timer;
+  let reader;
 
-  const userSignal = options.signal;
+  const resetInactivityTimer = () => {
+    if (timer) clearTimeout(timer);
+    if (!controller || options.timeout <= 0) return;
+
+    timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, options.timeout);
+  };
+
   const onUserAbort = () => {
     if (controller) controller.abort();
+    reader?.cancel?.().catch?.(() => {});
   };
 
   if (userSignal) {
@@ -179,13 +194,10 @@ async function sendStreamWithFetch(method, url, options) {
       method,
       headers: options.headers,
       body: options.body,
-      ...(controller ? { signal: controller.signal } : {}),
+      ...(fetchSignal ? { signal: fetchSignal } : {}),
     });
     if (controller) {
-      timer = setTimeout(() => {
-        timedOut = true;
-        controller.abort();
-      }, options.timeout);
+      resetInactivityTimer();
     }
 
     const response = controller
@@ -195,6 +207,7 @@ async function sendStreamWithFetch(method, url, options) {
     response.headers.forEach((value, name) => {
       headers[name.toLowerCase()] = value;
     });
+    resetInactivityTimer();
     let cachedBodyText;
     const readBodyText = async () => {
       if (cachedBodyText === undefined) {
@@ -228,20 +241,25 @@ async function sendStreamWithFetch(method, url, options) {
           );
         }
 
-        const reader = response.body.getReader();
+        reader = response.body.getReader();
         const decoder = new TextDecoder();
 
         try {
           while (true) {
-            const remainingTimeout = Math.max(
-              0,
-              options.timeout - (Date.now() - startedAt),
-            );
+            if (userSignal?.aborted) {
+              throw createAbortError();
+            }
+
             const result = controller
               ? await reader.read()
-              : await raceWithTimeout(reader.read(), url, remainingTimeout);
+              : await raceWithTimeout(reader.read(), url, options.timeout);
+
+            if (userSignal?.aborted) {
+              throw createAbortError();
+            }
 
             if (result.done) break;
+            resetInactivityTimer();
 
             const text = decoder.decode(result.value, { stream: true });
             if (text) yield text;
@@ -250,6 +268,9 @@ async function sendStreamWithFetch(method, url, options) {
           const finalText = decoder.decode();
           if (finalText) yield finalText;
         } catch (cause) {
+          if (userSignal?.aborted) {
+            throw createAbortError();
+          }
           if (timedOut || cause instanceof HttpTimeoutError) {
             throw new HttpTimeoutError(url, options.timeout);
           }
@@ -257,13 +278,14 @@ async function sendStreamWithFetch(method, url, options) {
         } finally {
           if (timer) clearTimeout(timer);
           reader.releaseLock?.();
+          reader = undefined;
         }
       },
     };
   } catch (cause) {
     if (timer) clearTimeout(timer);
-    if (userSignal?.aborted && cause?.name === "AbortError") {
-      throw cause;
+    if (userSignal?.aborted) {
+      throw createAbortError();
     }
     if (cause instanceof HttpTimeoutError || timedOut) {
       throw new HttpTimeoutError(url, options.timeout);
@@ -346,6 +368,7 @@ async function request(method, url, options = {}) {
   };
 
   const transportOptions = { timeout, body, headers };
+  transportOptions.signal = options.signal;
   const useFetch = mode === "local" || (mode === "auto" && isLocalUrl(url));
 
   return useFetch
@@ -373,12 +396,27 @@ async function streamRequest(method, url, options = {}) {
     ...options.headers,
   };
 
-  return sendStreamWithFetch(method, url, { timeout, body, headers });
+  return sendStreamWithFetch(method, url, {
+    timeout,
+    body,
+    headers,
+    signal: options.signal,
+  });
 }
 
 function createAbortController() {
   if (typeof AbortController !== "function") return null;
   return new AbortController();
+}
+
+function createAbortError() {
+  if (typeof DOMException === "function") {
+    return new DOMException("Aborted", "AbortError");
+  }
+
+  const error = new Error("Aborted");
+  error.name = "AbortError";
+  return error;
 }
 
 function raceWithTimeout(promise, url, timeout) {
