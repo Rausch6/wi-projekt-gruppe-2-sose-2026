@@ -104,6 +104,10 @@ export class EmbeddingSearchService {
     return { ...lastStatus };
   }
 
+  static isEnabled() {
+    return enabled;
+  }
+
   static async selectRelevantChunks(
     chunks: TextChunk[],
     query: string,
@@ -158,6 +162,9 @@ export class EmbeddingSearchService {
     chunks: TextChunk[],
     options: EmbeddingDebugOptions = {},
   ): Promise<ChunkEmbeddingDebugResult> {
+    if (!enabled) {
+      throw new Error("Semantische Suche ist deaktiviert.");
+    }
     if (!chunks.length) {
       return {
         provider: embeddingProvider.getConfig(),

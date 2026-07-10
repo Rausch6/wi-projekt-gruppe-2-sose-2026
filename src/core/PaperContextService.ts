@@ -114,9 +114,11 @@ export class PaperContextService {
 
     let queryVector: number[] | null = null;
     try {
-      [queryVector] = await embeddingProvider.embedTexts([query], {
-        inputType: "query",
-      });
+      if (EmbeddingSearchService.isEnabled()) {
+        [queryVector] = await embeddingProvider.embedTexts([query], {
+          inputType: "query",
+        });
+      }
 
       // --- DEBUG VECTOR ---
       if (queryVector) {
@@ -202,9 +204,11 @@ export class PaperContextService {
     let queryVector: number[] | null = null;
 
     try {
-      [queryVector] = await embeddingProvider.embedTexts([query], {
-        inputType: "query",
-      });
+      if (EmbeddingSearchService.isEnabled()) {
+        [queryVector] = await embeddingProvider.embedTexts([query], {
+          inputType: "query",
+        });
+      }
 
       // --- DEBUG VECTOR ---
       if (queryVector) {
@@ -311,9 +315,14 @@ export class PaperContextService {
 
     let queryVector: number[] | null = null;
     try {
-      [queryVector] = await embeddingProvider.embedTexts([vectorSearchQuery], {
-        inputType: "query",
-      });
+      if (EmbeddingSearchService.isEnabled()) {
+        [queryVector] = await embeddingProvider.embedTexts(
+          [vectorSearchQuery],
+          {
+            inputType: "query",
+          },
+        );
+      }
     } catch (error) {
       Zotero.debug(
         `[PaperContextService] Routing-Embedding fehlgeschlagen, Keyword-Fallback aktiv: ${error}`,
@@ -321,9 +330,10 @@ export class PaperContextService {
     }
 
     const chunkLimit = getChunkCountSetting();
-    const chunksPerItem = uniqueItemIDs.length > 0 
-      ? Math.max(2, Math.floor(chunkLimit / uniqueItemIDs.length)) 
-      : chunkLimit;
+    const chunksPerItem =
+      uniqueItemIDs.length > 0
+        ? Math.max(2, Math.floor(chunkLimit / uniqueItemIDs.length))
+        : chunkLimit;
     Zotero.debug(
       `[PaperContextService] Starte Router-gesteuerte Vektorsuche für ${uniqueItemIDs.length} Items mit max. ${chunksPerItem} Chunks pro Item`,
     );
@@ -351,7 +361,11 @@ export class PaperContextService {
       metadata.map((entry) => [entry.itemID, entry]),
     );
 
-    if (!hits.length && resolvedOptions.contentFocus === "abstracts") {
+    if (
+      !hits.length &&
+      queryVector &&
+      resolvedOptions.contentFocus === "abstracts"
+    ) {
       hitGroups = await searchVectorContextWithoutKeywordTerm(
         queryVector,
         query,
@@ -945,8 +959,14 @@ async function getCachedPaper(item: Zotero.Item) {
   const paper = {
     cacheKey,
     chunks: chunkPaperText(document.pages, {
-      targetTokens: ((globalThis as any).Zotero?.[config.addonInstance] || (globalThis as any).addon)?.data?.settings?.chunkTargetTokens,
-      overlapTokens: ((globalThis as any).Zotero?.[config.addonInstance] || (globalThis as any).addon)?.data?.settings?.chunkOverlapTokens,
+      targetTokens: (
+        (globalThis as any).Zotero?.[config.addonInstance] ||
+        (globalThis as any).addon
+      )?.data?.settings?.chunkTargetTokens,
+      overlapTokens: (
+        (globalThis as any).Zotero?.[config.addonInstance] ||
+        (globalThis as any).addon
+      )?.data?.settings?.chunkOverlapTokens,
     }),
     title: document.title,
     creators: document.creators,
@@ -1005,7 +1025,9 @@ function formatPageLabel(chunk: TextChunk) {
  */
 function getChunkCountSetting(): number {
   try {
-    const addon = (globalThis as any).Zotero?.[config.addonInstance] || (globalThis as any).addon;
+    const addon =
+      (globalThis as any).Zotero?.[config.addonInstance] ||
+      (globalThis as any).addon;
     const count = addon?.data?.settings?.chunkCount;
     if (typeof count === "number" && count > 0) return count;
   } catch {

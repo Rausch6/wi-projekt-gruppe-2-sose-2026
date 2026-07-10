@@ -1,10 +1,11 @@
-import { vectorStore, type ChunkDocument } from "./OramaService";
+import { VECTOR_SIZE, vectorStore, type ChunkDocument } from "./OramaService";
 import { PdfExtractor } from "./PdfExtractor";
 import { chunkPaperText, type TextChunk } from "./TextChunker";
 import { embeddingProvider } from "../ai/EmbeddingProvider.js";
 import { indexingEvents } from "./IndexingEventBus";
 import { createAbortController } from "../utils/AbortController";
 import { config } from "../../package.json";
+import { EmbeddingSearchService } from "./EmbeddingSearchService";
 
 declare const Zotero: any;
 
@@ -179,7 +180,9 @@ export class BackgroundIndexer {
         });
       } catch (error: any) {
         if (error?.name === "AbortError") {
-          Zotero.debug("[BackgroundIndexer] Einzel-Indexierung durch Nutzer abgebrochen.");
+          Zotero.debug(
+            "[BackgroundIndexer] Einzel-Indexierung durch Nutzer abgebrochen.",
+          );
           this.queue = [];
           break;
         }
@@ -210,12 +213,16 @@ export class BackgroundIndexer {
     options?: { signal?: AbortSignal },
   ): Promise<IndexItemResult> {
     if (this.currentlyIndexing.has(itemId)) {
-      return { indexed: vectorStore.getIndexedItemIds().has(itemId.toString()), skipped: true };
+      return {
+        indexed: vectorStore.getIndexedItemIds().has(itemId.toString()),
+        skipped: true,
+      };
     }
     this.currentlyIndexing.add(itemId);
 
     try {
-      if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+      if (options?.signal?.aborted)
+        throw new DOMException("Aborted", "AbortError");
 
       let item = await Zotero.Items.getAsync(itemId);
       if (!item) return { indexed: false, skipped: true };
@@ -260,10 +267,13 @@ export class BackgroundIndexer {
         });
       }
 
-      if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+      if (options?.signal?.aborted)
+        throw new DOMException("Aborted", "AbortError");
 
       const extractedDoc = await PdfExtractor.extractDocument(item);
-      const addon = (globalThis as any).Zotero?.[config.addonInstance] || (globalThis as any).addon;
+      const addon =
+        (globalThis as any).Zotero?.[config.addonInstance] ||
+        (globalThis as any).addon;
       const addonSettings = addon?.data?.settings;
       const chunks = extractedDoc?.pages?.length
         ? chunkPaperText(extractedDoc.pages, {
@@ -299,31 +309,36 @@ export class BackgroundIndexer {
       const oramaChunks: ChunkDocument[] = [];
 
       for (const chunk of chunks) {
-        if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+        if (options?.signal?.aborted)
+          throw new DOMException("Aborted", "AbortError");
 
-        let embedding: number[] = [];
-        let retryCount = 0;
-        const maxRetries = 2;
+        let embedding: number[] = Array(VECTOR_SIZE).fill(0);
+        if (EmbeddingSearchService.isEnabled()) {
+          let retryCount = 0;
+          const maxRetries = 2;
 
-        while (retryCount <= maxRetries) {
-          try {
-            [embedding] = await embeddingProvider.embedTexts([chunk.text], {
-              inputType: "passage",
-              timeout: 20_000,
-              signal: options?.signal,
-            });
-            break;
-          } catch (err: any) {
-            if (options?.signal?.aborted) throw err;
-            if (retryCount >= maxRetries) throw err;
-            retryCount++;
-            Zotero.debug(`[BackgroundIndexer] Retry ${retryCount} for chunk ${chunk.id}`);
+          while (retryCount <= maxRetries) {
+            try {
+              [embedding] = await embeddingProvider.embedTexts([chunk.text], {
+                inputType: "passage",
+                timeout: 20_000,
+                signal: options?.signal,
+              });
+              break;
+            } catch (err: any) {
+              if (options?.signal?.aborted) throw err;
+              if (retryCount >= maxRetries) throw err;
+              retryCount++;
+              Zotero.debug(
+                `[BackgroundIndexer] Retry ${retryCount} for chunk ${chunk.id}`,
+              );
+            }
           }
-        }
 
-        Zotero.debug(
-          `[BackgroundIndexer] Chunk ${chunk.id} embedded successfully!`,
-        );
+          Zotero.debug(
+            `[BackgroundIndexer] Chunk ${chunk.id} embedded successfully!`,
+          );
+        }
 
         oramaChunks.push({
           id: `doc_${targetId}_${chunk.id}`,
@@ -394,7 +409,7 @@ export class BackgroundIndexer {
       )
       .join("\n\n");
 
-    return fulltextSource;
+    return `${EmbeddingSearchService.isEnabled() ? "embedding" : "keyword"}\n${fulltextSource}`;
   }
 
   private cyrb53(str: string, seed = 0): number {
@@ -419,7 +434,11 @@ export class BackgroundIndexer {
    * Bereits indexierte Items werden übersprungen.
    * Diese Methode nur einmalig beim ersten Start der Erweiterung aufgerufen.
    */
-  async indexAllLibraryItems(): Promise<{ newlyIndexed: number, alreadyIndexed: number, total: number }> {
+  async indexAllLibraryItems(): Promise<{
+    newlyIndexed: number;
+    alreadyIndexed: number;
+    total: number;
+  }> {
     Zotero.debug(
       "[BackgroundIndexer] Starte Erst-Indexierung der Bibliothek...",
     );
@@ -501,7 +520,9 @@ export class BackgroundIndexer {
           .getIndexedItemIds()
           .has(item.id.toString());
         if (!wasIndexed) {
-          await this.indexItem(item.id, { signal: this.abortController.signal });
+          await this.indexItem(item.id, {
+            signal: this.abortController.signal,
+          });
         }
         const isIndexed = vectorStore
           .getIndexedItemIds()
@@ -547,7 +568,9 @@ export class BackgroundIndexer {
         });
       } catch (err: any) {
         if (err?.name === "AbortError") {
-          Zotero.debug("[BackgroundIndexer] Bibliotheks-Indexierung durch Nutzer abgebrochen.");
+          Zotero.debug(
+            "[BackgroundIndexer] Bibliotheks-Indexierung durch Nutzer abgebrochen.",
+          );
           break;
         }
         Zotero.debug(
@@ -576,8 +599,12 @@ export class BackgroundIndexer {
       newlyIndexed: indexedNew,
       total: targetItems.length,
     });
-    
-    return { newlyIndexed: indexedNew, alreadyIndexed: alreadyIndexedCount, total: targetItems.length };
+
+    return {
+      newlyIndexed: indexedNew,
+      alreadyIndexed: alreadyIndexedCount,
+      total: targetItems.length,
+    };
   }
 
   private countIndexedTargetItems(items: Zotero.Item[]): number {

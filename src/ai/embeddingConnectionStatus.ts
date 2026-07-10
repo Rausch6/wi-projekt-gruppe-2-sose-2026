@@ -2,6 +2,7 @@ export type EmbeddingConnectionStatus =
   | "unknown"
   | "checking"
   | "ready"
+  | "disabled"
   | "missing-config"
   | "unreachable"
   | "missing-model"
@@ -13,6 +14,10 @@ export type EmbeddingConnectionIssue =
   | "model-not-installed"
   | "provider-unreachable"
   | "invalid-response"
+  | "ollama-not-installed"
+  | "ollama-not-running"
+  | "ollama-start-failed"
+  | "ollama-startup-timeout"
   | "unknown-error";
 
 export type EmbeddingConnectionResult = {
@@ -28,14 +33,11 @@ export type EmbeddingConnectionResult = {
 
 export function createEmbeddingConnectionResult(
   status: EmbeddingConnectionStatus,
-  details: Omit<
-    EmbeddingConnectionResult,
-    "status" | "ok" | "checkedAt"
-  > = {},
+  details: Omit<EmbeddingConnectionResult, "status" | "ok" | "checkedAt"> = {},
 ): EmbeddingConnectionResult {
   return {
     status,
-    ok: status === "ready",
+    ok: status === "ready" || status === "disabled",
     checkedAt: new Date().toISOString(),
     ...details,
   };

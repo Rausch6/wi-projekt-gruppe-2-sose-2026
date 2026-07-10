@@ -1,6 +1,5 @@
 import { config } from "../../package.json";
 import {
-  EMBEDDING_DEFAULT_BASE_URL,
   EMBEDDING_DEFAULT_MODEL,
   REQUIRED_EMBEDDING_MODEL,
 } from "../ai/EmbeddingProvider.js";
@@ -38,7 +37,6 @@ const DEFAULT_SETTINGS = {
   sendPaperContextToKisski: true,
   contextRouterProvider: "ollama",
   embeddingSearchEnabled: true,
-  embeddingBaseUrl: EMBEDDING_DEFAULT_BASE_URL,
   embeddingModel: EMBEDDING_DEFAULT_MODEL,
   maxItems: 200,
   metadataFieldSelection: DEFAULT_METADATA_FIELD_SELECTION,
@@ -57,7 +55,6 @@ const FIELD_NAMES = [
   "send-paper-context-to-kisski",
   "context-router-provider",
   "embedding-search-enabled",
-  "embedding-base-url",
   "ollama-base-url",
   "ollama-model",
   "max-items",
@@ -68,6 +65,7 @@ const INDEX_MANAGER_DEFAULT_WIDTH = 800;
 const INDEX_MANAGER_DEFAULT_HEIGHT = 600;
 const INDEX_MANAGER_MIN_WIDTH = INDEX_MANAGER_DEFAULT_WIDTH;
 const INDEX_MANAGER_MIN_HEIGHT = INDEX_MANAGER_DEFAULT_HEIGHT;
+let semanticSearchFocusRequested = false;
 
 const PREFERENCE_FIELD_NAMES: Partial<Record<keyof PluginSettings, string>> = {
   apiKey: "api-key",
@@ -76,7 +74,6 @@ const PREFERENCE_FIELD_NAMES: Partial<Record<keyof PluginSettings, string>> = {
   sendPaperContextToKisski: "send-paper-context-to-kisski",
   contextRouterProvider: "context-router-provider",
   embeddingSearchEnabled: "embedding-search-enabled",
-  embeddingBaseUrl: "embedding-base-url",
   maxItems: "max-items",
   ollamaBaseUrl: "ollama-base-url",
   ollamaModel: "ollama-model",
@@ -93,6 +90,31 @@ export async function registerPrefsScripts(window: Window) {
   migrateHiddenPreferences();
   applySettingsToFields(window, addon.data.settings);
   bindPreferenceEvents(window);
+  applyRequestedPreferenceFocus(window);
+}
+
+export function requestSemanticSearchPreferenceFocus() {
+  semanticSearchFocusRequested = true;
+  const window = addon.data.prefs?.window;
+  if (window && !window.closed) applyRequestedPreferenceFocus(window);
+}
+
+function applyRequestedPreferenceFocus(window: Window) {
+  if (!semanticSearchFocusRequested) return;
+  const field = getElement<HTMLInputElement>(
+    window,
+    "embedding-search-enabled",
+  );
+  if (!field) return;
+
+  semanticSearchFocusRequested = false;
+  field.scrollIntoView({ behavior: "smooth", block: "center" });
+  field.focus();
+  const container = field.closest<HTMLElement>(".zaia-pref-field");
+  container?.classList.add("zaia-pref-field-highlight");
+  window.setTimeout(() => {
+    container?.classList.remove("zaia-pref-field-highlight");
+  }, 2_400);
 }
 
 function bindPreferenceEvents(window: Window) {
@@ -119,14 +141,25 @@ function bindPreferenceEvents(window: Window) {
     void testEmbeddingService(window);
   });
   bindCommand(window, "start-indexing", () => {
-    void addon.api.backgroundIndexer.indexAllLibraryItems()
-      .then((stats: { newlyIndexed: number, alreadyIndexed: number, total: number }) => {
-        if (stats.newlyIndexed === 0 && stats.total > 0) {
-          window.alert("Alle unterstützten Dokumente sind bereits indexiert.");
-        } else if (stats.total === 0) {
-          window.alert("Keine unterstützten Dokumente (PDFs) in der Bibliothek gefunden.");
-        }
-      })
+    void addon.api.backgroundIndexer
+      .indexAllLibraryItems()
+      .then(
+        (stats: {
+          newlyIndexed: number;
+          alreadyIndexed: number;
+          total: number;
+        }) => {
+          if (stats.newlyIndexed === 0 && stats.total > 0) {
+            window.alert(
+              "Alle unterstützten Dokumente sind bereits indexiert.",
+            );
+          } else if (stats.total === 0) {
+            window.alert(
+              "Keine unterstützten Dokumente (PDFs) in der Bibliothek gefunden.",
+            );
+          }
+        },
+      )
       .catch((err: any) => {
         window.alert(`Indexierung fehlgeschlagen: ${err}`);
       });
@@ -149,9 +182,18 @@ function bindCommand(
 
 function syncRuntimeSettings(window: Window) {
   const nextSettings = readSettingsFromFields(window);
+  const semanticSearchWasEnabled = addon.data.settings.embeddingSearchEnabled;
 
   Object.assign(addon.data.settings, nextSettings);
+  if (semanticSearchWasEnabled && !nextSettings.embeddingSearchEnabled) {
+    addon.api.backgroundIndexer.abort();
+  }
   configureProvidersFromSettings();
+  void import("../ui/assistantChatController").then(
+    ({ handleSetupRelevantSettingsChanged }) => {
+      handleSetupRelevantSettingsChanged();
+    },
+  );
 }
 
 function readSettingsFromFields(window: Window): PluginSettings {
@@ -177,11 +219,6 @@ function readSettingsFromFields(window: Window): PluginSettings {
       window,
       "embedding-search-enabled",
       true,
-    ),
-    embeddingBaseUrl: readTextValue(
-      window,
-      "embedding-base-url",
-      EMBEDDING_DEFAULT_BASE_URL,
     ),
     embeddingModel: EMBEDDING_DEFAULT_MODEL,
     maxItems: readNumberValue(window, "max-items", 200, 1, 1000),
@@ -211,12 +248,12 @@ function configureProvidersFromSettings() {
   addon.api.ai.setActiveProvider(settings.provider);
   addon.api.ai.configureProvider("kisski", {
     apiKey: settings.apiKey,
-    baseUrl: settings.baseUrl,
-    model: settings.model,
+    baseUrl: settings.baseUrl || undefined,
+    model: settings.model || undefined,
   });
   addon.api.ai.configureProvider("ollama", {
-    baseUrl: settings.ollamaBaseUrl,
-    model: settings.ollamaModel,
+    baseUrl: settings.ollamaBaseUrl || undefined,
+    model: settings.ollamaModel || undefined,
   });
   addon.api.configureEmbeddings();
 }
@@ -438,7 +475,7 @@ function readTextValue(window: Window, name: string, fallback: string) {
     window,
     name,
   );
-  return element?.value.trim() || fallback;
+  return element ? element.value.trim() : fallback;
 }
 
 function readBooleanValue(window: Window, name: string, fallback: boolean) {
@@ -613,6 +650,12 @@ function formatProviderConnectionResult(result: ProviderConnectionResult) {
       return `${providerLabel} ist nicht erreichbar.`;
     case "invalid-response":
       return `${providerLabel} hat eine unerwartete Antwort gesendet.`;
+    case "ollama-not-installed":
+      return "Ollama ist nicht installiert.";
+    case "ollama-start-failed":
+      return "Ollama konnte nicht im Hintergrund gestartet werden.";
+    case "ollama-startup-timeout":
+      return "Ollama wurde gestartet, ist aber noch nicht erreichbar.";
     default:
       return result.error || result.message || "Verbindung ist nicht bereit.";
   }
@@ -620,6 +663,10 @@ function formatProviderConnectionResult(result: ProviderConnectionResult) {
 
 function formatEmbeddingConnectionResult(result: EmbeddingConnectionResult) {
   const model = result.model ?? REQUIRED_EMBEDDING_MODEL;
+
+  if (result.status === "disabled") {
+    return "Semantische Suche ist deaktiviert; Ollama wird dafür nicht verwendet.";
+  }
 
   if (result.ok) {
     return `Embedding-Verbindung ist bereit (${model}).`;
@@ -635,6 +682,12 @@ function formatEmbeddingConnectionResult(result: EmbeddingConnectionResult) {
       return "Ollama ist für Embeddings nicht erreichbar.";
     case "invalid-response":
       return "Der Embedding-Dienst hat eine unerwartete Antwort gesendet.";
+    case "ollama-not-installed":
+      return "Ollama ist nicht installiert.";
+    case "ollama-start-failed":
+      return "Ollama konnte nicht im Hintergrund gestartet werden.";
+    case "ollama-startup-timeout":
+      return "Ollama wurde gestartet, ist aber noch nicht erreichbar.";
     default:
       return (
         result.error ||

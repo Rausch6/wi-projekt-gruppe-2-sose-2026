@@ -462,14 +462,10 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
 .zai-chat-action-button[hidden],
 .zai-model-picker[hidden],
 .zai-see-all[hidden],
-.zai-stop-ollama-button[hidden],
 .zai-welcome[hidden],
 .zai-about-view[hidden],
-.zai-embedding-setup[hidden],
-.zai-embedding-setup-status[hidden],
-.zai-provider-setup[hidden],
-.zai-provider-setup-panel[hidden],
-.zai-provider-setup-status[hidden],
+.zai-setup-timeline[hidden],
+.zai-setup-live-status[hidden],
 .zai-messages[hidden] {
   display: none !important;
 }
@@ -765,123 +761,289 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   width: 21px;
 }
 
-.zai-provider-setup,
-.zai-embedding-setup {
+.zai-setup-timeline {
+  align-self: stretch;
   box-sizing: border-box;
   display: grid;
-  gap: 12px;
+  gap: 22px;
+  margin: 0 auto;
+  max-width: 620px;
+  padding: 28px 24px 36px;
+  width: 100%;
+}
+
+.zai-setup-header {
+  display: grid;
+  gap: 8px;
+}
+
+.zai-setup-eyebrow {
+  color: var(--accent-blue, #2563eb);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.zai-setup-title {
+  color: var(--text-primary, inherit);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.zai-setup-description {
+  color: var(--text-secondary, #667085);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.zai-setup-milestones {
+  display: grid;
+  gap: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.zai-setup-milestone {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 32px minmax(0, 1fr);
+  min-width: 0;
+  padding-bottom: 16px;
+  position: relative;
+}
+
+.zai-setup-milestone:not(:last-child)::before {
+  background: color-mix(in srgb, currentColor 16%, transparent);
+  content: "";
+  left: 15px;
+  position: absolute;
+  top: 31px;
+  bottom: -1px;
+  width: 2px;
+}
+
+.zai-setup-milestone[data-state="complete"]:not(:last-child)::before {
+  background: color-mix(in srgb, #16845b 66%, transparent);
+}
+
+.zai-setup-milestone-marker {
+  align-items: center;
+  background: var(--material-background, Canvas);
+  border: 2px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-radius: 999px;
+  color: var(--text-secondary, #667085);
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 700;
+  height: 32px;
+  justify-content: center;
+  position: relative;
+  width: 32px;
+  z-index: 1;
+}
+
+.zai-setup-milestone[data-state="complete"] .zai-setup-milestone-marker {
+  background: #16845b;
+  border-color: #16845b;
+  color: #fff;
+}
+
+.zai-setup-milestone[data-state="checking"] .zai-setup-milestone-marker {
+  border-color: var(--accent-blue, #2563eb);
+  color: var(--accent-blue, #2563eb);
+}
+
+.zai-setup-milestone[data-state="error"] .zai-setup-milestone-marker {
+  border-color: #b42318;
+  color: #b42318;
+}
+
+.zai-setup-milestone[data-state="action"] .zai-setup-milestone-marker {
+  border-color: #b45309;
+  color: #b45309;
+}
+
+.zai-setup-milestone-attention .zai-setup-milestone-marker {
+  box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 22%, transparent);
+}
+
+.zai-setup-step-card {
+  background: color-mix(in srgb, currentColor 3.5%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 13%, transparent);
+  border-radius: 11px;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px 15px;
+}
+
+.zai-setup-milestone-attention .zai-setup-step-card {
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  border-color: color-mix(in srgb, currentColor 38%, transparent);
+}
+
+.zai-setup-milestone[data-state="action"].zai-setup-milestone-attention {
+  color: #b45309;
+}
+
+.zai-setup-milestone[data-state="error"].zai-setup-milestone-attention {
+  color: #b42318;
+}
+
+.zai-setup-step-heading {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
   min-width: 0;
 }
 
-.zai-provider-setup-panel {
-  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.14));
-  border-radius: 8px;
-  box-sizing: border-box;
-  display: grid;
-  gap: 12px;
-  min-width: 0;
-  padding: 14px;
-}
-
-.zai-provider-setup-title {
-  font-size: 15px;
-  font-weight: 650;
+.zai-setup-step-title {
+  color: var(--text-primary, inherit);
+  font-size: 13px;
+  font-weight: 700;
   line-height: 1.35;
   margin: 0;
 }
 
-.zai-provider-setup-description {
-  color: var(--text-secondary, #5f6b7a);
-  font-size: 13px;
+.zai-setup-step-badge {
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  border-radius: 999px;
+  color: var(--text-secondary, #667085);
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 650;
+  padding: 3px 7px;
+}
+
+.zai-setup-milestone[data-state="complete"] .zai-setup-step-badge {
+  background: color-mix(in srgb, #16845b 14%, transparent);
+  color: color-mix(in srgb, #16845b 88%, currentColor);
+}
+
+.zai-setup-milestone[data-state="error"] .zai-setup-step-badge {
+  background: color-mix(in srgb, #b42318 13%, transparent);
+  color: color-mix(in srgb, #b42318 88%, currentColor);
+}
+
+.zai-setup-milestone[data-state="action"] .zai-setup-step-badge {
+  background: color-mix(in srgb, #b45309 15%, transparent);
+  color: color-mix(in srgb, #b45309 88%, currentColor);
+}
+
+.zai-setup-step-description,
+.zai-setup-step-status,
+.zai-setup-live-status {
+  font-size: 12px;
   line-height: 1.45;
   margin: 0;
 }
 
-.zai-provider-setup-list {
+.zai-setup-step-description {
+  color: var(--text-secondary, #667085);
+}
+
+.zai-setup-step-status {
   color: var(--text-primary, inherit);
-  display: grid;
-  font-size: 13px;
-  gap: 7px;
-  line-height: 1.4;
-  margin: 0;
-  padding-inline-start: 20px;
+  font-weight: 550;
 }
 
-.zai-provider-setup-list-item {
-  padding-inline-start: 2px;
+.zai-setup-step-progress {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  border-radius: 999px;
+  height: 4px;
+  overflow: hidden;
+  width: 100%;
 }
 
-.zai-provider-setup-link {
-  color: var(--accent-blue, #2563eb);
-  text-decoration: underline;
-  text-underline-offset: 2px;
+.zai-setup-step-progress-fill {
+  background: var(--accent-blue, #2563eb);
+  display: block;
+  height: 100%;
+  transition: width 120ms ease;
+  width: 0;
 }
 
-.zai-provider-setup-link:hover,
-.zai-provider-setup-link:focus-visible {
-  color: color-mix(in srgb, var(--accent-blue, #2563eb) 78%, #000);
-}
-
-.zai-provider-setup-actions {
+.zai-setup-step-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  min-width: 0;
+  gap: 7px;
+  padding-top: 3px;
 }
 
-.zai-provider-setup-button {
+.zai-setup-action {
   appearance: none;
   background: var(--accent-blue, #2563eb);
   border: 1px solid transparent;
-  border-radius: 6px;
-  box-sizing: border-box;
+  border-radius: 7px;
   color: #fff;
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.2;
+  font-size: 11px;
+  font-weight: 650;
   min-height: 30px;
-  min-width: 0;
-  overflow: hidden;
   padding: 6px 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.zai-provider-setup-button:hover,
-.zai-provider-setup-button:focus-visible {
-  background: color-mix(in srgb, var(--accent-blue, #2563eb) 85%, #000);
+.zai-setup-action-secondary {
+  background: transparent;
+  border-color: color-mix(in srgb, currentColor 18%, transparent);
+  color: var(--text-primary, inherit);
 }
 
-.zai-provider-setup-button:disabled {
+.zai-setup-action:hover,
+.zai-setup-action:focus-visible {
+  filter: brightness(0.94);
+  outline: none;
+}
+
+.zai-setup-action:focus-visible {
+  box-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--accent-blue, #2563eb) 24%, transparent);
+}
+
+.zai-setup-action:disabled {
   cursor: wait;
-  opacity: 0.65;
+  opacity: 0.62;
 }
 
-.zai-provider-setup-inline-button {
-  display: block;
-  margin-top: 6px;
-  width: fit-content;
+.zai-setup-live-status {
+  background: color-mix(in srgb, var(--accent-blue, #2563eb) 9%, transparent);
+  border-radius: 8px;
+  color: var(--text-primary, inherit);
+  padding: 10px 12px;
 }
 
-.zai-provider-setup-button[data-action="open-preferences"] {
-  background: color-mix(in srgb, currentColor 7%, transparent);
-  border-color: var(--border-color, rgba(0, 0, 0, 0.14));
-  color: inherit;
-}
+@media (max-width: 420px) {
+  .zai-setup-timeline {
+    padding-inline: 16px;
+  }
 
-.zai-provider-setup-button[data-action="open-preferences"]:hover,
-.zai-provider-setup-button[data-action="open-preferences"]:focus-visible {
-  background: color-mix(in srgb, currentColor 12%, transparent);
-}
+  .zai-setup-milestone {
+    gap: 10px;
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
 
-.zai-provider-setup-status,
-.zai-embedding-setup-status {
-  color: var(--text-secondary, #5f6b7a);
-  font-size: 12px;
-  line-height: 1.4;
-  margin: 0;
+  .zai-setup-milestone-marker {
+    height: 28px;
+    width: 28px;
+  }
+
+  .zai-setup-milestone:not(:last-child)::before {
+    left: 13px;
+    top: 27px;
+  }
+
+  .zai-setup-step-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
 }
 
 .zai-messages {
