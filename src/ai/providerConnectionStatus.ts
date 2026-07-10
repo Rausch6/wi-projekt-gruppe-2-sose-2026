@@ -17,6 +17,10 @@ export type ProviderConnectionIssue =
   | "model-not-installed"
   | "provider-unreachable"
   | "invalid-response"
+  | "ollama-not-installed"
+  | "ollama-not-running"
+  | "ollama-start-failed"
+  | "ollama-startup-timeout"
   | "unknown-error";
 
 export type ProviderConnectionResult = {

@@ -1,9 +1,23 @@
+param(
+  [ValidateSet("embedding", "local", "local-with-embedding")]
+  [string]$Mode = "local-with-embedding"
+)
+
 $ErrorActionPreference = "Stop"
 
 $ChatModel = "qwen2.5:3b"
 $EmbeddingModel = "bge-m3:latest"
 $BaseUrl = "http://localhost:11434"
 $InstallCommand = "irm https://ollama.com/install.ps1 | iex"
+$InstallChatModel = $Mode -in @("local", "local-with-embedding")
+$InstallEmbeddingModel = $Mode -in @("embedding", "local-with-embedding")
+$script:SetupOllamaProcess = $null
+
+trap {
+  Stop-SetupOllamaService
+  Write-Host "Setup failed: $($_.Exception.Message)" -ForegroundColor Red
+  exit 1
+}
 
 function Write-Step($Message) {
   Write-Host ""
@@ -66,11 +80,18 @@ function Start-OllamaService {
 
   Write-Step "Starting Ollama in the background"
   try {
-    Start-Process -FilePath $OllamaPath -ArgumentList "serve" -WindowStyle Hidden | Out-Null
+    $script:SetupOllamaProcess = Start-Process -FilePath $OllamaPath -ArgumentList "serve" -WindowStyle Hidden -PassThru
   } catch {
     Write-Warning "Could not start 'ollama serve': $($_.Exception.Message)"
     Write-Host "If the Ollama desktop app is installed, start it from the Start menu."
   }
+}
+
+function Stop-SetupOllamaService {
+  if ($script:SetupOllamaProcess -and -not $script:SetupOllamaProcess.HasExited) {
+    Stop-Process -Id $script:SetupOllamaProcess.Id -ErrorAction SilentlyContinue
+  }
+  $script:SetupOllamaProcess = $null
 }
 
 function Get-InstalledModels {
@@ -119,8 +140,9 @@ function Assert-ModelInstalled {
 }
 
 Write-Host "ZAIA Ollama Setup - Windows 11" -ForegroundColor Green
-Write-Host "This setup installs Ollama, starts the local service, and downloads $ChatModel and $EmbeddingModel."
-Write-Host "ZAIA expects Ollama at $BaseUrl with chat model $ChatModel and embedding model $EmbeddingModel."
+Write-Host "Setup mode: $Mode"
+Write-Host "This setup installs Ollama and downloads only the models needed for the selected ZAIA mode."
+Write-Host "ZAIA expects Ollama at $BaseUrl."
 
 $ollamaPath = Find-Ollama
 if (-not $ollamaPath) {
@@ -154,18 +176,31 @@ if (-not (Wait-ForOllamaApi)) {
   throw "Ollama service did not become reachable at $BaseUrl."
 }
 
-Ensure-ModelInstalled -Model $ChatModel -Label "Chat model"
-Ensure-ModelInstalled -Model $EmbeddingModel -Label "Embedding model"
+if ($InstallChatModel) {
+  Ensure-ModelInstalled -Model $ChatModel -Label "Chat model"
+}
+if ($InstallEmbeddingModel) {
+  Ensure-ModelInstalled -Model $EmbeddingModel -Label "Embedding model"
+}
 
-Assert-ModelInstalled -Model $ChatModel -Label "chat model"
-Assert-ModelInstalled -Model $EmbeddingModel -Label "embedding model"
+if ($InstallChatModel) {
+  Assert-ModelInstalled -Model $ChatModel -Label "chat model"
+}
+if ($InstallEmbeddingModel) {
+  Assert-ModelInstalled -Model $EmbeddingModel -Label "embedding model"
+}
 
 Write-Step "ZAIA local LLM configuration"
 Write-Host "Base URL:        $BaseUrl"
-Write-Host "Chat model:      $ChatModel"
-Write-Host "Embedding model: $EmbeddingModel"
+if ($InstallChatModel) {
+  Write-Host "Chat model:      $ChatModel"
+}
+if ($InstallEmbeddingModel) {
+  Write-Host "Embedding model: $EmbeddingModel"
+}
 Write-Host ""
 Write-Host "The plugin defaults already match these values."
-Write-Host "If you changed Zotero preferences manually, set Ollama base URL to $BaseUrl, model to $ChatModel, and embedding model to $EmbeddingModel."
+Write-Host "If you changed Zotero preferences manually, set the Ollama and embedding base URLs to $BaseUrl."
 Write-Host ""
 Write-Host "Done."
+Stop-SetupOllamaService

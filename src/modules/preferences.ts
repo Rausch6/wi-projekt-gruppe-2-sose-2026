@@ -1,5 +1,6 @@
 import { config } from "../../package.json";
 import { getString } from "../utils/locale";
+import { requestSemanticSearchPreferenceFocus } from "./preferenceScript";
 
 export const PREFERENCES_PANE_ID = `${config.addonRef}-preferences`;
 
@@ -16,4 +17,9 @@ export function registerPreferencesPane() {
 
 export function openPreferencesPane() {
   return Zotero.Utilities.Internal.openPreferences(PREFERENCES_PANE_ID);
+}
+
+export function openSemanticSearchPreference() {
+  requestSemanticSearchPreferenceFocus();
+  return openPreferencesPane();
 }

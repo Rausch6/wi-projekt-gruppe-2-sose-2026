@@ -6,7 +6,6 @@ pref("model", "deepseek-r1-distill-llama-70b");
 pref("sendPaperContextToKisski", true);
 pref("contextRouterProvider", "ollama");
 pref("embeddingSearchEnabled", true);
-pref("embeddingBaseUrl", "http://localhost:11434");
 pref("embeddingModel", "bge-m3:latest");
 pref("ollamaBaseUrl", "http://localhost:11434");
 pref("ollamaModel", "qwen2.5:3b");

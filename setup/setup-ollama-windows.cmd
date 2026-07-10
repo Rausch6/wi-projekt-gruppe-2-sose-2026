@@ -5,7 +5,9 @@ title ZAIA Ollama Setup
 echo Starting ZAIA Ollama setup for Windows 11...
 echo.
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup-ollama-windows.ps1"
+set "SETUP_MODE=local-with-embedding"
+if exist "%~dp0setup-mode.txt" set /p SETUP_MODE=<"%~dp0setup-mode.txt"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup-ollama-windows.ps1" -Mode "%SETUP_MODE%"
 set "EXIT_CODE=%ERRORLEVEL%"
 
 echo.

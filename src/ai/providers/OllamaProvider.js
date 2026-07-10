@@ -7,6 +7,7 @@ import {
   HttpTimeoutError,
   httpClient,
 } from "../../utils/httpClient.js";
+import { ollamaLifecycleManager } from "../OllamaLifecycleManager";
 
 export const OLLAMA_DEFAULT_BASE_URL = "http://localhost:11434";
 export const OLLAMA_DEFAULT_MODEL = "qwen2.5:3b";
@@ -36,7 +37,10 @@ export class OllamaProvider extends AIProvider {
     }
   }
 
-  async listModels() {
+  async listModels(options = {}) {
+    await ollamaLifecycleManager.ensureReady(this.baseUrl, {
+      autoStart: options.autoStart !== false,
+    });
     const url = `${this.baseUrl}/api/tags`;
     const response = await httpClient.get(url, {
       timeout: Math.min(this.timeout, 30_000),
@@ -64,6 +68,7 @@ export class OllamaProvider extends AIProvider {
   }
 
   async pullModel(model = this.model, options = {}) {
+    await ollamaLifecycleManager.ensureReady(this.baseUrl);
     const url = `${this.baseUrl}/api/pull`;
     const body = {
       model,
@@ -154,6 +159,7 @@ export class OllamaProvider extends AIProvider {
   }
 
   async deleteModel(model = this.model, options = {}) {
+    await ollamaLifecycleManager.ensureReady(this.baseUrl);
     const url = `${this.baseUrl}/api/delete`;
 
     try {
@@ -200,6 +206,7 @@ export class OllamaProvider extends AIProvider {
   }
 
   async chat(messages, options = {}) {
+    await ollamaLifecycleManager.ensureReady(this.baseUrl);
     const url = `${this.baseUrl}/api/chat`;
     const model = options.model ?? this.model;
     const body = this.createChatBody(messages, options);

@@ -1,10 +1,11 @@
 import { config } from "../../package.json";
-import { OLLAMA_DEFAULT_MODEL } from "../ai/providers/OllamaProvider.js";
 import { createAbortController } from "../utils/AbortController";
 import { LOCAL_OLLAMA_MODEL_CATALOG } from "./localOllamaModels";
 
 export const LOCAL_OLLAMA_MODEL_INSTALLED_EVENT =
   "zai-local-ollama-model-installed";
+export const LOCAL_OLLAMA_MODELS_CHANGED_EVENT =
+  "zai-local-ollama-models-changed";
 
 const LOCAL_MODEL_WINDOW_ROOT_ID = `${config.addonRef}-local-ollama-model-window-root`;
 const LOCAL_MODEL_WINDOW_DEFAULT_WIDTH = 540;
@@ -41,7 +42,7 @@ type LocalModelWindowContext = {
 type LocalModelNoticeState = "info" | "success" | "warning" | "error";
 type LocalModelStatusState = "success" | "warning" | "error" | "";
 
-type LocalModelProgress = {
+export type LocalModelProgress = {
   completed: number | null;
   done: boolean;
   percent: number | null;
@@ -69,7 +70,6 @@ type LocalModelWindowElements = {
   refreshButton: HTMLButtonElement;
   rows: LocalModelRowElements[];
   setupButton: HTMLButtonElement;
-  startButton: HTMLButtonElement;
 };
 
 const localModelWindows = new WeakMap<Window, LocalModelWindowState>();
@@ -207,11 +207,6 @@ function createWindowContent(
     "div",
     "zai-local-model-notice-actions",
   );
-  const startButton = createHtmlButton(
-    doc,
-    "zai-local-model-secondary-button",
-    "Ollama starten",
-  );
   const setupButton = createHtmlButton(
     doc,
     "zai-local-model-secondary-button",
@@ -243,9 +238,6 @@ function createWindowContent(
   );
   content.append(...rows.map((row) => row.row));
 
-  startButton.addEventListener("click", () => {
-    void startOllamaAndRefresh(context, state, elements);
-  });
   setupButton.addEventListener("click", () => {
     void launchSetupAndRefresh(context, state, elements);
   });
@@ -253,7 +245,7 @@ function createWindowContent(
     void refreshInstalledModels(context, state, elements);
   });
 
-  noticeActions.append(startButton, setupButton, refreshButton);
+  noticeActions.append(setupButton, refreshButton);
   notice.append(noticeText, noticeActions);
   libraryLink.href = "https://ollama.com/library";
   libraryLink.addEventListener("click", (event) => {
@@ -272,7 +264,6 @@ function createWindowContent(
     refreshButton,
     rows,
     setupButton,
-    startButton,
   };
   for (const row of rows) {
     row.button.addEventListener("click", () => {
@@ -401,46 +392,6 @@ async function refreshInstalledModels(
   }
 }
 
-async function startOllamaAndRefresh(
-  context: LocalModelWindowContext,
-  state: LocalModelWindowState,
-  elements: LocalModelWindowElements,
-) {
-  setNotice(elements, "Ollama wird gestartet...", "info", {
-    showActions: false,
-  });
-
-  try {
-    if (typeof addon.api.startOllama !== "function") {
-      throw new Error("start-ollama-unavailable");
-    }
-
-    await addon.api.startOllama();
-    const installedModels = await waitForInstalledModels(context, 8);
-    if (!isLocalModelWindowActive(context, state)) return;
-
-    const installedModelIds = new Set(
-      installedModels.map((model) => model.id.trim()).filter(Boolean),
-    );
-    syncInstalledRows(context, elements.rows, installedModelIds);
-    setNotice(elements, "Ollama ist erreichbar.", "success", {
-      hidden: true,
-    });
-  } catch (error) {
-    if (!isLocalModelWindowActive(context, state)) return;
-
-    logLocalModelError(error);
-    setRowsUnavailable(elements.rows);
-    setNotice(elements, getFriendlyErrorMessage(error), "error", {
-      showActions: true,
-    });
-  } finally {
-    if (isLocalModelWindowActive(context, state)) {
-      syncOperationLocks(context, state, elements.rows);
-    }
-  }
-}
-
 async function launchSetupAndRefresh(
   _context: LocalModelWindowContext,
   _state: LocalModelWindowState,
@@ -451,7 +402,11 @@ async function launchSetupAndRefresh(
       throw new Error("setup-unavailable");
     }
 
-    await addon.api.launchOllamaSetup();
+    await addon.api.launchOllamaSetup(
+      addon.data.settings.embeddingSearchEnabled
+        ? "local-with-embedding"
+        : "local",
+    );
     setNotice(
       elements,
       "Das Ollama-Setup wurde geöffnet. Prüfe danach erneut.",
@@ -528,6 +483,7 @@ async function downloadModel(
 
     row.installed = true;
     notifyModelInstalled(context, row.model);
+    notifyModelsChanged(context);
     setProgress(row, 100);
     setStatus(
       row.status,
@@ -609,7 +565,7 @@ async function forceStopUnresponsiveDownloadCancel(
   if (!isRowOperationActive(context, state, row, operationId)) return;
   if (state.controllers.get(row.model) !== controller) return;
 
-  setStatus(row.status, "Ollama wird gestoppt...", "warning");
+  setStatus(row.status, "Download wird beendet...", "warning");
 
   try {
     if (typeof addon.api.stopOllama === "function") {
@@ -625,28 +581,17 @@ async function forceStopUnresponsiveDownloadCancel(
     row.operationId += 1;
     resetDownloadRow(context, row);
     setRowsUnavailable(elements.rows);
-    setStatus(
-      row.status,
-      typeof addon.api.stopOllama === "function"
-        ? "Download abgebrochen. Ollama wurde gestoppt."
-        : "Download abgebrochen.",
-      "warning",
-    );
-    setNotice(
-      elements,
-      typeof addon.api.stopOllama === "function"
-        ? "Ollama wurde gestoppt, um den Download zu beenden."
-        : "Download wurde abgebrochen.",
-      "warning",
-      { showActions: true },
-    );
+    setStatus(row.status, "Download abgebrochen.", "warning");
+    setNotice(elements, "Download wurde abgebrochen.", "warning", {
+      showActions: true,
+    });
   } catch (error) {
     if (!isRowOperationActive(context, state, row, operationId)) return;
 
     logLocalModelError(error);
     setStatus(
       row.status,
-      "Download konnte nicht vollständig gestoppt werden. Stoppe Ollama manuell.",
+      "Download konnte nicht vollständig abgebrochen werden.",
       "error",
     );
     row.cancelButton.disabled = false;
@@ -706,25 +651,15 @@ async function deleteInstalledModel(
     );
     row.installed = false;
     syncInstalledRows(context, elements.rows, installedModelIds);
+    notifyModelsChanged(context);
 
     if (selected) {
-      const fallback = chooseFallbackModel(installedModels, row.model);
-      if (fallback) {
-        notifyModelInstalled(context, fallback);
-        setNotice(
-          elements,
-          `${row.model} wurde gelöscht. ${fallback} wurde ausgewählt.`,
-          "success",
-          { showActions: false },
-        );
-      } else {
-        setNotice(
-          elements,
-          `${row.model} wurde gelöscht. Wähle ein anderes installiertes Modell.`,
-          "warning",
-          { showActions: false },
-        );
-      }
+      setNotice(
+        elements,
+        `${row.model} wurde gelöscht. Installiere oder wähle ein anderes Modell.`,
+        "warning",
+        { showActions: false },
+      );
     } else {
       setNotice(elements, `${row.model} wurde gelöscht.`, "success", {
         showActions: false,
@@ -954,25 +889,6 @@ function resetDeleteRow(row: LocalModelRowElements) {
   setProgress(row, null);
 }
 
-function chooseFallbackModel(
-  installedModels: Array<{ id: string }>,
-  deletedModel: string,
-) {
-  const models = installedModels
-    .map((model) => model.id.trim())
-    .filter((model) => model && model !== deletedModel);
-
-  return (
-    models.find((model) => model === OLLAMA_DEFAULT_MODEL) ??
-    models.find((model) => !isLikelyEmbeddingModel(model)) ??
-    ""
-  );
-}
-
-function isLikelyEmbeddingModel(model: string) {
-  return /(^|[-_/.:])embed(?:ding)?($|[-_/.:])/i.test(model);
-}
-
 function beginRowOperation(
   state: LocalModelWindowState,
   row: LocalModelRowElements,
@@ -1028,7 +944,7 @@ function setProgress(row: LocalModelRowElements, percent: number | null) {
   row.progressFill.style.width = `${value}%`;
 }
 
-function formatProgressStatus(progress: LocalModelProgress) {
+export function formatProgressStatus(progress: LocalModelProgress) {
   if (progress.done) return "Download abgeschlossen.";
 
   if (progress.percent !== null) {
@@ -1071,16 +987,14 @@ function setNotice(
   elements.notice.dataset.state = state;
   elements.noticeText.textContent = text;
   elements.noticeActions.hidden = options.showActions !== true;
-  elements.startButton.hidden = typeof addon.api.startOllama !== "function";
   elements.setupButton.hidden =
     typeof addon.api.launchOllamaSetup !== "function";
   elements.refreshButton.hidden = false;
-  elements.startButton.disabled = false;
   elements.setupButton.disabled = false;
   elements.refreshButton.disabled = false;
 }
 
-function getFriendlyErrorMessage(error: unknown) {
+export function getFriendlyErrorMessage(error: unknown) {
   if (isAbortError(error)) return "Download abgebrochen.";
 
   const name = error instanceof Error ? error.name : "";
@@ -1106,20 +1020,17 @@ function getFriendlyErrorMessage(error: unknown) {
   if (/setup-unavailable/i.test(message)) {
     return "Das Ollama-Setup ist in dieser Umgebung nicht verfügbar.";
   }
-  if (/start-ollama-unavailable/i.test(message)) {
-    return "Ollama kann in dieser Umgebung nicht automatisch gestartet werden.";
-  }
   if (
     /network|fetch|failed|refused|unreachable|offline/i.test(message) ||
     name === "AIProviderResponseError"
   ) {
-    return "Ollama ist nicht erreichbar. Starte Ollama und prüfe es erneut.";
+    return "Ollama konnte nicht automatisch erreicht werden. Prüfe die Installation und versuche es erneut.";
   }
 
   return "Die Aktion konnte nicht abgeschlossen werden.";
 }
 
-function isAbortError(error: unknown) {
+export function isAbortError(error: unknown) {
   return (
     error !== null &&
     error !== undefined &&
@@ -1181,6 +1092,12 @@ function notifyModelInstalled(context: LocalModelWindowContext, model: string) {
     new context.owner.CustomEvent(LOCAL_OLLAMA_MODEL_INSTALLED_EVENT, {
       detail: { model },
     }),
+  );
+}
+
+function notifyModelsChanged(context: LocalModelWindowContext) {
+  context.owner.dispatchEvent(
+    new context.owner.CustomEvent(LOCAL_OLLAMA_MODELS_CHANGED_EVENT),
   );
 }
 
@@ -1344,7 +1261,7 @@ function createHtmlButton(doc: Document, className: string, text: string) {
   return button;
 }
 
-function createWindowAbortController(win: Window) {
+export function createWindowAbortController(win: Window) {
   const AbortControllerCtor = (
     win as Window & { AbortController?: typeof AbortController }
   ).AbortController;

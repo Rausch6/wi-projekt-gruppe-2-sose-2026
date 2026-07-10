@@ -5,6 +5,38 @@ CHAT_MODEL="qwen2.5:3b"
 EMBEDDING_MODEL="bge-m3:latest"
 BASE_URL="http://localhost:11434"
 INSTALL_COMMAND="curl -fsSL https://ollama.com/install.sh | sh"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SETUP_MODE="$(tr -d '\r\n' < "$SCRIPT_DIR/setup-mode.txt" 2>/dev/null || true)"
+SETUP_MODE="${SETUP_MODE:-local-with-embedding}"
+
+case "$SETUP_MODE" in
+  embedding)
+    INSTALL_CHAT_MODEL=false
+    INSTALL_EMBEDDING_MODEL=true
+    ;;
+  local)
+    INSTALL_CHAT_MODEL=true
+    INSTALL_EMBEDDING_MODEL=false
+    ;;
+  local-with-embedding)
+    INSTALL_CHAT_MODEL=true
+    INSTALL_EMBEDDING_MODEL=true
+    ;;
+  *)
+    echo "Unknown setup mode: $SETUP_MODE"
+    exit 1
+    ;;
+esac
+
+SETUP_OLLAMA_PID=""
+
+cleanup() {
+  if [ -n "$SETUP_OLLAMA_PID" ] && kill -0 "$SETUP_OLLAMA_PID" 2>/dev/null; then
+    kill "$SETUP_OLLAMA_PID" 2>/dev/null || true
+  fi
+}
+
+trap cleanup EXIT
 
 step() {
   printf "\n==> %s\n" "$1"
@@ -73,13 +105,8 @@ start_ollama() {
   fi
 
   step "Starting Ollama in the background"
-  if [ -d "/Applications/Ollama.app" ]; then
-    open -a Ollama || true
-  fi
-
-  if ! api_reachable; then
-    nohup "$ollama_path" serve >/tmp/zaia-ollama.log 2>&1 &
-  fi
+  nohup "$ollama_path" serve >/tmp/zaia-ollama.log 2>&1 &
+  SETUP_OLLAMA_PID=$!
 }
 
 installed_models() {
@@ -120,8 +147,9 @@ verify_model_installed() {
 
 clear
 echo "ZAIA Ollama Setup - macOS"
-echo "This setup installs Ollama, starts the local service, and downloads $CHAT_MODEL and $EMBEDDING_MODEL."
-echo "ZAIA expects Ollama at $BASE_URL with chat model $CHAT_MODEL and embedding model $EMBEDDING_MODEL."
+echo "Setup mode: $SETUP_MODE"
+echo "This setup installs Ollama and downloads only the models needed for the selected ZAIA mode."
+echo "ZAIA expects Ollama at $BASE_URL."
 
 OLLAMA_PATH="$(find_ollama || true)"
 if [ -z "$OLLAMA_PATH" ]; then
@@ -155,19 +183,31 @@ if ! wait_for_api; then
   exit 1
 fi
 
-ensure_model_installed "$CHAT_MODEL" "Chat model"
-ensure_model_installed "$EMBEDDING_MODEL" "Embedding model"
+if [ "$INSTALL_CHAT_MODEL" = true ]; then
+  ensure_model_installed "$CHAT_MODEL" "Chat model"
+fi
+if [ "$INSTALL_EMBEDDING_MODEL" = true ]; then
+  ensure_model_installed "$EMBEDDING_MODEL" "Embedding model"
+fi
 
-verify_model_installed "$CHAT_MODEL" "chat model"
-verify_model_installed "$EMBEDDING_MODEL" "embedding model"
+if [ "$INSTALL_CHAT_MODEL" = true ]; then
+  verify_model_installed "$CHAT_MODEL" "chat model"
+fi
+if [ "$INSTALL_EMBEDDING_MODEL" = true ]; then
+  verify_model_installed "$EMBEDDING_MODEL" "embedding model"
+fi
 
 step "ZAIA local LLM configuration"
 echo "Base URL:        $BASE_URL"
-echo "Chat model:      $CHAT_MODEL"
-echo "Embedding model: $EMBEDDING_MODEL"
+if [ "$INSTALL_CHAT_MODEL" = true ]; then
+  echo "Chat model:      $CHAT_MODEL"
+fi
+if [ "$INSTALL_EMBEDDING_MODEL" = true ]; then
+  echo "Embedding model: $EMBEDDING_MODEL"
+fi
 echo ""
 echo "The plugin defaults already match these values."
-echo "If you changed Zotero preferences manually, set Ollama base URL to $BASE_URL, model to $CHAT_MODEL, and embedding model to $EMBEDDING_MODEL."
+echo "If you changed Zotero preferences manually, set the Ollama and embedding base URLs to $BASE_URL."
 echo ""
 echo "Done."
 echo ""

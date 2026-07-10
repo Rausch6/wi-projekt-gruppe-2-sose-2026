@@ -13,7 +13,7 @@ declare const IOUtils: any;
 declare const OS: any;
 declare const PathUtils: any;
 
-const VECTOR_SIZE = 1024;
+export const VECTOR_SIZE = 1024;
 
 const mySchema = {
   id: "string",
@@ -147,14 +147,18 @@ export class OramaService {
       try {
         const item = await Zotero.Items.getAsync(parseInt(zoteroItemId, 10));
         if (item) {
-          paperTitle = item.getField("title") || (item.isAttachment() ? (item as any).getFilename() : undefined);
+          paperTitle =
+            item.getField("title") ||
+            (item.isAttachment() ? (item as any).getFilename() : undefined);
         }
       } catch (e) {}
 
       // Emit deleted event to update UI stats dynamically
-      import("./IndexingEventBus").then(({ indexingEvents }) => {
-        indexingEvents.emit("deleted", { mode: "single", paperTitle });
-      }).catch(() => {});
+      import("./IndexingEventBus")
+        .then(({ indexingEvents }) => {
+          indexingEvents.emit("deleted", { mode: "single", paperTitle });
+        })
+        .catch(() => {});
     }
   }
 
@@ -247,7 +251,6 @@ export class OramaService {
     return new Set(this.textHashes.keys());
   }
 
-
   private checkInit() {
     if (!this.isInitialized)
       throw new Error(
@@ -272,11 +275,17 @@ export class OramaService {
   }
 
   private get dbFilePath() {
-    return PathUtils.join(Zotero.DataDirectory.dir, "orama_vector_index_v2.json");
+    return PathUtils.join(
+      Zotero.DataDirectory.dir,
+      "orama_vector_index_v2.json",
+    );
   }
 
   private get hashFilePath() {
-    return PathUtils.join(Zotero.DataDirectory.dir, "orama_text_hashes_v2.json");
+    return PathUtils.join(
+      Zotero.DataDirectory.dir,
+      "orama_text_hashes_v2.json",
+    );
   }
 
   private scheduleSave() {

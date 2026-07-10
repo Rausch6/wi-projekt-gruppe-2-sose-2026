@@ -7,6 +7,7 @@ import {
   HttpResponseError,
   httpClient,
 } from "../utils/httpClient.js";
+import { ollamaLifecycleManager } from "./OllamaLifecycleManager";
 
 export const EMBEDDING_PROVIDER_ID = "local-embeddings";
 export const EMBEDDING_DEFAULT_BASE_URL = "http://localhost:11434";
@@ -142,6 +143,7 @@ async function requestNativeEmbeddings(baseUrl, inputTexts, options) {
 }
 
 async function requestOllamaEmbeddings(baseUrl, inputTexts, options) {
+  await ollamaLifecycleManager.ensureReady(baseUrl);
   const url = createOllamaEmbedUrl(baseUrl);
   const response = await httpClient.post(
     url,

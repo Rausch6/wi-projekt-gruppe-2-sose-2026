@@ -21,7 +21,7 @@ import {
 } from "../core/MetadataFieldSelection";
 import { CreateChatInput, StoredChat } from "../core/chatTypes";
 import { renderMarkdownContent } from "./markdownRenderer";
-import type { LLMProvider } from "../addon";
+import type { LLMProvider, OllamaSetupMode } from "../addon";
 import { REQUIRED_EMBEDDING_MODEL } from "../ai/EmbeddingProvider.js";
 import { OLLAMA_DEFAULT_MODEL } from "../ai/providers/OllamaProvider.js";
 import { KISSKI_MODEL_OPTIONS } from "../ai/providers/KisskiProvider.js";
@@ -36,9 +36,25 @@ import {
 } from "../ai/embeddingConnectionStatus";
 import { getString } from "../utils/locale";
 import {
+  deriveSetupReadiness,
+  type SetupMilestone,
+  type SetupReadiness,
+} from "../core/SetupReadiness";
+import {
+  openPreferencesPane,
+  openSemanticSearchPreference,
+} from "../modules/preferences";
+import {
   LOCAL_OLLAMA_MODEL_INSTALLED_EVENT,
+  LOCAL_OLLAMA_MODELS_CHANGED_EVENT,
+  createWindowAbortController,
+  formatProgressStatus,
+  getFriendlyErrorMessage,
+  isAbortError,
   openLocalOllamaModelWindow,
+  type LocalModelProgress,
 } from "./localOllamaModelWindow";
+import { getSelectableLocalModelValues } from "./localOllamaModels";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -137,6 +153,14 @@ type ModelLoadState = {
 
 type SidebarView = "chat" | "about";
 
+type SetupModelDownloadTarget = "local-model" | "embedding";
+type SetupModelDownloadState = {
+  status: "downloading" | "error";
+  percent: number | null;
+  statusText: string;
+  controller?: AbortController;
+};
+
 const hosts = new Set<HTMLElement>();
 const messages: AssistantChatMessage[] = [];
 const chatSummaries: StoredChat[] = [];
@@ -159,6 +183,10 @@ const modelLoadStates = new Map<LLMProvider, ModelLoadState>();
 const providerConnectionRequestIDs = new Map<LLMProvider, number>();
 const localModelInstallEventWindows = new WeakSet<Window>();
 const sidebarViews = new WeakMap<HTMLElement, SidebarView>();
+const setupModelDownloads = new Map<
+  SetupModelDownloadTarget,
+  SetupModelDownloadState
+>();
 
 let nextMessageID = 1;
 let nextModelLoadRequestID = 1;
@@ -174,10 +202,15 @@ let activeChatCancelRequested = false;
 let modelPickerExpanded = false;
 let activeAssistantResponse: ActiveAssistantResponse | null = null;
 let ollamaSetupLaunchRunning = false;
+let ollamaSetupAwaitingCompletion = false;
 let ollamaStartRunning = false;
-let ollamaStopRunning = false;
 let lastPromptContextRouteDebug: PromptContextRouteDebug | null = null;
 let lastAssistantRequestDebug: AssistantRequestDebug | null = null;
+let setupStalled = false;
+let setupStallTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
+let setupWasVisible = false;
+
+const SETUP_STALL_TIMEOUT_MS = 3_000;
 
 export type PromptContextRouteDebug = {
   prompt: string;
@@ -257,29 +290,7 @@ export function bindAssistantChat(host: HTMLElement) {
   const providerButtons = Array.from(
     host.querySelectorAll(".zai-provider-toggle-button[data-provider]"),
   ) as HTMLButtonElement[];
-  const providerCheckButtons = Array.from(
-    host.querySelectorAll(
-      '.zai-provider-setup-button[data-action="check-provider"][data-provider]',
-    ),
-  ) as HTMLButtonElement[];
-  const embeddingCheckButtons = Array.from(
-    host.querySelectorAll(
-      '.zai-provider-setup-button[data-action="check-embedding"]',
-    ),
-  ) as HTMLButtonElement[];
-  const ollamaSetupLaunchButtons = Array.from(
-    host.querySelectorAll(
-      '.zai-provider-setup-button[data-action="launch-ollama-setup"]',
-    ),
-  ) as HTMLButtonElement[];
-  const ollamaStartButtons = Array.from(
-    host.querySelectorAll(
-      '.zai-provider-setup-button[data-action="start-ollama"]',
-    ),
-  ) as HTMLButtonElement[];
-  const ollamaStopButtons = Array.from(
-    host.querySelectorAll('.zai-stop-ollama-button[data-action="stop-ollama"]'),
-  ) as HTMLButtonElement[];
+  const setupTimeline = host.querySelector<HTMLElement>(".zai-setup-timeline");
   const ownerWindow = host.ownerDocument?.defaultView ?? null;
 
   syncModelPicker(host);
@@ -293,7 +304,7 @@ export function bindAssistantChat(host: HTMLElement) {
   ensureLocalModelInstallEventHandler(ownerWindow);
   ensureModelDropdownOutsideHandler(host.ownerDocument);
   void ensureModelOptionsLoaded(getActiveProvider());
-  void ensureProviderConnectionChecked(getActiveProvider());
+  void revalidateCurrentReadiness(false);
   if (!activeChatID) invalidateChatSummaries();
   renderHost(host);
   void refreshChatSummaries(true).catch((error) => {
@@ -400,39 +411,43 @@ export function bindAssistantChat(host: HTMLElement) {
       setActiveProvider(getProviderButtonValue(providerButton));
     });
   }
-  for (const providerCheckButton of providerCheckButtons) {
-    providerCheckButton.addEventListener("click", () => {
-      hosts.add(host);
-      void checkProviderConnection(
-        getProviderButtonValue(providerCheckButton),
-        true,
-      );
-    });
-  }
-  for (const embeddingCheckButton of embeddingCheckButtons) {
-    embeddingCheckButton.addEventListener("click", () => {
-      hosts.add(host);
-      void checkEmbeddingConnection(true);
-    });
-  }
-  for (const ollamaSetupLaunchButton of ollamaSetupLaunchButtons) {
-    ollamaSetupLaunchButton.addEventListener("click", () => {
-      hosts.add(host);
-      void launchOllamaSetup();
-    });
-  }
-  for (const ollamaStartButton of ollamaStartButtons) {
-    ollamaStartButton.addEventListener("click", () => {
-      hosts.add(host);
+  setupTimeline?.addEventListener("click", (event) => {
+    const button = (event.target as Element | null)?.closest<HTMLButtonElement>(
+      "button[data-action]",
+    );
+    if (!button || !setupTimeline.contains(button)) return;
+
+    const action = button.dataset.action;
+    if (action === "open-preferences") {
+      openPreferencesPane();
+    } else if (action === "open-semantic-settings") {
+      openSemanticSearchPreference();
+    } else if (action === "check-readiness") {
+      ollamaSetupAwaitingCompletion = false;
+      void revalidateCurrentReadiness(true);
+    } else if (action === "launch-required-setup") {
+      void launchOllamaSetup(getRequiredOllamaSetupMode());
+    } else if (action === "start-ollama") {
       void startOllama();
-    });
-  }
-  for (const ollamaStopButton of ollamaStopButtons) {
-    ollamaStopButton.addEventListener("click", () => {
-      hosts.add(host);
-      void stopOllama();
-    });
-  }
+    } else if (action === "install-default-local-model") {
+      if (ownerWindow) {
+        void pullSetupModel("local-model", OLLAMA_DEFAULT_MODEL, ownerWindow);
+      }
+    } else if (action === "install-embedding-model") {
+      if (ownerWindow) {
+        void pullSetupModel("embedding", REQUIRED_EMBEDDING_MODEL, ownerWindow);
+      }
+    } else if (action === "cancel-local-model-download") {
+      cancelSetupModelDownload("local-model");
+    } else if (action === "cancel-embedding-download") {
+      cancelSetupModelDownload("embedding");
+    } else if (action === "open-local-model-window") {
+      const owner = ownerWindow as unknown as
+        | _ZoteroTypes.MainWindow
+        | undefined;
+      if (owner) openLocalOllamaModelWindow(owner);
+    }
+  });
   modelButton?.addEventListener("click", () => {
     if (!modelDropdown) return;
 
@@ -584,6 +599,12 @@ function ensureLocalModelInstallEventHandler(win: Window | null) {
 
     void useInstalledLocalModel(model);
   });
+  win.addEventListener(LOCAL_OLLAMA_MODELS_CHANGED_EVENT, () => {
+    modelLoadStates.delete("ollama");
+    modelOptionsByProvider.delete("ollama");
+    delete addon.data.runtime.providerConnections.ollama;
+    void revalidateCurrentReadiness(true);
+  });
 }
 
 async function useInstalledLocalModel(model: string) {
@@ -620,6 +641,7 @@ export async function sendChatPrompt(prompt: string) {
   if (!content) {
     throw new Error("Der Prompt darf nicht leer sein.");
   }
+  await revalidateCurrentReadiness(true);
   if (!isChatReady()) {
     throw new Error(getChatReadinessErrorText());
   }
@@ -1022,15 +1044,27 @@ function isActiveProviderReady() {
 }
 
 function isEmbeddingReady() {
-  return isEmbeddingConnectionReady(addon.data.runtime.embeddingConnection);
+  return (
+    !addon.data.settings.embeddingSearchEnabled ||
+    isEmbeddingConnectionReady(addon.data.runtime.embeddingConnection)
+  );
 }
 
 function isChatReady() {
-  return isActiveProviderReady() && isEmbeddingReady();
+  return getCurrentSetupReadiness().ready;
+}
+
+function getCurrentSetupReadiness(): SetupReadiness {
+  const provider = getActiveProvider();
+  return deriveSetupReadiness(
+    addon.data.settings,
+    addon.data.runtime.providerConnections[provider],
+    addon.data.runtime.embeddingConnection,
+  );
 }
 
 function getChatReadinessErrorText() {
-  if (!isEmbeddingReady()) {
+  if (addon.data.settings.embeddingSearchEnabled && !isEmbeddingReady()) {
     return getString("sidebar-active-embedding-not-connected-error");
   }
   return getString("sidebar-active-provider-not-connected-error");
@@ -1102,9 +1136,10 @@ async function createPaperContextMessage(prompt: string) {
   const candidates = await getPromptRouterCandidates();
 
   try {
+    const routerProvider = getEffectiveContextRouterProvider();
     const decision = await decidePromptContextRoute({
-      provider: addon.data.settings.contextRouterProvider,
-      model: getRouterModel(addon.data.settings.contextRouterProvider),
+      provider: routerProvider,
+      model: getRouterModel(routerProvider),
       prompt,
       candidates: candidates.map(toPromptRouterCandidate),
       metadataFields: getSelectedMetadataFields(),
@@ -1128,8 +1163,8 @@ async function createPaperContextMessage(prompt: string) {
     );
     recordPromptContextRouteDebug({
       prompt,
-      provider: addon.data.settings.contextRouterProvider,
-      model: getRouterModel(addon.data.settings.contextRouterProvider),
+      provider: routerProvider,
+      model: getRouterModel(routerProvider),
       decision,
       candidates,
       contextMode: getContextMode(decision, routedContext),
@@ -1512,8 +1547,8 @@ function recordPromptContextRouteDebug({
 function recordPromptContextRouteSkipped(prompt: string, reason: string) {
   lastPromptContextRouteDebug = {
     prompt,
-    provider: addon.data.settings.contextRouterProvider,
-    model: getRouterModel(addon.data.settings.contextRouterProvider),
+    provider: getEffectiveContextRouterProvider(),
+    model: getRouterModel(getEffectiveContextRouterProvider()),
     status: "skipped",
     decision: {
       route: "none",
@@ -1537,8 +1572,8 @@ function recordPromptContextRouteSkipped(prompt: string, reason: string) {
 function recordPromptContextRouteFallback(prompt: string, error: unknown) {
   lastPromptContextRouteDebug = {
     prompt,
-    provider: addon.data.settings.contextRouterProvider,
-    model: getRouterModel(addon.data.settings.contextRouterProvider),
+    provider: getEffectiveContextRouterProvider(),
+    model: getRouterModel(getEffectiveContextRouterProvider()),
     status: "fallback",
     decision: {
       route: "metadata",
@@ -1664,6 +1699,13 @@ function configureProviderForRouting(provider: LLMProvider) {
           model: getRouterModel(provider),
         },
   );
+}
+
+function getEffectiveContextRouterProvider(): LLMProvider {
+  // Routing must never introduce an undeclared second provider dependency.
+  // The setup/readiness matrix is therefore based on the provider selected in
+  // the chat, and the same provider performs the lightweight routing request.
+  return getActiveProvider();
 }
 
 function getRouterModel(provider: LLMProvider) {
@@ -2119,6 +2161,36 @@ function renderAllHosts() {
   }
 }
 
+/**
+ * A settings change (e.g. a Base-URL edit) can leave the active provider
+ * stuck in "checking" for a while (Ollama auto-start retries for up to
+ * ~20s). Milestones only turn actionable once that resolves, which would
+ * otherwise leave the welcome/chat view showing with a silently disabled
+ * composer. After a short grace period (covers ordinary, fast rechecks
+ * like a provider switch) this forces the setup view open so the user
+ * isn't left staring at a dead end.
+ */
+function updateSetupStallState(
+  chatReady: boolean,
+  hasActionableMilestone: boolean,
+) {
+  if (chatReady || hasActionableMilestone) {
+    setupStalled = false;
+    if (setupStallTimeoutHandle !== null) {
+      clearTimeout(setupStallTimeoutHandle);
+      setupStallTimeoutHandle = null;
+    }
+    return;
+  }
+
+  if (setupStallTimeoutHandle !== null) return;
+  setupStallTimeoutHandle = setTimeout(() => {
+    setupStallTimeoutHandle = null;
+    setupStalled = true;
+    renderAllHosts();
+  }, SETUP_STALL_TIMEOUT_MS);
+}
+
 function renderHost(host: HTMLElement) {
   const main = host.querySelector<HTMLElement>(".zai-main");
   const top = host.querySelector<HTMLElement>(".zai-top");
@@ -2131,15 +2203,6 @@ function renderHost(host: HTMLElement) {
     ".zai-chat-list-actions",
   );
   const seeAll = host.querySelector<HTMLButtonElement>(".zai-see-all");
-  const stopOllamaButtons = Array.from(
-    host.querySelectorAll(".zai-stop-ollama-button"),
-  ) as HTMLButtonElement[];
-  const chatListStopOllamaButton = host.querySelector<HTMLButtonElement>(
-    ".zai-chat-list-stop-ollama-button",
-  );
-  const activeChatStopOllamaButton = host.querySelector<HTMLButtonElement>(
-    ".zai-active-chat-stop-ollama-button",
-  );
   const activeChatBar = host.querySelector<HTMLElement>(".zai-active-chat-bar");
   const activeChatTitle = host.querySelector<HTMLElement>(
     ".zai-active-chat-title",
@@ -2165,43 +2228,34 @@ function renderHost(host: HTMLElement) {
 
   const currentView = getSidebarView(host);
   const showAbout = currentView === "about";
-  const activeProvider = getActiveProvider();
-  const providerConnection =
-    addon.data.runtime.providerConnections[activeProvider];
-  const embeddingConnection = addon.data.runtime.embeddingConnection;
-  const showEmbeddingSetup =
-    Boolean(host.querySelector<HTMLElement>(".zai-embedding-setup")) &&
-    shouldShowEmbeddingSetup(embeddingConnection);
-  const providerReady = isProviderConnectionReady(providerConnection);
-  const embeddingReady = isEmbeddingConnectionReady(embeddingConnection);
-  const chatReady = providerReady && embeddingReady && !showEmbeddingSetup;
-  const showProviderSetup =
-    !showEmbeddingSetup && shouldShowProviderSetup(providerConnection);
-  const showWelcome =
-    !activeChatID && !showEmbeddingSetup && !showProviderSetup;
-  const showChat = !showWelcome && !showEmbeddingSetup && !showProviderSetup;
+  const readiness = getCurrentSetupReadiness();
+  const hasActionableMilestone = readiness.milestones.some(
+    (milestone) => milestone.state === "action" || milestone.state === "error",
+  );
+  const chatReady = readiness.ready;
+  updateSetupStallState(chatReady, hasActionableMilestone);
+  // Sticky: once the setup view is showing, keep it showing through a
+  // transient "checking" re-verification (e.g. switching from one provider
+  // that needs setup to another that also does) instead of dropping to the
+  // welcome screen for a frame and popping back. It still yields the
+  // instant a provider is confirmed ready.
+  const showSetup =
+    hasActionableMilestone || setupStalled || (setupWasVisible && !chatReady);
+  setupWasVisible = showSetup;
+  const showWelcome = !activeChatID && !showSetup;
+  const showChat = !showWelcome && !showSetup;
   top?.classList.toggle("zai-top-chat-active", showChat && !showAbout);
   top?.classList.toggle("zai-top-about-active", showAbout);
   main.classList.toggle(
     "zai-main-empty",
-    !showAbout && (showWelcome || showEmbeddingSetup || showProviderSetup),
+    !showAbout && (showWelcome || showSetup),
   );
   main.classList.toggle("zai-main-chat-active", showChat && !showAbout);
   main.classList.toggle("zai-main-about-active", showAbout);
-  modelPicker?.toggleAttribute("hidden", showAbout || showEmbeddingSetup);
-  footer?.toggleAttribute("hidden", showAbout || showEmbeddingSetup);
+  modelPicker?.toggleAttribute("hidden", showAbout);
+  footer?.toggleAttribute("hidden", showAbout);
   welcome?.toggleAttribute("hidden", showAbout || !showWelcome);
-  syncEmbeddingSetup(
-    host,
-    !showAbout && showEmbeddingSetup,
-    embeddingConnection,
-  );
-  syncProviderSetup(
-    host,
-    activeProvider,
-    providerConnection,
-    !showAbout && showProviderSetup,
-  );
+  syncSetupTimeline(host, !showAbout && showSetup, readiness);
   messageList.toggleAttribute("hidden", showAbout || !showChat);
   aboutView?.toggleAttribute("hidden", !showAbout);
   for (const viewTargetButton of viewTargetButtons) {
@@ -2214,19 +2268,8 @@ function renderHost(host: HTMLElement) {
   }
   chatList?.toggleAttribute("hidden", showAbout || !showWelcome);
   const showSeeAll = showWelcome && chatSummaries.length > 3;
-  const canStopOllama = activeProvider === "ollama" && providerReady;
-  const showChatListStopOllama = !showAbout && showWelcome && canStopOllama;
-  const showActiveChatStopOllama = !showAbout && showChat && canStopOllama;
-  chatListActions?.toggleAttribute(
-    "hidden",
-    showAbout || (!showSeeAll && !showChatListStopOllama),
-  );
+  chatListActions?.toggleAttribute("hidden", showAbout || !showSeeAll);
   seeAll?.toggleAttribute("hidden", showAbout || !showSeeAll);
-  chatListStopOllamaButton?.toggleAttribute("hidden", !showChatListStopOllama);
-  activeChatStopOllamaButton?.toggleAttribute(
-    "hidden",
-    !showActiveChatStopOllama,
-  );
   activeChatBar?.toggleAttribute("hidden", !showAbout && !showChat);
 
   if (activeChatTitle) {
@@ -2265,14 +2308,6 @@ function renderHost(host: HTMLElement) {
   if (seeAll) {
     seeAll.textContent = showAllChats ? "Weniger anzeigen" : "Alle ansehen";
   }
-  for (const stopOllamaButton of stopOllamaButtons) {
-    const label = ollamaStopRunning
-      ? getString("sidebar-stopping-ollama")
-      : getString("sidebar-stop-ollama");
-    stopOllamaButton.disabled = ollamaStopRunning;
-    stopOllamaButton.setAttribute("aria-label", label);
-    stopOllamaButton.setAttribute("title", label);
-  }
   if (chatList && !showAbout && showWelcome) renderChatList(host, chatList);
   syncPaperContextControls(host);
 
@@ -2290,7 +2325,7 @@ function renderHost(host: HTMLElement) {
   if (textarea) textarea.disabled = requestRunning || !chatReady;
 
   if (status) {
-    const statusText = getComposerStatusText(chatReady);
+    const statusText = getComposerStatusText(chatReady, readiness);
     status.textContent = statusText;
     status.toggleAttribute("hidden", !statusText);
     status.classList.toggle("zai-chat-status-simulation", simulationEnabled);
@@ -2299,14 +2334,441 @@ function renderHost(host: HTMLElement) {
   main.scrollTop = showWelcome || showAbout ? 0 : main.scrollHeight;
 }
 
-function shouldShowProviderSetup(
-  connection: ProviderConnectionResult | undefined,
+function syncSetupTimeline(
+  host: HTMLElement,
+  showSetup: boolean,
+  readiness: SetupReadiness,
 ) {
-  return !isProviderConnectionReady(connection);
+  const setup = host.querySelector<HTMLElement>(".zai-setup-timeline");
+  const list = setup?.querySelector<HTMLOListElement>(".zai-setup-milestones");
+  const liveStatus = setup?.querySelector<HTMLElement>(
+    ".zai-setup-live-status",
+  );
+  if (!setup || !list) return;
+
+  setup.toggleAttribute("hidden", !showSetup);
+  setup.dataset.provider = readiness.provider;
+  if (!showSetup) return;
+
+  syncProviderToggleButtons(host, readiness.provider);
+
+  list.replaceChildren(
+    ...readiness.milestones.map((milestone) =>
+      createSetupMilestoneElement(
+        host.ownerDocument,
+        milestone,
+        milestone.state === "action" || milestone.state === "error",
+        readiness,
+      ),
+    ),
+  );
+
+  if (liveStatus) {
+    const statusText = ollamaSetupLaunchRunning
+      ? getString("sidebar-launching-ollama-setup")
+      : ollamaSetupAwaitingCompletion
+        ? getString("sidebar-setup-external-running")
+        : "";
+    liveStatus.textContent = statusText;
+    liveStatus.toggleAttribute("hidden", !statusText);
+  }
 }
 
-function shouldShowEmbeddingSetup(connection: EmbeddingConnectionResult) {
-  return !isEmbeddingConnectionReady(connection);
+function createSetupMilestoneElement(
+  doc: Document,
+  milestone: SetupMilestone,
+  needsAttention: boolean,
+  readiness: SetupReadiness,
+) {
+  const item = createControllerHtmlElement(doc, "li", "zai-setup-milestone");
+  item.dataset.state = milestone.state;
+  item.dataset.milestone = milestone.id;
+  item.classList.toggle("zai-setup-milestone-attention", needsAttention);
+
+  const marker = createControllerHtmlElement(
+    doc,
+    "span",
+    "zai-setup-milestone-marker",
+  );
+  marker.setAttribute("aria-hidden", "true");
+  // Milestones aren't a strict sequence a user must complete in order, so
+  // the marker communicates status (done vs. needs something) rather than
+  // position.
+  marker.textContent = milestone.state === "complete" ? "✓" : "!";
+
+  const card = createControllerHtmlElement(
+    doc,
+    "article",
+    "zai-setup-step-card",
+  );
+  const copy = getSetupMilestoneCopy(milestone, readiness);
+  const download = getSetupMilestoneDownload(milestone.id);
+  const heading = createControllerHtmlElement(
+    doc,
+    "div",
+    "zai-setup-step-heading",
+  );
+  const title = createControllerHtmlElement(
+    doc,
+    "h3",
+    "zai-setup-step-title",
+    copy.title,
+  );
+  const badge = createControllerHtmlElement(
+    doc,
+    "span",
+    "zai-setup-step-badge",
+    getMilestoneStateLabel(milestone.state),
+  );
+  heading.append(title, badge);
+  card.append(
+    heading,
+    createControllerHtmlElement(
+      doc,
+      "p",
+      "zai-setup-step-description",
+      copy.description,
+    ),
+  );
+
+  const statusText = download ? download.statusText : copy.status;
+  if (statusText) {
+    card.append(
+      createControllerHtmlElement(
+        doc,
+        "p",
+        "zai-setup-step-status",
+        statusText,
+      ),
+    );
+  }
+
+  if (download?.status === "downloading") {
+    const progress = createControllerHtmlElement(
+      doc,
+      "div",
+      "zai-setup-step-progress",
+    );
+    progress.setAttribute("role", "progressbar");
+    progress.setAttribute("aria-valuemin", "0");
+    progress.setAttribute("aria-valuemax", "100");
+    const fill = createControllerHtmlElement(
+      doc,
+      "span",
+      "zai-setup-step-progress-fill",
+    );
+    if (download.percent !== null) {
+      const value = Math.max(0, Math.min(100, Math.round(download.percent)));
+      progress.setAttribute("aria-valuenow", String(value));
+      fill.style.width = `${value}%`;
+    }
+    progress.append(fill);
+    card.append(progress);
+  }
+
+  const actions = createSetupMilestoneActions(doc, milestone, readiness);
+  if (actions.childElementCount) card.append(actions);
+  item.append(marker, card);
+  return item;
+}
+
+function getSetupMilestoneDownload(milestoneId: SetupMilestone["id"]) {
+  return milestoneId === "local-model" || milestoneId === "embedding"
+    ? setupModelDownloads.get(milestoneId)
+    : undefined;
+}
+
+function getSetupMilestoneCopy(
+  milestone: SetupMilestone,
+  readiness: SetupReadiness,
+) {
+  const providerConnection =
+    addon.data.runtime.providerConnections[readiness.provider];
+  const embeddingConnection = addon.data.runtime.embeddingConnection;
+  switch (milestone.id) {
+    case "cloud-connection":
+      return {
+        title: getString("sidebar-milestone-cloud-connection-title"),
+        description: getString(
+          "sidebar-milestone-cloud-connection-description",
+        ),
+        status:
+          milestone.state === "complete"
+            ? getString("sidebar-milestone-cloud-connection-ready")
+            : !addon.data.settings.apiKey.trim()
+              ? getString("sidebar-cloud-api-key-missing")
+              : getProviderConnectionStatusText("kisski", providerConnection),
+      };
+    case "ollama-installation":
+      return {
+        title: getString("sidebar-milestone-ollama-title"),
+        description: getString("sidebar-milestone-ollama-description"),
+        status: getOllamaInstallationStatusText(
+          readiness.provider === "ollama" ? providerConnection : undefined,
+          embeddingConnection,
+        ),
+      };
+    case "local-model":
+      return {
+        title: getString("sidebar-milestone-local-model-title"),
+        description: getString("sidebar-milestone-local-model-description", {
+          args: { model: getActiveModel("ollama") },
+        }),
+        status:
+          milestone.state === "complete"
+            ? getString("sidebar-milestone-local-model-ready")
+            : milestone.state === "pending"
+              ? ""
+              : getProviderConnectionStatusText("ollama", providerConnection),
+      };
+    case "embedding":
+      return {
+        title: getString("sidebar-milestone-embedding-title"),
+        description: getString("sidebar-milestone-embedding-description", {
+          args: { model: REQUIRED_EMBEDDING_MODEL },
+        }),
+        status:
+          milestone.state === "complete"
+            ? getString("sidebar-milestone-embedding-ready")
+            : milestone.state === "pending"
+              ? ""
+              : getEmbeddingConnectionStatusText(embeddingConnection),
+      };
+  }
+}
+
+function getMilestoneStateLabel(state: SetupMilestone["state"]) {
+  switch (state) {
+    case "complete":
+      return getString("sidebar-milestone-state-complete");
+    case "checking":
+      return getString("sidebar-milestone-state-checking");
+    case "error":
+      return getString("sidebar-milestone-state-error");
+    case "action":
+      return getString("sidebar-milestone-state-action");
+    default:
+      return getString("sidebar-milestone-state-pending");
+  }
+}
+
+function createSetupMilestoneActions(
+  doc: Document,
+  milestone: SetupMilestone,
+  readiness: SetupReadiness,
+) {
+  const actions = createControllerHtmlElement(
+    doc,
+    "div",
+    "zai-setup-step-actions",
+  );
+  const addAction = (action: string, label: string, secondary = false) => {
+    const button = createHtmlButton(
+      doc,
+      `zai-setup-action${secondary ? " zai-setup-action-secondary" : ""}`,
+      label,
+    );
+    button.dataset.action = action;
+    actions.append(button);
+  };
+
+  const download = getSetupMilestoneDownload(milestone.id);
+  if (download?.status === "downloading") {
+    addAction(
+      milestone.id === "local-model"
+        ? "cancel-local-model-download"
+        : "cancel-embedding-download",
+      getString("sidebar-cancel-model-download"),
+      true,
+    );
+    return actions;
+  }
+
+  if (milestone.state === "complete") {
+    return actions;
+  }
+  if (milestone.state === "pending") {
+    if (milestone.id === "embedding") {
+      addAction(
+        "open-semantic-settings",
+        getString("sidebar-disable-semantic-search"),
+        true,
+      );
+    }
+    return actions;
+  }
+
+  const providerConnection =
+    addon.data.runtime.providerConnections[readiness.provider];
+  const embeddingConnection = addon.data.runtime.embeddingConnection;
+  const ollamaNotRunning =
+    providerConnection?.issue === "ollama-not-running" ||
+    embeddingConnection.issue === "ollama-not-running";
+
+  switch (milestone.id) {
+    case "cloud-connection":
+      if (!addon.data.settings.apiKey.trim()) {
+        addAction("open-preferences", getString("sidebar-open-preferences"));
+      } else {
+        addAction("check-readiness", getString("sidebar-check-provider"));
+        addAction(
+          "open-preferences",
+          getString("sidebar-open-preferences"),
+          true,
+        );
+      }
+      break;
+    case "ollama-installation":
+      if (ollamaNotRunning && !ollamaSetupAwaitingCompletion) {
+        addAction(
+          "start-ollama",
+          ollamaStartRunning
+            ? getString("sidebar-starting-ollama")
+            : getString("sidebar-start-ollama"),
+        );
+      } else {
+        addAction(
+          ollamaSetupAwaitingCompletion
+            ? "check-readiness"
+            : "launch-required-setup",
+          ollamaSetupAwaitingCompletion
+            ? getString("sidebar-setup-check-again")
+            : getString("sidebar-launch-ollama-setup"),
+        );
+      }
+      addAction(
+        "open-preferences",
+        getString("sidebar-open-preferences"),
+        true,
+      );
+      break;
+    case "local-model":
+      addAction(
+        ollamaSetupAwaitingCompletion
+          ? "check-readiness"
+          : getActiveModel("ollama") === OLLAMA_DEFAULT_MODEL
+            ? "install-default-local-model"
+            : "open-local-model-window",
+        ollamaSetupAwaitingCompletion
+          ? getString("sidebar-setup-check-again")
+          : getActiveModel("ollama") === OLLAMA_DEFAULT_MODEL
+            ? getString(
+                download?.status === "error"
+                  ? "sidebar-retry-model-download"
+                  : "sidebar-install-default-local-model",
+              )
+            : getString("sidebar-open-local-model-window"),
+      );
+      addAction("check-readiness", getString("sidebar-check-provider"), true);
+      addAction(
+        "open-preferences",
+        getString("sidebar-open-preferences"),
+        true,
+      );
+      break;
+    case "embedding":
+      if (ollamaNotRunning && !ollamaSetupAwaitingCompletion) {
+        addAction(
+          "start-ollama",
+          ollamaStartRunning
+            ? getString("sidebar-starting-ollama")
+            : getString("sidebar-start-ollama"),
+        );
+      } else {
+        addAction(
+          ollamaSetupAwaitingCompletion
+            ? "check-readiness"
+            : "install-embedding-model",
+          ollamaSetupAwaitingCompletion
+            ? getString("sidebar-setup-check-again")
+            : getString(
+                download?.status === "error"
+                  ? "sidebar-retry-model-download"
+                  : "sidebar-install-embedding-model",
+              ),
+        );
+      }
+      addAction(
+        "open-semantic-settings",
+        getString("sidebar-disable-semantic-search"),
+        true,
+      );
+      break;
+  }
+
+  actions.querySelectorAll<HTMLButtonElement>("button").forEach((button) => {
+    button.disabled =
+      milestone.state === "checking" ||
+      ollamaSetupLaunchRunning ||
+      ollamaStartRunning;
+  });
+  return actions;
+}
+
+function getOllamaInstallationStatusText(
+  providerConnection: ProviderConnectionResult | undefined,
+  embeddingConnection: EmbeddingConnectionResult,
+) {
+  const connections = [providerConnection, embeddingConnection];
+
+  if (
+    connections.some(
+      (connection) => connection?.issue === "ollama-not-installed",
+    )
+  ) {
+    return getString("sidebar-ollama-not-installed");
+  }
+  if (
+    connections.some((connection) => connection?.issue === "ollama-not-running")
+  ) {
+    return getString("sidebar-ollama-not-running");
+  }
+  if (
+    connections.some(
+      (connection) => connection?.issue === "ollama-start-failed",
+    )
+  ) {
+    return getString("sidebar-ollama-start-failed");
+  }
+  if (
+    connections.some(
+      (connection) => connection?.issue === "ollama-startup-timeout",
+    )
+  ) {
+    return getString("sidebar-ollama-startup-timeout");
+  }
+
+  const active = providerConnection ?? embeddingConnection;
+  if (active.status === "checking") {
+    return getString("sidebar-checking-provider");
+  }
+  if (active.status === "missing-config") {
+    if (active.issue === "base-url-missing") {
+      return getString("sidebar-base-url-missing");
+    }
+    if (active.issue === "model-missing") {
+      return getString("sidebar-model-missing");
+    }
+    return getString("sidebar-local-config-incomplete");
+  }
+  if (active.status === "ready" || active.status === "missing-model") {
+    return getString("sidebar-milestone-ollama-ready");
+  }
+  if (active.status === "unknown" || active.status === "disabled") {
+    return getString("sidebar-connection-not-checked");
+  }
+  return getString("sidebar-local-unreachable");
+}
+
+function createHtmlButton(doc: Document, className: string, text: string) {
+  const button = createControllerHtmlElement(
+    doc,
+    "button",
+    className,
+    text,
+  ) as HTMLButtonElement;
+  button.type = "button";
+  return button;
 }
 
 function isProviderConnectionReady(
@@ -2319,8 +2781,18 @@ function isEmbeddingConnectionReady(connection: EmbeddingConnectionResult) {
   return connection.status === "ready";
 }
 
-function getComposerStatusText(providerReady: boolean) {
-  if (!providerReady) return getString("sidebar-provider-not-connected");
+function getComposerStatusText(
+  providerReady: boolean,
+  readiness?: SetupReadiness,
+) {
+  if (!providerReady) {
+    const isChecking = readiness?.milestones.some(
+      (milestone) => milestone.state === "checking",
+    );
+    return isChecking
+      ? getString("sidebar-checking-provider")
+      : getString("sidebar-provider-not-connected");
+  }
   if (simulationEnabled) {
     return pendingSimulationPrompts.length
       ? `Simulation: ${pendingSimulationPrompts.length} Antwort(en) ausstehend`
@@ -2346,131 +2818,6 @@ function syncSendButton(button: HTMLButtonElement, providerReady: boolean) {
   button.replaceChildren(
     requestRunning ? createStopSquareIcon(doc) : createSendArrowIcon(doc),
   );
-}
-
-function syncProviderSetup(
-  host: HTMLElement,
-  provider: LLMProvider,
-  connection: ProviderConnectionResult | undefined,
-  showSetup: boolean,
-) {
-  const setup = host.querySelector<HTMLElement>(".zai-provider-setup");
-  if (!setup) return;
-
-  setup.toggleAttribute("hidden", !showSetup);
-
-  setup
-    .querySelectorAll<HTMLElement>(".zai-provider-setup-panel[data-provider]")
-    .forEach((panel) => {
-      panel.toggleAttribute(
-        "hidden",
-        !showSetup || panel.dataset.provider !== provider,
-      );
-    });
-
-  setup
-    .querySelectorAll<HTMLButtonElement>(
-      '.zai-provider-setup-button[data-action="check-provider"]',
-    )
-    .forEach((button) => {
-      const isActiveProvider = button.dataset.provider === provider;
-      const isChecking = isActiveProvider && connection?.status === "checking";
-      button.disabled = isChecking;
-      button.textContent = isChecking
-        ? getString("sidebar-checking-provider")
-        : getString("sidebar-check-provider");
-    });
-
-  setup
-    .querySelectorAll<HTMLButtonElement>(
-      '.zai-provider-setup-button[data-action="launch-ollama-setup"]',
-    )
-    .forEach((button) => {
-      const isActiveProvider = provider === "ollama";
-      button.disabled = !isActiveProvider || ollamaSetupLaunchRunning;
-      button.textContent = ollamaSetupLaunchRunning
-        ? getString("sidebar-launching-ollama-setup")
-        : getString("sidebar-launch-ollama-setup");
-    });
-
-  setup
-    .querySelectorAll<HTMLButtonElement>(
-      '.zai-provider-setup-button[data-action="start-ollama"]',
-    )
-    .forEach((button) => {
-      const isActiveProvider = provider === "ollama";
-      button.disabled = !isActiveProvider || ollamaStartRunning;
-      button.textContent = ollamaStartRunning
-        ? getString("sidebar-starting-ollama")
-        : getString("sidebar-start-ollama");
-    });
-
-  setup
-    .querySelectorAll<HTMLElement>(".zai-provider-setup-status[data-provider]")
-    .forEach((status) => {
-      const isActiveProvider = status.dataset.provider === provider;
-      const text =
-        showSetup && isActiveProvider
-          ? getProviderConnectionStatusText(provider, connection)
-          : "";
-      status.textContent = text;
-      status.toggleAttribute("hidden", !text);
-    });
-}
-
-function syncEmbeddingSetup(
-  host: HTMLElement,
-  showSetup: boolean,
-  connection: EmbeddingConnectionResult,
-) {
-  const setup = host.querySelector<HTMLElement>(".zai-embedding-setup");
-  if (!setup) return;
-
-  setup.toggleAttribute("hidden", !showSetup);
-  setup.dataset.status = connection.status;
-
-  setup
-    .querySelectorAll<HTMLButtonElement>(
-      '.zai-provider-setup-button[data-action="check-embedding"]',
-    )
-    .forEach((button) => {
-      const isChecking = connection.status === "checking";
-      button.disabled = isChecking;
-      button.textContent = isChecking
-        ? getString("sidebar-checking-embedding")
-        : getString("sidebar-check-embedding");
-    });
-
-  setup
-    .querySelectorAll<HTMLButtonElement>(
-      '.zai-provider-setup-button[data-action="launch-ollama-setup"]',
-    )
-    .forEach((button) => {
-      button.disabled = ollamaSetupLaunchRunning;
-      button.textContent = ollamaSetupLaunchRunning
-        ? getString("sidebar-launching-ollama-setup")
-        : getString("sidebar-launch-ollama-setup");
-    });
-
-  setup
-    .querySelectorAll<HTMLButtonElement>(
-      '.zai-provider-setup-button[data-action="start-ollama"]',
-    )
-    .forEach((button) => {
-      button.disabled = ollamaStartRunning;
-      button.textContent = ollamaStartRunning
-        ? getString("sidebar-starting-ollama")
-        : getString("sidebar-start-ollama");
-    });
-
-  const status = setup.querySelector<HTMLElement>(
-    ".zai-embedding-setup-status",
-  );
-  if (status) {
-    const text = showSetup ? getEmbeddingConnectionStatusText(connection) : "";
-    status.textContent = text;
-    status.toggleAttribute("hidden", !text);
-  }
 }
 
 function getEmbeddingConnectionStatusText(
@@ -2504,6 +2851,19 @@ function getEmbeddingConnectionStatusText(
     });
   }
 
+  if (connection.issue === "ollama-not-installed") {
+    return getString("sidebar-ollama-not-installed");
+  }
+  if (connection.issue === "ollama-not-running") {
+    return getString("sidebar-ollama-not-running");
+  }
+  if (connection.issue === "ollama-start-failed") {
+    return getString("sidebar-ollama-start-failed");
+  }
+  if (connection.issue === "ollama-startup-timeout") {
+    return getString("sidebar-ollama-startup-timeout");
+  }
+
   if (connection.status === "unreachable") {
     return getString("sidebar-embedding-unreachable");
   }
@@ -2518,9 +2878,6 @@ function getProviderConnectionStatusText(
   provider: LLMProvider,
   connection: ProviderConnectionResult | undefined,
 ) {
-  if (provider === "ollama" && ollamaStopRunning) {
-    return getString("sidebar-stopping-ollama");
-  }
   if (provider === "ollama" && ollamaStartRunning) {
     return getString("sidebar-starting-ollama");
   }
@@ -3606,12 +3963,72 @@ function setActiveProvider(provider: LLMProvider) {
     savePluginPreference("provider", provider);
     addon.api.configureAI();
     addon.api.configureEmbeddings();
-    void checkEmbeddingConnection(true);
   }
 
   syncAllModelPickers();
   void ensureModelOptionsLoaded(provider);
-  void checkProviderConnection(provider, true);
+  void releaseUnusedOllama();
+  void revalidateCurrentReadiness(true);
+}
+
+export function handleSetupRelevantSettingsChanged() {
+  nextProviderConnectionRequestID += 1;
+  nextEmbeddingConnectionRequestID += 1;
+  providerConnectionRequestIDs.clear();
+  addon.data.runtime.providerConnections = {};
+  addon.data.runtime.embeddingConnection = addon.data.settings
+    .embeddingSearchEnabled
+    ? ({
+        status: "unknown",
+        ok: false,
+        checkedAt: new Date().toISOString(),
+      } as EmbeddingConnectionResult)
+    : ({
+        status: "disabled",
+        ok: true,
+        checkedAt: new Date().toISOString(),
+      } as EmbeddingConnectionResult);
+  modelLoadStates.clear();
+  modelOptionsByProvider.delete("ollama");
+  addon.api.configureAI();
+  addon.api.configureEmbeddings();
+  renderAllHosts();
+  void releaseUnusedOllama();
+  void revalidateCurrentReadiness(true);
+}
+
+async function releaseUnusedOllama() {
+  if (
+    getActiveProvider() !== "kisski" ||
+    addon.data.settings.embeddingSearchEnabled
+  ) {
+    return;
+  }
+
+  try {
+    await addon.api.stopOllama();
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+  }
+}
+
+async function revalidateCurrentReadiness(force: boolean) {
+  const provider = getActiveProvider();
+  const tasks: Promise<unknown>[] = [checkProviderConnection(provider, force)];
+  if (addon.data.settings.embeddingSearchEnabled) {
+    tasks.push(checkEmbeddingConnection(force));
+  } else {
+    addon.data.runtime.embeddingConnection = {
+      status: "disabled",
+      ok: true,
+      checkedAt: new Date().toISOString(),
+      model: REQUIRED_EMBEDDING_MODEL,
+    };
+  }
+
+  await Promise.all(tasks);
+  renderAllHosts();
+  return getCurrentSetupReadiness();
 }
 
 function ensureProviderConnectionChecked(provider: LLMProvider) {
@@ -3637,6 +4054,7 @@ async function checkProviderConnection(provider: LLMProvider, force: boolean) {
   try {
     const result = await addon.api.checkProviderConnection(provider);
     if (providerConnectionRequestIDs.get(provider) !== requestID) {
+      void revalidateCurrentReadiness(true);
       return result;
     }
 
@@ -3667,6 +4085,7 @@ async function checkEmbeddingConnection(force: boolean) {
   try {
     const result = await addon.api.checkEmbeddingConnection();
     if (requestID !== nextEmbeddingConnectionRequestID - 1) {
+      void revalidateCurrentReadiness(true);
       return result;
     }
 
@@ -3680,15 +4099,24 @@ async function checkEmbeddingConnection(force: boolean) {
   }
 }
 
-async function launchOllamaSetup() {
+function getRequiredOllamaSetupMode(): OllamaSetupMode {
+  if (getActiveProvider() === "kisski") return "embedding";
+  return addon.data.settings.embeddingSearchEnabled
+    ? "local-with-embedding"
+    : "local";
+}
+
+async function launchOllamaSetup(
+  mode: OllamaSetupMode = getRequiredOllamaSetupMode(),
+) {
   if (ollamaSetupLaunchRunning) return;
 
   ollamaSetupLaunchRunning = true;
   renderAllHosts();
 
   try {
-    await addon.api.launchOllamaSetup();
-    void refreshOllamaDependentConnections();
+    await addon.api.launchOllamaSetup(mode);
+    ollamaSetupAwaitingCompletion = true;
   } catch (error) {
     Zotero.logError(error instanceof Error ? error : new Error(String(error)));
     const currentConnection = addon.data.runtime.providerConnections.ollama;
@@ -3739,33 +4167,120 @@ async function refreshOllamaDependentConnections() {
   await checkEmbeddingConnection(true);
 }
 
-async function stopOllama() {
-  if (ollamaStopRunning) return;
+/**
+ * Pulls a model straight from the sidebar's setup card, the same way the
+ * local model window does it (direct `pullModel` call with streamed
+ * progress) instead of shelling out to the external setup script.
+ */
+async function pullSetupModel(
+  target: SetupModelDownloadTarget,
+  model: string,
+  win: Window,
+) {
+  if (setupModelDownloads.get(target)?.status === "downloading") return;
 
-  ollamaStopRunning = true;
+  const provider = addon.api.ai.getProvider("ollama");
+  if (typeof provider.pullModel !== "function") return;
+
+  // Must be created from the same window whose fetch() will actually send
+  // the request - Gecko rejects an AbortSignal from a different global
+  // ("'signal' member of RequestInit does not implement interface
+  // AbortSignal"), which is exactly what happened when this used the
+  // generic, window-agnostic AbortController before.
+  const controller = createWindowAbortController(win);
+  setupModelDownloads.set(target, {
+    status: "downloading",
+    percent: null,
+    statusText: getString("sidebar-setup-model-download-starting"),
+    controller,
+  });
   renderAllHosts();
 
+  let lastProgressRenderAt = 0;
   try {
-    await addon.api.stopOllama();
-    await delay(1_000);
-    await checkProviderConnection("ollama", true);
-    await checkEmbeddingConnection(true);
+    await provider.pullModel(model, {
+      inactivityTimeout: 120_000,
+      signal: controller.signal,
+      onProgress: (progress: LocalModelProgress) => {
+        try {
+          if (setupModelDownloads.get(target)?.controller !== controller)
+            return;
+          setupModelDownloads.set(target, {
+            status: "downloading",
+            percent: progress.percent,
+            statusText: formatProgressStatus(progress),
+            controller,
+          });
+          // Ollama streams a progress line every few KB, which can be many
+          // times a second - re-rendering the whole sidebar that often
+          // would block the tab reading the response and stall the
+          // download. A render every 300ms is still smooth.
+          const now = Date.now();
+          if (!progress.done && now - lastProgressRenderAt < 300) {
+            return;
+          }
+          lastProgressRenderAt = now;
+          renderAllHosts();
+        } catch (renderError) {
+          // A bug in the progress UI must never bubble up into pullModel's
+          // stream-reading loop, where it would get misread as a network
+          // failure and abort an otherwise healthy download.
+          Zotero.logError(
+            renderError instanceof Error
+              ? renderError
+              : new Error(String(renderError)),
+          );
+        }
+      },
+    });
+    if (setupModelDownloads.get(target)?.controller !== controller) return;
+
+    setupModelDownloads.delete(target);
+    modelLoadStates.delete("ollama");
+    modelOptionsByProvider.delete("ollama");
+    delete addon.data.runtime.providerConnections.ollama;
+    await revalidateCurrentReadiness(true);
   } catch (error) {
+    if (setupModelDownloads.get(target)?.controller !== controller) return;
+
+    if (isAbortError(error)) {
+      setupModelDownloads.delete(target);
+      renderAllHosts();
+      return;
+    }
+
     Zotero.logError(error instanceof Error ? error : new Error(String(error)));
-    const currentConnection = addon.data.runtime.providerConnections.ollama;
-    addon.data.runtime.providerConnections.ollama = {
-      ...(currentConnection ??
-        createProviderConnectionResult("ollama", "error")),
+    // AIProviderResponseError's own message is a generic summary; the real
+    // underlying cause (e.g. the actual network/parse error) is chained via
+    // `.cause`. Log it too so a recurring report can be root-caused from
+    // Zotero's error console instead of guessing from the friendly text.
+    const cause =
+      error && typeof error === "object" && "cause" in error
+        ? (error as { cause?: unknown }).cause
+        : undefined;
+    if (cause instanceof Error) Zotero.logError(cause);
+
+    setupModelDownloads.set(target, {
       status: "error",
-      ok: false,
-      issue: "unknown-error",
-      error: error instanceof Error ? error.message : String(error),
-      message: getString("sidebar-stop-ollama-failed"),
-    };
-  } finally {
-    ollamaStopRunning = false;
+      percent: null,
+      statusText: getFriendlyErrorMessage(error),
+    });
     renderAllHosts();
   }
+}
+
+function cancelSetupModelDownload(target: SetupModelDownloadTarget) {
+  const state = setupModelDownloads.get(target);
+  if (state?.status !== "downloading") return;
+
+  state.controller?.abort();
+  setupModelDownloads.set(target, {
+    status: "downloading",
+    percent: state.percent,
+    statusText: getString("sidebar-setup-model-download-cancelling"),
+    controller: state.controller,
+  });
+  renderAllHosts();
 }
 
 async function waitForOllamaConnection() {
@@ -3888,7 +4403,7 @@ function syncModelDropdown(
 
   dropdown.dataset.provider = provider;
   const models = modelOptionsByProvider.get(provider) ?? [];
-  const values = getModelDropdownValues(models, value);
+  const values = getModelDropdownValues(models, value, provider);
   const optionNodes = values.map((model) =>
     createModelDropdownOption(dropdown.ownerDocument, model, model === value),
   );
@@ -3910,7 +4425,15 @@ function syncModelDropdown(
   updateModelDropdownDisplay(dropdown, value, provider);
 }
 
-function getModelDropdownValues(models: ModelOption[], selectedValue: string) {
+function getModelDropdownValues(
+  models: ModelOption[],
+  selectedValue: string,
+  provider: LLMProvider,
+) {
+  if (provider === "ollama") {
+    return getSelectableLocalModelValues(models.map((model) => model.id));
+  }
+
   const values = [...models.map((model) => model.id.trim()), selectedValue];
 
   return [...new Set(values.filter(Boolean))].sort(compareModelNames);
@@ -4037,9 +4560,11 @@ function setProviderModel(provider: LLMProvider, value: string) {
   }
 
   addon.api.ai.setModel(model, provider);
+  delete addon.data.runtime.providerConnections[provider];
   if (provider === getActiveProvider()) {
     addon.api.configureAI();
     addon.api.configureEmbeddings();
+    void revalidateCurrentReadiness(true);
   }
 }
 

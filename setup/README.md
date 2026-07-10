@@ -1,6 +1,15 @@
 # ZAIA Ollama setup
 
 This folder contains double-click setup helpers for the local ZAIA LLM runtime.
+ZAIA writes the requested mode to `setup-mode.txt` before launching a helper.
+
+Supported modes:
+
+```text
+embedding             Ollama + bge-m3:latest
+local                 Ollama + qwen2.5:3b
+local-with-embedding  Ollama + qwen2.5:3b + bge-m3:latest
+```
 
 ## Windows 11
 
@@ -11,12 +20,8 @@ setup-ollama-windows.cmd
 ```
 
 The script opens a classic terminal installer flow, asks before installing
-Ollama, starts the local service, and downloads:
-
-```text
-qwen2.5:3b
-bge-m3:latest
-```
+Ollama, starts the local service for the installation, and downloads only the
+models selected by the setup mode.
 
 ## macOS
 
@@ -44,3 +49,7 @@ Embedding model:  bge-m3:latest
 
 If you changed these values in Zotero preferences, set them back to the values
 above.
+
+During regular use ZAIA starts `ollama serve` silently when a local operation
+needs it. Users do not have to start the Ollama app manually. ZAIA only stops a
+process that it started itself.

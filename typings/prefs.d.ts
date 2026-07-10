@@ -14,7 +14,6 @@ declare namespace _ZoteroTypes {
       "sendPaperContextToKisski": boolean;
       "contextRouterProvider": string;
       "embeddingSearchEnabled": boolean;
-      "embeddingBaseUrl": string;
       "embeddingModel": string;
       "ollamaBaseUrl": string;
       "ollamaModel": string;
