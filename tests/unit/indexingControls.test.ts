@@ -5,11 +5,11 @@ import { PdfExtractor } from "../../src/core/PdfExtractor";
 import { vectorStore } from "../../src/core/OramaService";
 import { embeddingProvider } from "../../src/ai/EmbeddingProvider.js";
 import {
-  filterPapersByLibrary,
   markInitialIndexPromptShown,
   shouldShowInitialIndexPrompt,
-  type PaperRecord,
-} from "../../src/ui/indexManagerWindow";
+} from "../../src/ui/indexManager/actions";
+import { filterPapersByLibrary } from "../../src/ui/indexManager/state";
+import type { PaperRecord } from "../../src/ui/indexManager/types";
 
 function createItem(id: number, libraryID: number, title: string) {
   return {
@@ -53,7 +53,8 @@ describe("indexing controls", () => {
     vi.spyOn(vectorStore, "deleteByZoteroItemId").mockResolvedValue(undefined);
     vi.spyOn(vectorStore, "deleteByZoteroItemIds").mockResolvedValue(undefined);
     vi.spyOn(vectorStore, "addChunks").mockResolvedValue(undefined);
-    vi.spyOn(vectorStore, "setTextHash").mockImplementation(() => undefined);
+    vi.spyOn(vectorStore, "markAsIndexing").mockImplementation(() => undefined);
+    vi.spyOn(vectorStore, "markAsIndexed").mockImplementation(() => undefined);
     vi.spyOn(PdfExtractor, "extractDocument").mockImplementation(
       async (item: any) => ({
         item,
@@ -194,11 +195,12 @@ describe("indexing controls", () => {
     backgroundIndexer.enqueue([101]);
 
     await vi.waitFor(() => {
-      expect(vectorStore.setTextHash).toHaveBeenCalledWith(
+      expect(vectorStore.markAsIndexing).toHaveBeenCalledWith(
         "101",
         expect.any(String),
       );
     });
+    expect(vectorStore.markAsIndexed).toHaveBeenCalledWith("101");
     await vi.waitFor(() => {
       expect(backgroundIndexer.indexingState.status).toBe("done");
     });
