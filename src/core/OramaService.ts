@@ -26,6 +26,11 @@ const mySchema = {
 
 export type IndexedSourceType = "abstract" | "fulltext";
 
+export interface IndexRecord {
+  hash: string;
+  status: "INDEXING" | "DONE";
+}
+
 export type ChunkDocument = {
   id: string;
   zoteroItemId: string;
@@ -42,8 +47,7 @@ export class OramaService {
   private isInitialized = false;
   private saveTimeout: any = null;
   private readonly SAVE_DELAY_MS = 2000;
-  private textHashes = new Map<string, string>();
-  private indexedItemIds = new Set<string>();
+  private indexRecords = new Map<string, IndexRecord>();
 
   /**
    * Startet die Orama-Datenbank und lädt ggf. einen gespeicherten Index von der Festplatte.
@@ -55,9 +59,9 @@ export class OramaService {
       schema: mySchema,
     })) as VectorDB;
 
+    this.isInitialized = true;
     await this.loadIndex();
 
-    this.isInitialized = true;
     Zotero.debug("[OramaService]: Database initialized.");
   }
 
@@ -68,9 +72,6 @@ export class OramaService {
     this.checkInit();
 
     await insertMultiple(this.db, chunks as any);
-    for (const chunk of chunks) {
-      this.indexedItemIds.add(chunk.zoteroItemId);
-    }
 
     this.scheduleSave();
   }
@@ -127,8 +128,7 @@ export class OramaService {
    */
   async deleteByZoteroItemId(zoteroItemId: string) {
     this.checkInit();
-    this.deleteTextHash(zoteroItemId);
-    this.indexedItemIds.delete(zoteroItemId);
+    this.deleteIndexRecord(zoteroItemId);
 
     const results = await search(this.db, {
       term: "",
@@ -151,7 +151,7 @@ export class OramaService {
       let paperTitle;
       try {
         const item = await Zotero.Items.getAsync(parseInt(zoteroItemId, 10));
-        if (item) {
+        if (item && item._loaded !== false) {
           paperTitle =
             item.getField("title") ||
             (item.isAttachment() ? (item as any).getFilename() : undefined);
@@ -215,32 +215,8 @@ export class OramaService {
       `[OramaService] ==============================================`,
     );
     Zotero.debug(
-      `[OramaService] Vektordatenbank enthält Chunks für ${uniqueIds.size} eindeutige PDFs:`,
+      `[OramaService] Vektordatenbank enthält Chunks für ${uniqueIds.size} eindeutige PDFs.`,
     );
-
-    for (const idStr of uniqueIds) {
-      try {
-        const itemId = parseInt(idStr, 10);
-        const item = await Zotero.Items.getAsync(itemId);
-        if (item) {
-          let title = "Ohne Titel";
-          if (item.isRegularItem()) {
-            title = item.getField("title") || "Ohne Titel";
-          } else if (item.isAttachment()) {
-            title = `[Attachment] ${item.getField("title") || item.getFilename()}`;
-          }
-          Zotero.debug(`[OramaService]  -> "${title}" (ItemID: ${itemId})`);
-        } else {
-          Zotero.debug(
-            `[OramaService]  -> [Unbekannt] ItemID: ${itemId} (Nicht in Zotero gefunden)`,
-          );
-        }
-      } catch (err) {
-        Zotero.debug(
-          `[OramaService]  -> Fehler beim Laden von ItemID ${idStr}: ${err}`,
-        );
-      }
-    }
     Zotero.debug(
       `[OramaService] ==============================================`,
     );
@@ -251,7 +227,10 @@ export class OramaService {
    */
   async getDatabaseStats(): Promise<{ chunks: number; papers: number }> {
     this.checkInit();
-    const papers = this.textHashes.size;
+    let papers = 0;
+    for (const record of this.indexRecords.values()) {
+      if (record.status === "DONE") papers++;
+    }
     const result = await search(this.db, { term: "", limit: 0 });
     return { chunks: result.count, papers };
   }
@@ -260,7 +239,13 @@ export class OramaService {
    * Gibt die Menge aller Zotero-Item-IDs zurück, die aktuell indexiert sind.
    */
   getIndexedItemIds(): Set<string> {
-    return new Set(this.indexedItemIds);
+    const ids = new Set<string>();
+    for (const [id, record] of this.indexRecords.entries()) {
+      if (record.status === "DONE") {
+        ids.add(id);
+      }
+    }
+    return ids;
   }
 
   private checkInit() {
@@ -271,17 +256,25 @@ export class OramaService {
   }
 
   public getTextHash(zoteroItemId: string): string | undefined {
-    return this.textHashes.get(zoteroItemId);
+    return this.indexRecords.get(zoteroItemId)?.hash;
   }
 
-  public setTextHash(zoteroItemId: string, hash: string) {
-    this.textHashes.set(zoteroItemId, hash);
+  public markAsIndexing(zoteroItemId: string, hash: string) {
+    this.indexRecords.set(zoteroItemId, { hash, status: "INDEXING" });
     this.scheduleSave();
   }
 
-  public deleteTextHash(zoteroItemId: string) {
-    if (this.textHashes.has(zoteroItemId)) {
-      this.textHashes.delete(zoteroItemId);
+  public markAsIndexed(zoteroItemId: string) {
+    const record = this.indexRecords.get(zoteroItemId);
+    if (record) {
+      record.status = "DONE";
+      this.scheduleSave();
+    }
+  }
+
+  public deleteIndexRecord(zoteroItemId: string) {
+    if (this.indexRecords.has(zoteroItemId)) {
+      this.indexRecords.delete(zoteroItemId);
       this.scheduleSave();
     }
   }
@@ -338,8 +331,7 @@ export class OramaService {
 
     // Neues leeres DB-Objekt erstellen
     this.db = (await create({ schema: mySchema })) as VectorDB;
-    this.textHashes = new Map<string, string>();
-    this.indexedItemIds = new Set<string>();
+    this.indexRecords = new Map<string, IndexRecord>();
 
     // Debounce-Timer abbrechen
     if (this.saveTimeout) {
@@ -364,10 +356,10 @@ export class OramaService {
 
       await Zotero.File.putContentsAsync(this.dbFilePath, indexString);
 
-      const hashesObj = Object.fromEntries(this.textHashes);
+      const recordsObj = Object.fromEntries(this.indexRecords);
       await Zotero.File.putContentsAsync(
         this.hashFilePath,
-        JSON.stringify(hashesObj),
+        JSON.stringify(recordsObj),
       );
 
       Zotero.debug("[OramaService] Index erfolgreich gespeichert.");
@@ -402,37 +394,44 @@ export class OramaService {
       );
       if (typeof hashContents === "string" && hashContents.trim().length > 0) {
         const parsedHashes = JSON.parse(hashContents);
-        this.textHashes = new Map(Object.entries(parsedHashes));
+        this.indexRecords = new Map();
+        for (const [key, value] of Object.entries(parsedHashes)) {
+          if (typeof value === "string") {
+            // Legacy Migration: alte Hash-Strings
+            this.indexRecords.set(key, { hash: value, status: "DONE" });
+          } else if (value && typeof value === "object") {
+            this.indexRecords.set(key, value as IndexRecord);
+          }
+        }
         Zotero.debug(
-          `[OramaService] Text-Hashes erfolgreich von Festplatte geladen.`,
+          `[OramaService] Index-Records erfolgreich von Festplatte geladen.`,
         );
       }
     } catch (e) {
-      Zotero.debug(`[OramaService] Keine existierenden Text-Hashes gefunden.`);
+      Zotero.debug(`[OramaService] Keine existierenden Index-Records gefunden.`);
     }
 
     await this.reconcileIndexedItemIds();
   }
 
   private async reconcileIndexedItemIds() {
-    this.indexedItemIds = new Set<string>();
+    const crashedItemIds: string[] = [];
 
-    try {
-      const allDocs = await search(this.db, { term: "", limit: 100000 });
-      for (const hit of allDocs.hits) {
-        const zoteroItemId = (hit.document as any).zoteroItemId;
-        if (zoteroItemId) this.indexedItemIds.add(String(zoteroItemId));
+    // Finde alle Items, bei denen die Indexierung abgebrochen/abgestürzt ist
+    for (const [id, record] of this.indexRecords.entries()) {
+      if (record.status === "INDEXING") {
+        crashedItemIds.push(id);
       }
-    } catch (error) {
-      Zotero.debug(
-        `[OramaService] Index-IDs konnten nicht aus Orama rekonstruiert werden: ${error}`,
-      );
     }
 
-    for (const zoteroItemId of [...this.textHashes.keys()]) {
-      if (!this.indexedItemIds.has(zoteroItemId)) {
-        this.textHashes.delete(zoteroItemId);
-      }
+    if (crashedItemIds.length > 0) {
+      Zotero.debug(
+        `[OramaService] Geister-Dokumente erkannt: ${crashedItemIds.length} Items wurden nicht vollständig indexiert (Absturz). Bereinigung...`,
+      );
+      await this.deleteByZoteroItemIds(crashedItemIds);
+      Zotero.debug(
+        `[OramaService] Bereinigung von Geister-Dokumenten abgeschlossen.`,
+      );
     }
   }
 }

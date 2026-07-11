@@ -1,0 +1,105 @@
+declare const Zotero: any;
+declare namespace Zotero {
+    type Item = any;
+}
+
+export function isIndexableItem(item: Zotero.Item): boolean {
+  if (isDeletedItem(item)) {
+    return false;
+  }
+
+  if (item.isNote?.()) {
+    return false;
+  }
+
+  if (item.isAttachment?.() && item.parentID) {
+    return false;
+  }
+
+  if (item.isRegularItem?.()) {
+    return true;
+  }
+
+  if (
+    item.isAttachment?.() &&
+    item.attachmentContentType === "application/pdf"
+  ) {
+    return true;
+  }
+
+  return Boolean(item.isPDFAttachment?.());
+}
+
+export function isDeletedItem(item: Zotero.Item): boolean {
+  try {
+    return Boolean(item.deleted ?? item.getField?.("deleted"));
+  } catch {
+    return false;
+  }
+}
+
+export function getItemTitle(item: Zotero.Item): string {
+  const title = getItemField(item, "title", "");
+  if (title) {
+    return title;
+  }
+
+  try {
+    const filename = item.getFilename?.();
+    return filename ? String(filename) : "Ohne Titel";
+  } catch {
+    return "Ohne Titel";
+  }
+}
+
+export function getItemField(item: Zotero.Item, field: string, fallback: string): string {
+  try {
+    const value = item.getField?.(field);
+    return value ? String(value) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export function getItemCreators(item: Zotero.Item): string {
+  try {
+    const creators = item.getCreators?.();
+    if (!Array.isArray(creators) || creators.length === 0) {
+      return "Unbekannt";
+    }
+
+    return creators
+      .slice(0, 3)
+      .map(
+        (creator: any) => creator.lastName || creator.name || creator.firstName,
+      )
+      .filter(Boolean)
+      .join(", ");
+  } catch {
+    return "Unbekannt";
+  }
+}
+
+export function getItemType(item: Zotero.Item): string {
+  if (item.isPDFAttachment?.()) {
+    return "PDF";
+  }
+
+  if (
+    item.isAttachment?.() &&
+    item.attachmentContentType === "application/pdf"
+  ) {
+    return "PDF";
+  }
+
+  try {
+    const rawType = item.itemType || item.getField?.("itemType");
+    if (rawType) {
+      return String(rawType);
+    }
+  } catch {
+    // Fall through to the generic label.
+  }
+
+  return "Eintrag";
+}

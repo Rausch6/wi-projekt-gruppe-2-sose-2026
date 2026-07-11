@@ -34,6 +34,7 @@ type IndexingEventMap = {
   deleted: IndexingStatusEvent;
   error: { message: string; itemID?: number; paperTitle?: string };
   finished: IndexingStatusEvent;
+  aborted: IndexingStatusEvent;
 };
 
 type Listener<T> = (event: T) => void;

@@ -17,7 +17,8 @@ export type IndexingState =
       total: number;
       estimatedRemainingMs?: number;
     }
-  | { status: "done"; indexed: number; total: number; newlyIndexed: number };
+  | { status: "done"; indexed: number; total: number; newlyIndexed: number }
+  | { status: "aborted"; indexed: number; total: number; newlyIndexed: number };
 
 type IndexItemResult = {
   indexed: boolean;
@@ -36,6 +37,7 @@ export class BackgroundIndexer {
   private observerId: string | null = null;
 
   private queue: number[] = [];
+  private pendingModifications = new Set<number>();
   private isProcessing = false;
   private currentlyIndexing = new Set<number>();
   private isSingleMode = true;
@@ -123,10 +125,17 @@ export class BackgroundIndexer {
 
     try {
       this.enqueue(idsToReindex);
-    } catch (err) {
-      Zotero.debug(
-        `[BackgroundIndexer] Automatische Re-Indexierung konnte nicht gestartet werden: ${err}`,
-      );
+    } catch (err: any) {
+      if (this.isFullIndexRunning()) {
+        Zotero.debug(
+          `[BackgroundIndexer] Voll-Indexierung läuft. Modifikation wird zwischengespeichert.`,
+        );
+        idsToReindex.forEach((id) => this.pendingModifications.add(id));
+      } else {
+        Zotero.debug(
+          `[BackgroundIndexer] Automatische Re-Indexierung konnte nicht gestartet werden: ${err}`,
+        );
+      }
     }
   }
 
@@ -232,6 +241,7 @@ export class BackgroundIndexer {
     let itemsProcessed = 0;
     let newlyIndexed = 0;
     let emaMsPerItem = 0;
+    let wasAborted = false;
 
     this.indexingState = {
       status: "running",
@@ -283,24 +293,45 @@ export class BackgroundIndexer {
               "[BackgroundIndexer] Einzel-Indexierung durch Nutzer abgebrochen.",
             );
             this.queue = [];
+            wasAborted = true;
             break;
           }
-          Zotero.debug(
-            `[BackgroundIndexer] Error indexing item ${itemId}: ${error}`,
-          );
+          let paperTitle: string | undefined;
+          try {
+            const zItem = await Zotero.Items.getAsync(itemId);
+            paperTitle = zItem?._loaded === false ? undefined : zItem?.getField("title") || undefined;
+          } catch {}
+          const errorMsg = `[BackgroundIndexer] Error indexing item ${itemId} ("${paperTitle || "Unbekannt"}"): ${error}`;
+          Zotero.debug(errorMsg);
+          if (error instanceof Error) {
+            Zotero.logError(new Error(`${errorMsg}\nOriginal: ${error.message}`));
+          } else {
+            Zotero.logError(new Error(errorMsg));
+          }
           indexingEvents.emit("error", {
             message: String(error),
             itemID: itemId,
+            paperTitle
           });
         }
       }
     } finally {
       this.indexingState = {
-        status: "done",
+        status: wasAborted ? "aborted" : "done",
         indexed: itemsProcessed,
         newlyIndexed,
         total: itemsProcessed,
       };
+      
+      if (wasAborted) {
+        indexingEvents.emit("aborted", {
+          mode: "single",
+          indexed: itemsProcessed,
+          newlyIndexed,
+          total: itemsProcessed,
+        });
+      }
+      
       this.isProcessing = false;
       this.activeRunMode = null;
       this.abortController = null;
@@ -358,7 +389,7 @@ export class BackgroundIndexer {
         let paperTitle: string | undefined;
         try {
           const zItem = await Zotero.Items.getAsync(targetId);
-          paperTitle = zItem?.getField("title") || undefined;
+          paperTitle = zItem?._loaded === false ? undefined : zItem?.getField("title") || undefined;
         } catch (_e) {
           /* ignore */
         }
@@ -451,8 +482,9 @@ export class BackgroundIndexer {
       }
 
       if (oramaChunks.length > 0) {
+        vectorStore.markAsIndexing(targetId.toString(), textHash);
         await vectorStore.addChunks(oramaChunks);
-        vectorStore.setTextHash(targetId.toString(), textHash);
+        vectorStore.markAsIndexed(targetId.toString());
 
         if (this.isSingleMode) {
           this.emitSingleDone(targetId);
@@ -471,6 +503,15 @@ export class BackgroundIndexer {
       const zItem = await Zotero.Items.getAsync(itemID);
       return zItem?.getField("title") || undefined;
     } catch (_e) {
+      return undefined;
+    }
+  }
+
+  private getSafeTitle(item: any): string | undefined {
+    if (item._loaded === false) return undefined;
+    try {
+      return item.getField?.("title") || undefined;
+    } catch {
       return undefined;
     }
   }
@@ -596,6 +637,7 @@ export class BackgroundIndexer {
 
       let processedItems = 0;
       let emaMsPerItem = 0;
+      let wasAborted = false;
 
       for (const item of itemsToIndex) {
         try {
@@ -618,7 +660,7 @@ export class BackgroundIndexer {
 
           const remainingItems = itemsToIndex.length - processedItems;
           const estimatedRemainingMs = emaMsPerItem * remainingItems;
-          const currentIndexedCount = this.countIndexedTargetItems(targetItems);
+          const currentIndexedCount = alreadyIndexedCount + indexedNew;
           this.indexingState = {
             status: "running",
             indexed: currentIndexedCount,
@@ -631,43 +673,60 @@ export class BackgroundIndexer {
             indexed: currentIndexedCount,
             total: targetItems.length,
             estimatedRemainingMs,
-            paperTitle: await this.getPaperTitle(item.id),
+            paperTitle: this.getSafeTitle(item),
           });
         } catch (err: any) {
           if (err?.name === "AbortError") {
             Zotero.debug(
               "[BackgroundIndexer] Bibliotheks-Indexierung durch Nutzer abgebrochen.",
             );
+            wasAborted = true;
             break;
           }
-          Zotero.debug(
-            `[BackgroundIndexer] Error in batch processing for item ${item.id}: ${err}`,
-          );
+          const paperTitle = this.getSafeTitle(item);
+          const errorMsg = `[BackgroundIndexer] Error in batch processing for item ${item.id} ("${paperTitle || "Unbekannt"}"): ${err}`;
+          Zotero.debug(errorMsg);
+          if (err instanceof Error) {
+            Zotero.logError(new Error(`${errorMsg}\nOriginal: ${err.message}`));
+          } else {
+            Zotero.logError(new Error(errorMsg));
+          }
           indexingEvents.emit("error", {
             message: String(err),
             itemID: item.id,
+            paperTitle
           });
         }
         await new Promise<void>((resolve) => setTimeout(resolve, 150));
       }
 
-      const finalIndexedCount = this.countIndexedTargetItems(targetItems);
+      const finalIndexedCount = alreadyIndexedCount + indexedNew;
       Zotero.debug(
-        `[BackgroundIndexer] Bibliotheks-Indexierung abgeschlossen: ${indexedNew} neu indexiert, ${alreadyIndexedCount} bereits vorhanden.`,
+        `[BackgroundIndexer] Bibliotheks-Indexierung ${wasAborted ? "abgebrochen" : "abgeschlossen"}: ${indexedNew} neu indexiert, ${alreadyIndexedCount} bereits vorhanden.`,
       );
 
       this.indexingState = {
-        status: "done",
+        status: wasAborted ? "aborted" : "done",
         indexed: finalIndexedCount,
         newlyIndexed: indexedNew,
         total: targetItems.length,
       };
-      indexingEvents.emit("finished", {
-        mode: "full",
-        indexed: finalIndexedCount,
-        newlyIndexed: indexedNew,
-        total: targetItems.length,
-      });
+      
+      if (wasAborted) {
+        indexingEvents.emit("aborted", {
+          mode: "full",
+          indexed: finalIndexedCount,
+          newlyIndexed: indexedNew,
+          total: targetItems.length,
+        });
+      } else {
+        indexingEvents.emit("finished", {
+          mode: "full",
+          indexed: finalIndexedCount,
+          newlyIndexed: indexedNew,
+          total: targetItems.length,
+        });
+      }
 
       return {
         newlyIndexed: indexedNew,
@@ -678,6 +737,21 @@ export class BackgroundIndexer {
       this.isSingleMode = true;
       this.activeRunMode = null;
       this.abortController = null;
+
+      if (this.pendingModifications.size > 0) {
+        const pendingIds = Array.from(this.pendingModifications);
+        this.pendingModifications.clear();
+        Zotero.debug(
+          `[BackgroundIndexer] Starte ${pendingIds.length} ausstehende Re-Indexierungen nach Voll-Indexierung...`,
+        );
+        setTimeout(() => {
+          try {
+            this.enqueue(pendingIds);
+          } catch (e) {
+            Zotero.debug(`[BackgroundIndexer] Fehler beim Starten der ausstehenden Indexierungen: ${e}`);
+          }
+        }, 500);
+      }
     }
   }
 
@@ -738,9 +812,10 @@ function isIndexableTargetItem(item: Zotero.Item) {
 
 function isDeleted(item: Zotero.Item) {
   try {
+    const isUnloaded = (item as any)._loaded === false;
     return Boolean(
       (item as Zotero.Item & { deleted?: boolean }).deleted ??
-      item.getField("deleted"),
+      (isUnloaded ? false : item.getField("deleted")),
     );
   } catch {
     return false;

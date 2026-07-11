@@ -1189,6 +1189,12 @@ function createIndexingStatusBanner(doc: Document) {
     );
   });
 
+  const unsubAborted = indexingEvents.on("aborted", ({ indexed, total }) => {
+    showSuccess(
+      `Indexierung abgebrochen (${indexed ?? 0} / ${total ?? "?"} Papern)`,
+    );
+  });
+
   const unsubSingleDone = indexingEvents.on(
     "singleDone",
     ({ paperTitle, skipped, unchanged }) => {
@@ -1206,6 +1212,10 @@ function createIndexingStatusBanner(doc: Document) {
 
   const unsubDeleted = indexingEvents.on("deleted", ({ paperTitle }) => {
     showSuccess(`✓ Aus dem Index entfernt: ${paperTitle ?? "Paper"}`);
+  });
+
+  const unsubError = indexingEvents.on("error", ({ paperTitle, message }) => {
+    showSuccess(`Fehler bei ${paperTitle ?? "Paper"}: ${message}`);
   });
 
   import("../core/BackgroundIndexer")
@@ -1227,6 +1237,10 @@ function createIndexingStatusBanner(doc: Document) {
         showSuccess(
           `✓ Indexierung abgeschlossen (${currentState.indexed} / ${currentState.total} Papern)`,
         );
+      } else if (currentState.status === "aborted") {
+        showSuccess(
+          `Indexierung abgebrochen (${currentState.indexed} / ${currentState.total} Papern)`,
+        );
       }
     })
     .catch((err) => {});
@@ -1236,8 +1250,10 @@ function createIndexingStatusBanner(doc: Document) {
       unsubStarted();
       unsubProgress();
       unsubFinished();
+      unsubAborted();
       unsubSingleDone();
       unsubDeleted();
+      unsubError();
       if (hideSuccessTimeout) clearTimeout(hideSuccessTimeout);
       observer.disconnect();
     }
