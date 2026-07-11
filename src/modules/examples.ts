@@ -112,7 +112,11 @@ export class UIExampleFactory {
         return item.getField("title");
       },
       onSetData: ({ item, value }) => {
+        // Guard against read-only items (e.g. in group libraries with restricted access).
+        if (!item.isEditable()) return;
         item.setField("title", value);
+        // saveTx() is required to persist the change to the Zotero database.
+        item.saveTx();
       },
     });
   }

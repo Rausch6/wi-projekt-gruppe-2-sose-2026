@@ -44,6 +44,12 @@ pref-auto-delete-old-chats = Nicht-favorisierte Chats nach 14 Tagen automatisch 
 
 pref-max-items = Maximale Zotero-Einträge für Kontextauswahl
 pref-max-items-notice = Höhere Werte können die Kontextauswahl verlangsamen.
+pref-chunk-target-tokens = Chunk-Größe (Tokens)
+pref-chunk-target-tokens-notice = Zielgröße eines Text-Chunks in Tokens für die Indexierung.
+pref-chunk-overlap-tokens = Chunk-Überlappung (Tokens)
+pref-chunk-overlap-tokens-notice = Anzahl der überlappenden Tokens zwischen zwei aufeinanderfolgenden Chunks.
+pref-chunk-count = Anzahl der Chunks pro Paper
+pref-chunk-count-notice = Maximale Anzahl der relevantesten Chunks, die pro Dokument an das Modell übergeben werden.
 pref-indexing-open-manager =
     .label = Indexierte Paper verwalten
 pref-debug-version-label = Release

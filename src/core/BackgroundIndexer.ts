@@ -501,7 +501,8 @@ export class BackgroundIndexer {
   private async getPaperTitle(itemID: number): Promise<string | undefined> {
     try {
       const zItem = await Zotero.Items.getAsync(itemID);
-      return zItem?.getField("title") || undefined;
+      // getSafeTitle() already includes the _loaded guard, unlike a direct getField() call.
+      return this.getSafeTitle(zItem) || undefined;
     } catch (_e) {
       return undefined;
     }

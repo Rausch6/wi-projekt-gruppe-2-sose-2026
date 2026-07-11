@@ -32,7 +32,9 @@ export function isIndexableItem(item: Zotero.Item): boolean {
 
 export function isDeletedItem(item: Zotero.Item): boolean {
   try {
-    return Boolean(item.deleted ?? item.getField?.("deleted"));
+    // item.deleted is the correct internal Zotero property.
+    // getField("deleted") is not a valid metadata field and may cause warnings.
+    return Boolean(item.deleted);
   } catch {
     return false;
   }

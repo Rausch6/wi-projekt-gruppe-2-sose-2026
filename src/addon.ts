@@ -51,6 +51,9 @@ import {
 } from "./ui/assistantChatController";
 import { openAssistantSidebar } from "./ui/assistantSidebarController";
 import { createZToolkit } from "./utils/ztoolkit";
+import { indexingEvents } from "./core/IndexingEventBus";
+import { backgroundIndexer } from "./core/BackgroundIndexer";
+import { vectorStore } from "./core/OramaService";
 
 export type LLMProvider = "kisski" | "ollama";
 let lastPaperChunkReport = "";
@@ -323,9 +326,9 @@ class Addon {
         openAssistantSidebar(win);
         return true;
       },
-      indexingEvents: require("./core/IndexingEventBus").indexingEvents,
-      backgroundIndexer: require("./core/BackgroundIndexer").backgroundIndexer,
-      vectorStore: require("./core/OramaService").vectorStore,
+      indexingEvents,
+      backgroundIndexer,
+      vectorStore,
     };
   }
 
