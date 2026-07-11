@@ -59,3 +59,22 @@ export function createAbortController(): AbortController {
   }
   return new PolyfillAbortController() as unknown as AbortController;
 }
+
+/**
+ * Creates an AbortController from the given window's own global.
+ * Must be created from the same window whose fetch() will actually send
+ * the request - Gecko rejects an AbortSignal from a different global
+ * ("'signal' member of RequestInit does not implement interface
+ * AbortSignal").
+ */
+export function createWindowAbortController(win: Window): AbortController {
+  const AbortControllerCtor = (
+    win as Window & { AbortController?: typeof AbortController }
+  ).AbortController;
+
+  if (typeof AbortControllerCtor === "function") {
+    return new AbortControllerCtor();
+  }
+
+  return createAbortController();
+}

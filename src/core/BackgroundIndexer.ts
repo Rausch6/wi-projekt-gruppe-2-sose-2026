@@ -3,7 +3,10 @@ import { PdfExtractor } from "./PdfExtractor";
 import { chunkPaperText, type TextChunk } from "./TextChunker";
 import { embeddingProvider } from "../ai/EmbeddingProvider.js";
 import { indexingEvents } from "./IndexingEventBus";
-import { createAbortController } from "../utils/AbortController";
+import {
+  createAbortController,
+  createWindowAbortController,
+} from "../utils/AbortController";
 import { config } from "../../package.json";
 import { LibraryScopeManager } from "./LibraryScopeManager";
 import { EmbeddingSearchService } from "./EmbeddingSearchService";
@@ -227,6 +230,22 @@ export class BackgroundIndexer {
   }
 
   /**
+   * Erzeugt einen AbortController, dessen Signal aus demselben Fenster-Global
+   * stammt wie das später aufgerufene fetch() - Gecko lehnt ein AbortSignal
+   * aus einem anderen Global ab ("'signal' member of RequestInit does not
+   * implement interface AbortSignal").
+   */
+  private createIndexingAbortController(): AbortController {
+    try {
+      const win = Zotero.getMainWindow();
+      if (win) return createWindowAbortController(win);
+    } catch {
+      // Kein Hauptfenster verfügbar; auf den generischen Controller zurückfallen.
+    }
+    return createAbortController();
+  }
+
+  /**
    * Arbeitet die Warteschlange asynchron ab.
    */
   private async processQueue() {
@@ -236,7 +255,7 @@ export class BackgroundIndexer {
     this.isProcessing = true;
     this.activeRunMode = "single";
     this.isSingleMode = true;
-    this.abortController = createAbortController();
+    this.abortController = this.createIndexingAbortController();
     indexingEvents.emit("started", { mode: "single" });
 
     let itemsProcessed = 0;
@@ -583,7 +602,7 @@ export class BackgroundIndexer {
     Zotero.debug("[BackgroundIndexer] Starte Bibliotheks-Indexierung...");
     this.activeRunMode = "full";
     this.isSingleMode = false;
-    this.abortController = createAbortController();
+    this.abortController = this.createIndexingAbortController();
     this.indexingState = { status: "running", indexed: 0, total: 0 };
     indexingEvents.emit("started", { mode: "full" });
 

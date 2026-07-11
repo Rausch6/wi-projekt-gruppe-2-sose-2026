@@ -50,13 +50,13 @@ pref-chunk-overlap-tokens-notice = Anzahl der überlappenden Tokens zwischen zwe
 pref-chunk-count = Anzahl der Chunks pro Paper
 pref-chunk-count-notice = Maximale Anzahl der relevantesten Chunks, die pro Dokument an das Modell übergeben werden.
 pref-indexing-open-manager =
-    .label = Indexierte Paper verwalten
+    .label = Index-Manager
 pref-debug-version-label = Release
 pref-debug-build-time-label = Veröffentlicht am
 pref-reset-defaults =
     .label = Auf Standardwerte zurücksetzen
 
-index-manager-title = ZAIA Index Manager
+index-manager-title = ZAIA Index-Manager
 index-manager-refresh = Liste aktualisieren
 index-manager-rebuild-index = Index neu aufbauen
 index-manager-cancel-indexing = Abbrechen
