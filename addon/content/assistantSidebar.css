@@ -1990,6 +1990,17 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   animation: zai-fade-in 0.25s ease;
 }
 
+/* Fehler-/Abbruch-Zustand – roter Hinweis */
+.zai-indexing-banner--error {
+  background-color: color-mix(in srgb, #dc2626 10%, transparent);
+  border: 1px solid color-mix(in srgb, #dc2626 28%, transparent);
+  animation: zai-fade-in 0.25s ease;
+}
+
+.zai-indexing-banner--error .zai-indexing-success-text {
+  color: color-mix(in srgb, currentColor 80%, #dc2626);
+}
+
 /* Aktiver Fortschrittstext */
 .zai-indexing-active {
   align-items: center;
