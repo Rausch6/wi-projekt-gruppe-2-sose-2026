@@ -802,6 +802,11 @@ function formatDuration(ms: number): string {
   return `${s}s`;
 }
 
+function formatSkippedSuffix(skippedCount?: number): string {
+  if (!skippedCount) return "";
+  return ` ${skippedCount} Paper ohne extrahierbaren Text übersprungen.`;
+}
+
 /**
  * Erzeugt den Indizierungs-Status-Banner, der direkt über dem Kompositor angezeigt wird.
  */
@@ -884,28 +889,11 @@ function createIndexingStatusBanner(doc: Document) {
     banner.classList.add("zai-indexing-banner--active");
   }
 
-  function showSuccess(text: string) {
-    if (hideSuccessTimeout) clearTimeout(hideSuccessTimeout);
-    activeIndicator.hidden = true;
-    successText.textContent = text;
-    successIndicator.hidden = false;
-    banner.hidden = false;
-    banner.classList.remove(
-      "zai-indexing-banner--active",
-      "zai-indexing-banner--idle",
-      "zai-indexing-banner--error",
-    );
-    banner.classList.add("zai-indexing-banner--success");
+  // Auto-hide-Delay analog zu STATUS_AUTO_HIDE_DELAY_MS im Index Manager
+  // (src/ui/indexManager/render.ts), damit beide Banner sich identisch verhalten.
+  const STATIC_AUTO_HIDE_DELAY_MS = 5000;
 
-    hideSuccessTimeout = setTimeout(() => {
-      successIndicator.hidden = true;
-      banner.hidden = true;
-      banner.classList.remove("zai-indexing-banner--success");
-      hideSuccessTimeout = null;
-    }, 3000);
-  }
-
-  function showError(text: string) {
+  function showStatic(text: string, type: "success" | "warning" | "error") {
     if (hideSuccessTimeout) clearTimeout(hideSuccessTimeout);
     activeIndicator.hidden = true;
     successText.textContent = text;
@@ -915,25 +903,45 @@ function createIndexingStatusBanner(doc: Document) {
       "zai-indexing-banner--active",
       "zai-indexing-banner--idle",
       "zai-indexing-banner--success",
+      "zai-indexing-banner--warning",
+      "zai-indexing-banner--error",
     );
-    banner.classList.add("zai-indexing-banner--error");
+    banner.classList.add(`zai-indexing-banner--${type}`);
 
     hideSuccessTimeout = setTimeout(() => {
       successIndicator.hidden = true;
       banner.hidden = true;
-      banner.classList.remove("zai-indexing-banner--error");
+      banner.classList.remove(`zai-indexing-banner--${type}`);
       hideSuccessTimeout = null;
-    }, 3000);
+    }, STATIC_AUTO_HIDE_DELAY_MS);
   }
 
-  const unsubStarted = indexingEvents.on("started", () => {
-    showActive("Achtung: Indexierung aktiv…");
+  function showSuccess(text: string) {
+    showStatic(text, "success");
+  }
+
+  function showWarning(text: string) {
+    showStatic(text, "warning");
+  }
+
+  function showError(text: string) {
+    showStatic(text, "error");
+  }
+
+  const unsubStarted = indexingEvents.on("started", ({ mode }) => {
+    showActive(
+      mode === "full"
+        ? "Achtung: Bibliotheks-Indexierung aktiv…"
+        : "Achtung: Indexierung aktiv…",
+    );
   });
 
   const unsubProgress = indexingEvents.on(
     "progress",
-    ({ indexed, total, estimatedRemainingMs }) => {
-      let msg = `Achtung: Indexierung aktiv ${indexed} / ${total} Papern indexiert`;
+    ({ indexed, total, estimatedRemainingMs, paperTitle }) => {
+      let msg = paperTitle
+        ? `Achtung: "${paperTitle}" wird indexiert – ${indexed} / ${total} Papern`
+        : `Achtung: Indexierung aktiv ${indexed} / ${total} Papern indexiert`;
       if (estimatedRemainingMs !== undefined && estimatedRemainingMs > 0) {
         msg += ` (noch ca. ${formatDuration(estimatedRemainingMs)})`;
       }
@@ -941,17 +949,25 @@ function createIndexingStatusBanner(doc: Document) {
     },
   );
 
-  const unsubFinished = indexingEvents.on("finished", ({ indexed, total }) => {
-    showSuccess(
-      `✓ Indexierung abgeschlossen (${indexed ?? 0} / ${total ?? "?"} Papern)`,
-    );
-  });
+  const unsubFinished = indexingEvents.on(
+    "finished",
+    ({ indexed, total, skippedCount }) => {
+      showSuccess(
+        `✓ Indexierung abgeschlossen (${indexed ?? 0} / ${total ?? "?"} Papern)` +
+          formatSkippedSuffix(skippedCount),
+      );
+    },
+  );
 
-  const unsubAborted = indexingEvents.on("aborted", ({ indexed, total }) => {
-    showError(
-      `Indexierung abgebrochen (${indexed ?? 0} / ${total ?? "?"} Papern)`,
-    );
-  });
+  const unsubAborted = indexingEvents.on(
+    "aborted",
+    ({ indexed, total, skippedCount }) => {
+      showWarning(
+        `Indexierung abgebrochen (${indexed ?? 0} / ${total ?? "?"} Papern)` +
+          formatSkippedSuffix(skippedCount),
+      );
+    },
+  );
 
   const unsubSingleStarted = indexingEvents.on(
     "singleStarted",
@@ -972,7 +988,7 @@ function createIndexingStatusBanner(doc: Document) {
         return;
       }
       if (skipped) {
-        showSuccess(`Indexierung übersprungen: ${paperTitle ?? "Paper"}`);
+        showWarning(`${paperTitle ?? "Paper"} konnte nicht indexiert werden.`);
         return;
       }
       showSuccess(`✓ Erfolgreich indexiert: ${paperTitle ?? "Paper"}`);
@@ -1007,7 +1023,7 @@ function createIndexingStatusBanner(doc: Document) {
           `✓ Indexierung abgeschlossen (${currentState.indexed} / ${currentState.total} Papern)`,
         );
       } else if (currentState.status === "aborted") {
-        showError(
+        showWarning(
           `Indexierung abgebrochen (${currentState.indexed} / ${currentState.total} Papern)`,
         );
       }

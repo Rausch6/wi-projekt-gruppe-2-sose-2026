@@ -24,6 +24,8 @@ export interface IndexingStatusEvent {
   skipped?: boolean;
   unchanged?: boolean;
   paperTitle?: string;
+  /** Anzahl Papers ohne extrahierbaren Text, die bei einem Bibliotheks-Lauf übersprungen wurden. */
+  skippedCount?: number;
 }
 
 type IndexingEventMap = {

@@ -156,6 +156,11 @@ function bindEvents(
   bindAsyncButton(elements.unindexSelectedButton, () => unindexSelectedPapers(window, elements, state, vectorStoreService));
 }
 
+function formatSkippedSuffix(skippedCount?: number): string {
+  if (!skippedCount) return "";
+  return ` ${skippedCount} Paper ohne extrahierbaren Text übersprungen.`;
+}
+
 function bindIndexingEvents(
   window: Window,
   elements: IndexManagerElements,
@@ -262,23 +267,31 @@ function bindIndexingEvents(
     setStatus(elements.status, `Fehler bei ${title}: ${message}`, "error");
   });
 
-  const unsubFinished = indexingEvents.on("finished", ({ indexed, total }) => {
-    state.queuedItemIDs.clear();
-    state.fullIndexRunning = false;
-    reloadAndShowStatus(
-      `Indexierung abgeschlossen - ${indexed ?? 0} / ${total ?? "?"} Paper im Index.`,
-      "success",
-    );
-  });
+  const unsubFinished = indexingEvents.on(
+    "finished",
+    ({ indexed, total, skippedCount }) => {
+      state.queuedItemIDs.clear();
+      state.fullIndexRunning = false;
+      reloadAndShowStatus(
+        `Indexierung abgeschlossen - ${indexed ?? 0} / ${total ?? "?"} Paper im Index.` +
+          formatSkippedSuffix(skippedCount),
+        "success",
+      );
+    },
+  );
 
-  const unsubAborted = indexingEvents.on("aborted", ({ indexed, total }) => {
-    state.queuedItemIDs.clear();
-    state.fullIndexRunning = false;
-    reloadAndShowStatus(
-      `Indexierung durch Nutzer abgebrochen - ${indexed ?? 0} / ${total ?? "?"} Paper im Index.`,
-      "warning",
-    );
-  });
+  const unsubAborted = indexingEvents.on(
+    "aborted",
+    ({ indexed, total, skippedCount }) => {
+      state.queuedItemIDs.clear();
+      state.fullIndexRunning = false;
+      reloadAndShowStatus(
+        `Indexierung durch Nutzer abgebrochen - ${indexed ?? 0} / ${total ?? "?"} Paper im Index.` +
+          formatSkippedSuffix(skippedCount),
+        "warning",
+      );
+    },
+  );
 
   const initialState = backgroundIndexerService.indexingState;
   if (initialState.status === "running") {

@@ -661,6 +661,7 @@ export class BackgroundIndexer {
       let processedItems = 0;
       let emaMsPerItem = 0;
       let wasAborted = false;
+      let skippedNoTextCount = 0;
 
       for (const item of itemsToIndex) {
         try {
@@ -673,6 +674,8 @@ export class BackgroundIndexer {
 
           if (result.indexed && !result.skipped) {
             indexedNew++;
+          } else if (result.skipped && !result.unchanged) {
+            skippedNoTextCount++;
           }
 
           if (processedItems === 1) {
@@ -741,6 +744,7 @@ export class BackgroundIndexer {
           indexed: finalIndexedCount,
           newlyIndexed: indexedNew,
           total: targetItems.length,
+          skippedCount: skippedNoTextCount,
         });
       } else {
         indexingEvents.emit("finished", {
@@ -748,6 +752,7 @@ export class BackgroundIndexer {
           indexed: finalIndexedCount,
           newlyIndexed: indexedNew,
           total: targetItems.length,
+          skippedCount: skippedNoTextCount,
         });
       }
 
