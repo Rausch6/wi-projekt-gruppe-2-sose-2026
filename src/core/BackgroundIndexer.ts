@@ -408,8 +408,7 @@ export class BackgroundIndexer {
       if (this.isSingleMode) {
         let paperTitle: string | undefined;
         try {
-          const zItem = await Zotero.Items.getAsync(targetId);
-          paperTitle = zItem?._loaded === false ? undefined : zItem?.getField("title") || undefined;
+          paperTitle = item._loaded === false ? undefined : item.getField("title") || undefined;
         } catch (_e) {
           /* ignore */
         }
@@ -436,7 +435,9 @@ export class BackgroundIndexer {
         : [];
 
       if (chunks.length === 0) {
-        await vectorStore.deleteByZoteroItemId(targetId.toString());
+        if (vectorStore.hasIndexRecord(targetId.toString())) {
+          await vectorStore.deleteByZoteroItemId(targetId.toString());
+        }
         Zotero.debug(
           `[BackgroundIndexer] No PDF text found for item ${targetId}. Existing vector entries were removed.`,
         );
@@ -457,24 +458,33 @@ export class BackgroundIndexer {
         return { indexed: true, skipped: true, targetId, unchanged: true };
       }
 
-      await vectorStore.deleteByZoteroItemId(targetId.toString());
+      if (vectorStore.hasIndexRecord(targetId.toString())) {
+        await vectorStore.deleteByZoteroItemId(targetId.toString());
+      }
 
       const oramaChunks: ChunkDocument[] = [];
+      const MAX_BATCH_SIZE = 20;
+      let allEmbeddings: number[][] = [];
 
-      for (const chunk of chunks) {
-        if (options?.signal?.aborted)
-          throw new DOMException("Aborted", "AbortError");
+      if (EmbeddingSearchService.isEnabled() && chunks.length > 0) {
+        for (let i = 0; i < chunks.length; i += MAX_BATCH_SIZE) {
+          if (options?.signal?.aborted)
+            throw new DOMException("Aborted", "AbortError");
 
-        let embedding: number[] = Array(VECTOR_SIZE).fill(0);
-        if (EmbeddingSearchService.isEnabled()) {
+          const batchChunks = chunks.slice(i, i + MAX_BATCH_SIZE);
+          const texts = batchChunks.map((c) => c.text);
+          let batchEmbeddings: number[][] = batchChunks.map(() =>
+            Array(VECTOR_SIZE).fill(0),
+          );
+
           let retryCount = 0;
           const maxRetries = 2;
 
           while (retryCount <= maxRetries) {
             try {
-              [embedding] = await embeddingProvider.embedTexts([chunk.text], {
+              batchEmbeddings = await embeddingProvider.embedTexts(texts, {
                 inputType: "passage",
-                timeout: 20_000,
+                timeout: 120_000,
                 signal: options?.signal,
               });
               break;
@@ -483,23 +493,32 @@ export class BackgroundIndexer {
               if (retryCount >= maxRetries) throw err;
               retryCount++;
               Zotero.debug(
-                `[BackgroundIndexer] Retry ${retryCount} for chunk ${chunk.id}`,
+                `[BackgroundIndexer] Retry ${retryCount} for chunk batch ${
+                  Math.floor(i / MAX_BATCH_SIZE) + 1
+                } of item ${targetId}`,
               );
             }
           }
-
+          allEmbeddings.push(...batchEmbeddings);
           Zotero.debug(
-            `[BackgroundIndexer] Chunk ${chunk.id} embedded successfully!`,
+            `[BackgroundIndexer] Batch ${
+              Math.floor(i / MAX_BATCH_SIZE) + 1
+            } for item ${targetId} embedded successfully!`,
           );
         }
+      } else {
+        allEmbeddings = chunks.map(() => Array(VECTOR_SIZE).fill(0));
+      }
 
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
         oramaChunks.push({
           id: `doc_${targetId}_${chunk.id}`,
           zoteroItemId: targetId.toString(),
           sourceType: "fulltext",
           content: chunk.text,
           pageNumber: chunk.pageStart || 0,
-          embedding,
+          embedding: allEmbeddings[i],
         });
       }
 
@@ -611,6 +630,7 @@ export class BackgroundIndexer {
     let alreadyIndexedCount = 0;
 
     try {
+      vectorStore.suspendSave();
       await new Promise<void>((resolve) => setTimeout(resolve, 50));
 
       const libraryIDs = this.resolveLibraryIDs(options.libraryIDs);
@@ -723,7 +743,7 @@ export class BackgroundIndexer {
             paperTitle
           });
         }
-        await new Promise<void>((resolve) => setTimeout(resolve, 150));
+        await new Promise<void>((resolve) => setTimeout(resolve, 10));
       }
 
       const finalIndexedCount = alreadyIndexedCount + indexedNew;
@@ -762,6 +782,9 @@ export class BackgroundIndexer {
         total: targetItems.length,
       };
     } finally {
+      await vectorStore.resumeSave();
+      await vectorStore.forceSave();
+
       this.isSingleMode = true;
       this.activeRunMode = null;
       this.abortController = null;

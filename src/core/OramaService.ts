@@ -48,6 +48,8 @@ export class OramaService {
   private saveTimeout: any = null;
   private readonly SAVE_DELAY_MS = 2000;
   private indexRecords = new Map<string, IndexRecord>();
+  private saveSuspended = false;
+  private savePendingWhileSuspended = false;
 
   /**
    * Startet die Orama-Datenbank und lädt ggf. einen gespeicherten Index von der Festplatte.
@@ -175,7 +177,14 @@ export class OramaService {
   }
 
   /**
-   * Prüft ob für ein Zotero-Item bereits Chunks in Orama gespeichert sind.
+   * Schnelle Prüfung ob ein Item in den Index-Records existiert (ohne DB-Suche).
+   */
+  public hasIndexRecord(zoteroItemId: string): boolean {
+    return this.indexRecords.has(zoteroItemId);
+  }
+
+  /**
+   * Prüft ob ein Item im Index-Record vorhanden ist (schnelle Prüfung ohne DB-Suche).
    * überspringt bei der Erst-Indexierung bereits vorhandene Items.
    */
   async isItemIndexed(zoteroItemId: string): Promise<boolean> {
@@ -293,7 +302,33 @@ export class OramaService {
     );
   }
 
+  /**
+   * Unterdrückt automatisches Speichern. Aufrufe von scheduleSave()
+   * werden als "ausstehend" vermerkt, aber nicht ausgeführt.
+   */
+  public suspendSave() {
+    this.saveSuspended = true;
+    this.savePendingWhileSuspended = false;
+  }
+
+  /**
+   * Hebt die Speicher-Unterdrückung auf. Falls während der Unterdrückung
+   * mindestens ein scheduleSave() aufgerufen wurde, wird jetzt einmalig gespeichert.
+   */
+  public async resumeSave() {
+    this.saveSuspended = false;
+    if (this.savePendingWhileSuspended) {
+      this.savePendingWhileSuspended = false;
+      this.scheduleSave();
+    }
+  }
+
   private scheduleSave() {
+    if (this.saveSuspended) {
+      this.savePendingWhileSuspended = true;
+      return;
+    }
+
     if (this.saveTimeout) {
       clearTimeout(this.saveTimeout);
       Zotero.debug(
