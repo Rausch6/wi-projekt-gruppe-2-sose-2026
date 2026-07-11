@@ -11,7 +11,6 @@ import {
   type EmbeddingConnectionResult,
 } from "./ai/embeddingConnectionStatus";
 import {
-  EMBEDDING_DEFAULT_BASE_URL,
   EMBEDDING_DEFAULT_MODEL,
   REQUIRED_EMBEDDING_MODEL,
   embeddingProvider,
@@ -21,6 +20,10 @@ import {
   KISSKI_DEFAULT_MODEL,
 } from "./ai/providers/KisskiProvider.js";
 import { OllamaProvider } from "./ai/providers/OllamaProvider.js";
+import {
+  OllamaLifecycleError,
+  ollamaLifecycleManager,
+} from "./ai/OllamaLifecycleManager";
 import {
   PaperContextService,
   type ChunkedPaper,
@@ -73,6 +76,7 @@ type PaperEmbeddingReportOptions = {
 type PaperEmbeddingReportRequest = number | PaperEmbeddingReportOptions;
 
 type OllamaSetupPlatform = "windows" | "macos";
+export type OllamaSetupMode = "embedding" | "local" | "local-with-embedding";
 
 const OLLAMA_SETUP_TEMP_DIR = "zaia-ollama-setup";
 const OLLAMA_WINDOWS_SETUP_FILES = [
@@ -80,7 +84,7 @@ const OLLAMA_WINDOWS_SETUP_FILES = [
   "setup-ollama-windows.ps1",
 ];
 const OLLAMA_MACOS_SETUP_FILE = "setup-ollama-macos.command";
-const OLLAMA_STARTUP_POLL_TIMEOUT_MS = 1_000;
+const OLLAMA_SETUP_MODE_FILE = "setup-mode.txt";
 
 export type PluginSettings = {
   provider: LLMProvider;
@@ -90,7 +94,6 @@ export type PluginSettings = {
   sendPaperContextToKisski: boolean;
   contextRouterProvider: LLMProvider;
   embeddingSearchEnabled: boolean;
-  embeddingBaseUrl: string;
   embeddingModel: string;
   maxItems: number;
   metadataFieldSelection: MetadataFieldSelectionValue;
@@ -208,7 +211,6 @@ class Addon {
         sendPaperContextToKisski: true,
         contextRouterProvider: "ollama",
         embeddingSearchEnabled: true,
-        embeddingBaseUrl: EMBEDDING_DEFAULT_BASE_URL,
         embeddingModel: EMBEDDING_DEFAULT_MODEL,
         ollamaBaseUrl: "http://localhost:11434",
         ollamaModel: "qwen2.5:3b",
@@ -235,13 +237,13 @@ class Addon {
         const providerConfig =
           provider === "ollama"
             ? {
-                baseUrl: this.data.settings.ollamaBaseUrl,
-                model: this.data.settings.ollamaModel,
+                baseUrl: this.data.settings.ollamaBaseUrl || undefined,
+                model: this.data.settings.ollamaModel || undefined,
               }
             : {
                 apiKey: this.data.settings.apiKey,
-                baseUrl: this.data.settings.baseUrl,
-                model: this.data.settings.model,
+                baseUrl: this.data.settings.baseUrl || undefined,
+                model: this.data.settings.model || undefined,
               };
 
         return aiProviderManager
@@ -257,7 +259,7 @@ class Addon {
       configureEmbeddings: () =>
         EmbeddingSearchService.configure({
           enabled: this.data.settings.embeddingSearchEnabled,
-          baseUrl: this.data.settings.embeddingBaseUrl,
+          baseUrl: this.data.settings.ollamaBaseUrl || undefined,
           model: this.data.settings.embeddingModel,
         }),
       analyze: async (query, options = {}) => {
@@ -265,6 +267,19 @@ class Addon {
         delete this.data.runtime.lastError;
 
         try {
+          const providerConnection = await this.checkProviderConnection(
+            this.data.settings.provider,
+          );
+          const embeddingConnection = await this.checkEmbeddingConnection();
+          if (
+            !providerConnection.ok ||
+            (this.data.settings.embeddingSearchEnabled &&
+              !embeddingConnection.ok)
+          ) {
+            throw new Error(
+              "ZAIA ist für den ausgewählten Modus noch nicht vollständig eingerichtet.",
+            );
+          }
           return await aiProviderManager.complete(query, options);
         } catch (error) {
           this.data.runtime.lastError =
@@ -336,13 +351,13 @@ class Addon {
     const providerConfig =
       provider === "ollama"
         ? {
-            baseUrl: this.data.settings.ollamaBaseUrl,
-            model: this.data.settings.ollamaModel,
+            baseUrl: this.data.settings.ollamaBaseUrl || undefined,
+            model: this.data.settings.ollamaModel || undefined,
           }
         : {
             apiKey: this.data.settings.apiKey,
-            baseUrl: this.data.settings.baseUrl,
-            model: this.data.settings.model,
+            baseUrl: this.data.settings.baseUrl || undefined,
+            model: this.data.settings.model || undefined,
           };
 
     return aiProviderManager.configureProvider(provider, providerConfig);
@@ -360,7 +375,9 @@ class Addon {
     this.configureProvider(provider);
 
     try {
-      const models = await aiProviderManager.listModels(provider);
+      const models = await aiProviderManager.listModels(provider, {
+        autoStart: false,
+      });
       const configuredModel = this.getConfiguredProviderModel(provider);
       const hasConfiguredModel = hasModel(models, configuredModel);
 
@@ -416,7 +433,16 @@ class Addon {
   }
 
   private async checkEmbeddingConnection(): Promise<EmbeddingConnectionResult> {
-    const baseUrl = this.data.settings.embeddingBaseUrl.trim();
+    if (!this.data.settings.embeddingSearchEnabled) {
+      const result = createEmbeddingConnectionResult("disabled", {
+        model: REQUIRED_EMBEDDING_MODEL,
+        message: "Semantic search is disabled.",
+      });
+      this.data.runtime.embeddingConnection = result;
+      return result;
+    }
+
+    const baseUrl = this.data.settings.ollamaBaseUrl.trim();
     const model = REQUIRED_EMBEDDING_MODEL;
 
     if (!baseUrl) {
@@ -436,7 +462,7 @@ class Addon {
     });
 
     try {
-      const models = await provider.listModels();
+      const models = await provider.listModels({ autoStart: false });
       if (!hasModel(models, model)) {
         const result = createEmbeddingConnectionResult("missing-model", {
           issue: "model-not-installed",
@@ -526,11 +552,14 @@ function hasModel(models: unknown, configuredModel: string) {
 }
 
 function getConnectionFailureStatus(error: unknown) {
+  if (error instanceof OllamaLifecycleError) return "unreachable";
   const name = getErrorName(error);
   return name === "AIProviderResponseError" ? "error" : "unreachable";
 }
 
 function getConnectionFailureIssue(error: unknown) {
+  const lifecycleIssue = getOllamaLifecycleConnectionIssue(error);
+  if (lifecycleIssue) return lifecycleIssue;
   const name = getErrorName(error);
   return name === "AIProviderResponseError"
     ? "invalid-response"
@@ -538,15 +567,29 @@ function getConnectionFailureIssue(error: unknown) {
 }
 
 function getEmbeddingConnectionFailureStatus(error: unknown) {
+  if (error instanceof OllamaLifecycleError) return "unreachable";
   const name = getErrorName(error);
   return name === "AIProviderResponseError" ? "error" : "unreachable";
 }
 
 function getEmbeddingConnectionFailureIssue(error: unknown) {
+  const lifecycleIssue = getOllamaLifecycleConnectionIssue(error);
+  if (lifecycleIssue) return lifecycleIssue;
   const name = getErrorName(error);
   return name === "AIProviderResponseError"
     ? "invalid-response"
     : "provider-unreachable";
+}
+
+function getOllamaLifecycleConnectionIssue(error: unknown) {
+  if (!(error instanceof OllamaLifecycleError)) return null;
+  if (error.issue === "not-installed") return "ollama-not-installed" as const;
+  if (error.issue === "not-running") return "ollama-not-running" as const;
+  if (error.issue === "startup-timeout") {
+    return "ollama-startup-timeout" as const;
+  }
+  if (error.issue === "start-failed") return "ollama-start-failed" as const;
+  return null;
 }
 
 function getErrorName(error: unknown) {
@@ -557,42 +600,42 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-async function launchOllamaSetup() {
+async function launchOllamaSetup(
+  mode: OllamaSetupMode = "local-with-embedding",
+) {
   const platform = getOllamaSetupPlatform();
   const setupDir = await ensureOllamaSetupTempDirectory();
+  await Zotero.File.putContentsAsync(
+    PathUtils.join(setupDir, OLLAMA_SETUP_MODE_FILE),
+    mode,
+    "utf-8",
+  );
   const launcherPath =
     platform === "windows"
       ? await prepareWindowsOllamaSetup(setupDir)
       : await prepareMacOllamaSetup(setupDir);
 
   Zotero.File.pathToFile(launcherPath).launch();
-  return { platform, path: launcherPath };
+  return { platform, path: launcherPath, mode };
 }
 
 async function startOllama(baseUrl: string) {
   const platform = getOllamaSetupPlatform();
-  if (await isOllamaServerReachable(baseUrl)) {
-    return { platform, started: false, alreadyRunning: true };
-  }
-
-  const launcher = await findOllamaLauncher(platform);
-  runDetachedProcess(launcher.executablePath, launcher.args);
+  const ownedBefore = ollamaLifecycleManager.ownsRunningProcess();
+  await ollamaLifecycleManager.ensureReady(baseUrl);
+  const ownedAfter = ollamaLifecycleManager.ownsRunningProcess();
+  const started = !ownedBefore && ownedAfter;
   return {
     platform,
-    started: true,
-    alreadyRunning: false,
-    path: launcher.executablePath,
+    started,
+    alreadyRunning: !started,
   };
 }
 
-async function stopOllama(baseUrl: string) {
+async function stopOllama(_baseUrl: string) {
   const platform = getOllamaSetupPlatform();
-  if (!(await isOllamaServerReachable(baseUrl))) {
-    return { platform, stopped: false, alreadyStopped: true };
-  }
-
-  await runOllamaStopCommand(platform);
-  return { platform, stopped: true, alreadyStopped: false };
+  const stopped = await ollamaLifecycleManager.shutdown();
+  return { platform, stopped, alreadyStopped: !stopped };
 }
 
 function getOllamaSetupPlatform(): OllamaSetupPlatform {
@@ -636,178 +679,6 @@ async function copyBundledSetupFile(fileName: string, targetDir: string) {
   const contents = await Zotero.File.getContentsFromURLAsync(sourceUrl);
   await Zotero.File.putContentsAsync(targetPath, contents, "utf-8");
   return targetPath;
-}
-
-async function findOllamaLauncher(platform: OllamaSetupPlatform) {
-  if (platform === "windows") {
-    const launcher = await findExistingLauncher(getWindowsOllamaLaunchers());
-    if (!launcher) throw new Error("Ollama is not installed.");
-    return launcher;
-  }
-
-  const appPath = await findExistingPath(getMacOllamaAppPaths());
-  if (appPath) {
-    return { executablePath: "/usr/bin/open", args: [appPath] };
-  }
-
-  const executablePath = await findExistingPath(getMacOllamaCliPaths());
-  if (!executablePath) throw new Error("Ollama is not installed.");
-  return { executablePath, args: ["serve"] };
-}
-
-async function findExistingPath(paths: string[]) {
-  for (const path of paths) {
-    if (path && (await IOUtils.exists(path))) return path;
-  }
-  return null;
-}
-
-async function findExistingLauncher(
-  launchers: Array<{ executablePath: string; args: string[] }>,
-) {
-  for (const launcher of launchers) {
-    if (
-      launcher.executablePath &&
-      (await IOUtils.exists(launcher.executablePath))
-    ) {
-      return launcher;
-    }
-  }
-  return null;
-}
-
-function getWindowsOllamaLaunchers() {
-  const launchers: Array<{ executablePath: string; args: string[] }> = [];
-  for (const basePath of getWindowsOllamaBasePaths()) {
-    launchers.push({
-      executablePath: PathUtils.join(basePath, "ollama.exe"),
-      args: ["serve"],
-    });
-    launchers.push({
-      executablePath: PathUtils.join(basePath, "ollama app.exe"),
-      args: [],
-    });
-  }
-  return launchers;
-}
-
-function getWindowsOllamaBasePaths() {
-  const localAppData = getEnv("LOCALAPPDATA");
-  const programFiles = getEnv("ProgramFiles");
-  const programFilesX86 = getEnv("ProgramFiles(x86)");
-  return [
-    localAppData ? PathUtils.join(localAppData, "Programs", "Ollama") : "",
-    localAppData ? PathUtils.join(localAppData, "Ollama") : "",
-    programFiles ? PathUtils.join(programFiles, "Ollama") : "",
-    programFilesX86 ? PathUtils.join(programFilesX86, "Ollama") : "",
-  ].filter(Boolean);
-}
-
-function getMacOllamaAppPaths() {
-  const home = getEnv("HOME");
-  return [
-    "/Applications/Ollama.app",
-    home ? PathUtils.join(home, "Applications", "Ollama.app") : "",
-  ].filter(Boolean);
-}
-
-function getMacOllamaCliPaths() {
-  return [
-    "/usr/local/bin/ollama",
-    "/opt/homebrew/bin/ollama",
-    "/usr/bin/ollama",
-  ];
-}
-
-function getEnv(name: string) {
-  return Services.env.exists(name) ? Services.env.get(name) : "";
-}
-
-function runDetachedProcess(executablePath: string, args: string[]) {
-  const executable = Zotero.File.pathToFile(executablePath);
-  const process = Components.classes[
-    "@mozilla.org/process/util;1"
-  ].createInstance(Components.interfaces.nsIProcess);
-  process.init(executable);
-  process.startHidden = true;
-  process.noShell = true;
-  process.runAsync(args, args.length);
-}
-
-async function runOllamaStopCommand(platform: OllamaSetupPlatform) {
-  if (platform === "windows") {
-    const taskkillPath = await findWindowsTaskkillPath();
-    runDetachedProcess(taskkillPath, ["/IM", "ollama.exe", "/T", "/F"]);
-    runDetachedProcess(taskkillPath, ["/IM", "ollama app.exe", "/T", "/F"]);
-    return;
-  }
-
-  await runMacOllamaStopCommands();
-}
-
-async function findWindowsTaskkillPath() {
-  const systemRoot = getEnv("SystemRoot") || "C:\\Windows";
-  const taskkillPath = PathUtils.join(systemRoot, "System32", "taskkill.exe");
-  if (await IOUtils.exists(taskkillPath)) return taskkillPath;
-
-  throw new Error("taskkill.exe was not found.");
-}
-
-async function runMacOllamaStopCommands() {
-  const pkillPath = "/usr/bin/pkill";
-  if (!(await IOUtils.exists(pkillPath))) {
-    throw new Error("pkill was not found.");
-  }
-
-  runDetachedProcess(pkillPath, ["-x", "Ollama"]);
-  runDetachedProcess(pkillPath, ["-x", "ollama"]);
-}
-
-async function isOllamaServerReachable(baseUrl: string) {
-  const normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, "");
-  if (!normalizedBaseUrl) return false;
-
-  try {
-    const response = await Zotero.HTTP.request(
-      "GET",
-      `${normalizedBaseUrl}/api/tags`,
-      {
-        timeout: OLLAMA_STARTUP_POLL_TIMEOUT_MS,
-        successCodes: false,
-        errorDelayMax: 0,
-      },
-    );
-    return response.status >= 200 && response.status < 300;
-  } catch (_zoteroHttpError) {
-    try {
-      const response = await raceWithTimeout(
-        fetch(`${normalizedBaseUrl}/api/tags`),
-        OLLAMA_STARTUP_POLL_TIMEOUT_MS,
-      );
-      return response.ok;
-    } catch (_fetchError) {
-      return false;
-    }
-  }
-}
-
-function raceWithTimeout<T>(promise: Promise<T>, timeout: number): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error(`Timed out after ${timeout} ms.`));
-    }, timeout);
-
-    Promise.resolve(promise).then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error) => {
-        clearTimeout(timer);
-        reject(error);
-      },
-    );
-  });
 }
 
 async function logSelectedPaperChunks(itemID?: number) {

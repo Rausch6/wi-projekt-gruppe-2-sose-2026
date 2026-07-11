@@ -1,8 +1,5 @@
 import { UIExampleFactory } from "./modules/examples";
-import {
-  EMBEDDING_DEFAULT_BASE_URL,
-  EMBEDDING_DEFAULT_MODEL,
-} from "./ai/EmbeddingProvider.js";
+import { EMBEDDING_DEFAULT_MODEL } from "./ai/EmbeddingProvider.js";
 import {
   DEFAULT_METADATA_FIELD_SELECTION,
   normalizeMetadataFieldSelection,
@@ -35,6 +32,7 @@ import { createZToolkit } from "./utils/ztoolkit";
 import type { LLMProvider } from "./addon";
 import { vectorStore } from "./core/OramaService";
 import { backgroundIndexer } from "./core/BackgroundIndexer";
+import { ollamaLifecycleManager } from "./ai/OllamaLifecycleManager";
 import {
   initializeIndexManagerWindow,
   handleIndexManagerWindowUnload,
@@ -55,7 +53,7 @@ function getPluginPref(key: string) {
 
 function getStringSetting(key: string, fallback = "") {
   const value = getPluginPref(key);
-  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+  return typeof value === "string" ? value.trim() : fallback;
 }
 
 function getNumberSetting(key: string, fallback: number) {
@@ -80,10 +78,6 @@ function loadSettings() {
     ),
     contextRouterProvider: getContextRouterProviderSetting(),
     embeddingSearchEnabled: getBooleanSetting("embeddingSearchEnabled", true),
-    embeddingBaseUrl: getStringSetting(
-      "embeddingBaseUrl",
-      EMBEDDING_DEFAULT_BASE_URL,
-    ),
     embeddingModel: getStringSetting("embeddingModel", EMBEDDING_DEFAULT_MODEL),
     maxItems: getNumberSetting("maxItems", 200),
     metadataFieldSelection: normalizeMetadataFieldSelection(
@@ -233,6 +227,12 @@ async function onMainWindowUnload(win: Window): Promise<void> {
 
 async function onShutdown(): Promise<void> {
   addon.data.alive = false;
+
+  try {
+    await ollamaLifecycleManager.shutdown();
+  } catch (error) {
+    Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+  }
 
   try {
     await vectorStore.forceSave();

@@ -13,7 +13,7 @@ declare const IOUtils: any;
 declare const OS: any;
 declare const PathUtils: any;
 
-const VECTOR_SIZE = 1024;
+export const VECTOR_SIZE = 1024;
 
 const mySchema = {
   id: "string",

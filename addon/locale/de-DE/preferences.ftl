@@ -16,6 +16,7 @@ pref-kisski-base-url-notice = Nur ändern, wenn ein anderer kompatibler Cloud-En
 pref-local-section-title = Lokales Modell
 pref-local-section-description = Einstellungen für lokale Modelle über Ollama.
 pref-ollama-base-url = Ollama Base URL
+pref-ollama-base-url-notice = Wird sowohl für das lokale Chat-Modell als auch für lokale Embeddings verwendet.
 pref-local-model = Standardmodell lokal
 pref-load-local-models =
     .label = Lokale Modelle laden
@@ -34,9 +35,7 @@ pref-context-router-provider-notice = Diese Auswahl entscheidet nur, welches Mod
 pref-test-embedding-service =
     .label = Embedding-Verbindung testen
 pref-context-advanced-summary = Erweiterte Recherche-Einstellungen
-pref-embedding-base-url = Embedding Base URL
-pref-embedding-model-fixed-label = Benötigtes Embedding-Modell
-pref-embedding-model-fixed-notice = ZAIA erwartet aktuell bge-m3:latest. Das Modell wird deshalb nicht als frei editierbares normales Setting angezeigt.
+
 
 pref-chat-section-title = Chatverlauf
 pref-chat-local-storage-notice = Chats werden lokal in Zotero gespeichert.

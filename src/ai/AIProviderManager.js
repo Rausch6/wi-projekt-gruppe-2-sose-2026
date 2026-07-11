@@ -64,8 +64,8 @@ export class AIProviderManager {
     return this.getProvider(providerId).isAvailable();
   }
 
-  listModels(providerId) {
-    return this.getProvider(providerId).listModels();
+  listModels(providerId, options) {
+    return this.getProvider(providerId).listModels(options);
   }
 
   chat(messages, options = {}) {
