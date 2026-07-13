@@ -47,13 +47,13 @@ import {
 import {
   LOCAL_OLLAMA_MODEL_INSTALLED_EVENT,
   LOCAL_OLLAMA_MODELS_CHANGED_EVENT,
-  createWindowAbortController,
   formatProgressStatus,
   getFriendlyErrorMessage,
   isAbortError,
   openLocalOllamaModelWindow,
   type LocalModelProgress,
 } from "./localOllamaModelWindow";
+import { createWindowAbortController } from "../utils/AbortController";
 import { getSelectableLocalModelValues } from "./localOllamaModels";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";

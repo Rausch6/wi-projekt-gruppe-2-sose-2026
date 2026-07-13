@@ -1977,10 +1977,21 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   display: none !important;
 }
 
-/* Aktiver Zustand – orangefarbener Warnhinweis */
-.zai-indexing-banner--active {
+/* Aktiver Zustand – orangefarbener Warnhinweis. Teilt sich die Farbe mit
+   --warning, analog zum Index Manager (.indexing-banner--active,
+   .indexing-banner--warning nutzen dort dieselbe Hintergrundfarbe). */
+.zai-indexing-banner--active,
+.zai-indexing-banner--warning {
   background-color: color-mix(in srgb, #f59e0b 10%, transparent);
   border: 1px solid color-mix(in srgb, #f59e0b 28%, transparent);
+}
+
+.zai-indexing-banner--warning {
+  animation: zai-fade-in 0.25s ease;
+}
+
+.zai-indexing-banner--warning .zai-indexing-success-text {
+  color: color-mix(in srgb, currentColor 80%, #f59e0b);
 }
 
 /* Erfolgs-Zustand – grüner Hinweis */
@@ -1988,6 +1999,17 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   background-color: color-mix(in srgb, #22c55e 10%, transparent);
   border: 1px solid color-mix(in srgb, #22c55e 28%, transparent);
   animation: zai-fade-in 0.25s ease;
+}
+
+/* Fehler-Zustand – roter Hinweis */
+.zai-indexing-banner--error {
+  background-color: color-mix(in srgb, #dc2626 10%, transparent);
+  border: 1px solid color-mix(in srgb, #dc2626 28%, transparent);
+  animation: zai-fade-in 0.25s ease;
+}
+
+.zai-indexing-banner--error .zai-indexing-success-text {
+  color: color-mix(in srgb, currentColor 80%, #dc2626);
 }
 
 /* Aktiver Fortschrittstext */

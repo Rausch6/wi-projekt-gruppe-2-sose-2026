@@ -89,6 +89,10 @@ function loadSettings() {
     ollamaBaseUrl: getStringSetting("ollamaBaseUrl", "http://localhost:11434"),
     ollamaModel: getStringSetting("ollamaModel", "qwen2.5:3b"),
     autoDeleteOldChats: getBooleanSetting("autoDeleteOldChats", true),
+    initialIndexPromptShown: getBooleanSetting(
+      "initialIndexPromptShown",
+      false,
+    ),
     chunkTargetTokens: getNumberSetting("chunkTargetTokens", 512),
     chunkOverlapTokens: getNumberSetting("chunkOverlapTokens", 100),
     chunkCount: getNumberSetting("chunkCount", 3),
@@ -115,8 +119,8 @@ async function onStartup() {
     await vectorStore.initialize();
     Zotero.debug("[ZAIA-Startup] vectorStore initialized.");
 
-    // Log currently indexed documents to debug channel
-    await vectorStore.logIndexedDocuments();
+    // Wir loggen hier nicht mehr automatisch alle indexierten Dokumente,
+    // um "Item data not loaded" Warnungen beim Zotero-Start zu vermeiden.
 
     backgroundIndexer.initialize();
     Zotero.debug("[ZAIA-Startup] backgroundIndexer initialized.");
@@ -134,15 +138,7 @@ async function onStartup() {
 
   await registerPreferencesPane();
 
-  await UIExampleFactory.registerExtraColumn();
-
-  await UIExampleFactory.registerExtraColumnWithCustomCell();
-
   UIExampleFactory.registerItemPaneCustomInfoRow();
-
-  UIExampleFactory.unregisterAssistantSidenavButton();
-
-  UIExampleFactory.unregisterTemplateItemPaneSections();
 
   await Promise.all(
     Zotero.getMainWindows().map((win) => onMainWindowLoad(win)),
@@ -250,8 +246,6 @@ async function onShutdown(): Promise<void> {
       UIExampleFactory.unregisterAssistantToolbarButton(win);
       unregisterAssistantSidebarController(win);
     });
-    UIExampleFactory.unregisterAssistantSidenavButton();
-    UIExampleFactory.unregisterTemplateItemPaneSections();
     ztoolkit.unregisterAll();
     addon.data.dialog?.window?.close();
   } catch (error) {

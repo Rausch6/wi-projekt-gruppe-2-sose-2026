@@ -155,9 +155,10 @@ function isIndexableRegularItem(item: Zotero.Item | null | undefined) {
 }
 
 function isDeleted(item: Zotero.Item) {
+  const isUnloaded = (item as any)._loaded === false;
   return Boolean(
     (item as Zotero.Item & { deleted?: boolean }).deleted ??
-    item.getField("deleted"),
+    (isUnloaded ? false : item.getField("deleted")),
   );
 }
 

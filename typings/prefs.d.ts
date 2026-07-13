@@ -20,6 +20,7 @@ declare namespace _ZoteroTypes {
       "maxItems": number;
       "metadataFieldSelection": string;
       "autoDeleteOldChats": boolean;
+      "initialIndexPromptShown": boolean;
       "chunkTargetTokens": number;
       "chunkOverlapTokens": number;
       "chunkCount": number;

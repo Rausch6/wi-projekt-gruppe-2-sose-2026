@@ -1,5 +1,5 @@
 import { config } from "../../package.json";
-import { createAbortController } from "../utils/AbortController";
+import { createWindowAbortController } from "../utils/AbortController";
 import { LOCAL_OLLAMA_MODEL_CATALOG } from "./localOllamaModels";
 
 export const LOCAL_OLLAMA_MODEL_INSTALLED_EVENT =
@@ -1259,16 +1259,4 @@ function createHtmlButton(doc: Document, className: string, text: string) {
   button.textContent = text;
   button.type = "button";
   return button;
-}
-
-export function createWindowAbortController(win: Window) {
-  const AbortControllerCtor = (
-    win as Window & { AbortController?: typeof AbortController }
-  ).AbortController;
-
-  if (typeof AbortControllerCtor === "function") {
-    return new AbortControllerCtor();
-  }
-
-  return createAbortController();
 }

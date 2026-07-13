@@ -43,6 +43,7 @@ const DEFAULT_SETTINGS = {
   ollamaBaseUrl: OLLAMA_DEFAULT_BASE_URL,
   ollamaModel: OLLAMA_DEFAULT_MODEL,
   autoDeleteOldChats: true,
+  initialIndexPromptShown: false,
   chunkTargetTokens: 512,
   chunkOverlapTokens: 100,
   chunkCount: 3,
@@ -140,30 +141,6 @@ function bindPreferenceEvents(window: Window) {
   bindCommand(window, "test-embedding-service", () => {
     void testEmbeddingService(window);
   });
-  bindCommand(window, "start-indexing", () => {
-    void addon.api.backgroundIndexer
-      .indexAllLibraryItems()
-      .then(
-        (stats: {
-          newlyIndexed: number;
-          alreadyIndexed: number;
-          total: number;
-        }) => {
-          if (stats.newlyIndexed === 0 && stats.total > 0) {
-            window.alert(
-              "Alle unterstützten Dokumente sind bereits indexiert.",
-            );
-          } else if (stats.total === 0) {
-            window.alert(
-              "Keine unterstützten Dokumente (PDFs) in der Bibliothek gefunden.",
-            );
-          }
-        },
-      )
-      .catch((err: any) => {
-        window.alert(`Indexierung fehlgeschlagen: ${err}`);
-      });
-  });
   bindCommand(window, "open-index-manager", () => {
     openIndexManager(window);
   });
@@ -232,6 +209,9 @@ function readSettingsFromFields(window: Window): PluginSettings {
     ),
     ollamaModel: readTextValue(window, "ollama-model", OLLAMA_DEFAULT_MODEL),
     autoDeleteOldChats: readBooleanValue(window, "auto-delete-old-chats", true),
+    initialIndexPromptShown:
+      addon.data.settings.initialIndexPromptShown ??
+      DEFAULT_SETTINGS.initialIndexPromptShown,
     chunkTargetTokens:
       addon.data.settings.chunkTargetTokens ||
       DEFAULT_SETTINGS.chunkTargetTokens,

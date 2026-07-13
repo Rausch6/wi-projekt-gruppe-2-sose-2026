@@ -24,6 +24,8 @@ export interface IndexingStatusEvent {
   skipped?: boolean;
   unchanged?: boolean;
   paperTitle?: string;
+  /** Anzahl Papers ohne extrahierbaren Text, die bei einem Bibliotheks-Lauf übersprungen wurden. */
+  skippedCount?: number;
 }
 
 type IndexingEventMap = {
@@ -34,6 +36,7 @@ type IndexingEventMap = {
   deleted: IndexingStatusEvent;
   error: { message: string; itemID?: number; paperTitle?: string };
   finished: IndexingStatusEvent;
+  aborted: IndexingStatusEvent;
 };
 
 type Listener<T> = (event: T) => void;

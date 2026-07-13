@@ -66,6 +66,14 @@ export class PdfExtractor {
 
     const item = await resolveRegularItem(parentItem) || attachment;
 
+    // Ensure item data (title, creators, year) is fully loaded before calling getField().
+    // Without this, Zotero may emit "Item data not loaded" warnings.
+    try {
+      await item.loadAllData(true);
+    } catch (e) {
+      Zotero.debug(`ZAIA: Item ${item.id} konnte nicht vollständig geladen werden: ${e}`);
+    }
+
     const text = await readZoteroFullText(attachment);
     if (!text.trim()) {
       Zotero.debug(

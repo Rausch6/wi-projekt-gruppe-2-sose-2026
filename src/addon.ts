@@ -54,6 +54,9 @@ import {
 } from "./ui/assistantChatController";
 import { openAssistantSidebar } from "./ui/assistantSidebarController";
 import { createZToolkit } from "./utils/ztoolkit";
+import { indexingEvents } from "./core/IndexingEventBus";
+import { backgroundIndexer } from "./core/BackgroundIndexer";
+import { vectorStore } from "./core/OramaService";
 
 export type LLMProvider = "kisski" | "ollama";
 let lastPaperChunkReport = "";
@@ -97,6 +100,7 @@ export type PluginSettings = {
   ollamaBaseUrl: string;
   ollamaModel: string;
   autoDeleteOldChats: boolean;
+  initialIndexPromptShown: boolean;
   chunkTargetTokens: number;
   chunkOverlapTokens: number;
   chunkCount: number;
@@ -213,6 +217,7 @@ class Addon {
         maxItems: 200,
         metadataFieldSelection: "title,creators,publicationDate",
         autoDeleteOldChats: true,
+        initialIndexPromptShown: false,
         chunkTargetTokens: 512,
         chunkOverlapTokens: 100,
         chunkCount: 3,
@@ -336,9 +341,9 @@ class Addon {
         openAssistantSidebar(win);
         return true;
       },
-      indexingEvents: require("./core/IndexingEventBus").indexingEvents,
-      backgroundIndexer: require("./core/BackgroundIndexer").backgroundIndexer,
-      vectorStore: require("./core/OramaService").vectorStore,
+      indexingEvents,
+      backgroundIndexer,
+      vectorStore,
     };
   }
 
