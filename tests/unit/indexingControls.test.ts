@@ -324,7 +324,7 @@ describe("indexing controls", () => {
     markInitialIndexPromptShown();
 
     expect(prefSet).toHaveBeenCalledWith(
-      "extensions.zotero.addontemplate.initialIndexPromptShown",
+      "extensions.zotero.zaia.initialIndexPromptShown",
       true,
       true,
     );

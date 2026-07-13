@@ -1,24 +1,24 @@
 {
-  "name": "zotero-plugin-template",
+  "name": "zaia",
   "type": "module",
   "version": "0.0.1",
-  "description": "Zotero Sentiment Search AI",
+  "description": "ZAIA erweitert Zotero um einen KI-gestützten Assistenten für Fragen, Zusammenfassungen und die kontextbezogene Arbeit mit wissenschaftlichen Publikationen.",
   "config": {
-    "addonName": "Zotero Sentiment Search AI",
-    "addonID": "addontemplate@euclpts.com",
-    "addonRef": "addontemplate",
-    "addonInstance": "AddonTemplate",
-    "prefsPrefix": "extensions.zotero.addontemplate"
+    "addonName": "ZAIA - Zotero AI Assistent",
+    "addonID": "zaia@zaia-plugin.vercel.app",
+    "addonRef": "zaia",
+    "addonInstance": "ZAIA",
+    "prefsPrefix": "extensions.zotero.zaia"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Rausch6/wi-projekt-gruppe-2-sose-2026.git"
   },
-  "author": "windingwind",
+  "author": "Gruppe 2 - WI-Projekt - SoSe 2026",
   "bugs": {
     "url": "https://github.com/Rausch6/wi-projekt-gruppe-2-sose-2026/issues"
   },
-  "homepage": "https://github.com/Rausch6/wi-projekt-gruppe-2-sose-2026#readme",
+  "homepage": "https://zaia-plugin.vercel.app",
   "license": "AGPL-3.0-or-later",
   "scripts": {
     "start": "zotero-plugin serve",

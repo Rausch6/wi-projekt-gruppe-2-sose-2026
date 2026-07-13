@@ -1,10 +1,10 @@
 {
   "manifest_version": 2,
-  "name": "Zotero Sentiment Search AI",
+  "name": "__addonName__",
   "version": "0.0.1",
   "description": "__description__",
   "homepage_url": "__homepage__",
-  "author": "Gruppe 2",
+  "author": "__author__",
   "icons": {
     "48": "content/icons/favicon_0.5x.png",
     "96": "content/icons/favicon.png"

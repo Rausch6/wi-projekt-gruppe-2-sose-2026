@@ -56,7 +56,7 @@ const ABOUT_LINKS = [
   {
     label: "GitHub",
     description: "Technische Umsetzung und Projektstruktur.",
-    url: "GITHUB_URL",
+    url: "https://github.com/Rausch6/wi-projekt-gruppe-2-sose-2026/",
     icon: "github",
   },
 ];
@@ -348,7 +348,6 @@ function createAboutLinkCard(
   );
   anchor.addEventListener("click", (event) => {
     event.preventDefault();
-    if (link.url.endsWith("_URL")) return;
     Zotero.launchURL(link.url);
   });
   return anchor;
