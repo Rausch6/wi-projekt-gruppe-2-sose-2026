@@ -1,45 +1,37 @@
-# ZAIA Ollama setup
+# ZAIA Ollama app setup
 
-This folder contains double-click setup helpers for the local ZAIA LLM runtime.
-ZAIA writes the requested mode to `setup-mode.txt` before launching a helper.
+This folder contains the platform launchers used when ZAIA cannot find a local
+Ollama installation. The helpers install only the Ollama desktop app. Chat and
+embedding models are downloaded separately through ZAIA, where their progress
+can be displayed and cancelled.
 
-Supported modes:
+Each launch runs in its own temporary directory. The helper writes its final
+state to `setup-result.json`, allowing ZAIA to react to success, cancellation,
+or failure and to start and verify the local service automatically.
 
-```text
-embedding             Ollama + bge-m3:latest
-local                 Ollama + qwen2.5:3b
-local-with-embedding  Ollama + qwen2.5:3b + bge-m3:latest
-```
+## Security
 
-## Windows 11
+The setup does not execute a remotely downloaded shell or PowerShell script.
+It downloads the current official desktop artifact directly from
+`https://ollama.com/download` and verifies its platform signature before
+installation:
 
-Double-click:
+- macOS: `Ollama-darwin.zip`, checked with `codesign` and Gatekeeper (`spctl`)
+- Windows: `OllamaSetup.exe`, checked with `Get-AuthenticodeSignature` and the
+  expected Ollama publisher
 
-```text
-setup-ollama-windows.cmd
-```
+## Windows
 
-The script opens a classic terminal installer flow, asks before installing
-Ollama, starts the local service for the installation, and downloads only the
-models selected by the setup mode.
+ZAIA launches `setup-ollama-windows.cmd`, which opens the PowerShell helper and
+waits for the signed Ollama installer to finish.
 
 ## macOS
 
-Double-click:
-
-```text
-setup-ollama-macos.command
-```
-
-If macOS blocks the file because it is not executable, run once in Terminal:
-
-```sh
-chmod +x setup/setup-ollama-macos.command
-```
+ZAIA launches `setup-ollama-macos.command`. The verified app is installed to
+`/Applications`, or to `~/Applications` when the system-wide directory is not
+writable.
 
 ## Plugin defaults
-
-The plugin already uses the same local configuration:
 
 ```text
 Ollama base URL:  http://localhost:11434
@@ -47,9 +39,6 @@ Ollama model:     qwen2.5:3b
 Embedding model:  bge-m3:latest
 ```
 
-If you changed these values in Zotero preferences, set them back to the values
-above.
-
 During regular use ZAIA starts `ollama serve` silently when a local operation
-needs it. Users do not have to start the Ollama app manually. ZAIA only stops a
-process that it started itself.
+needs it. ZAIA only stops a process that it started itself unless the user
+explicitly chooses the complete termination action.

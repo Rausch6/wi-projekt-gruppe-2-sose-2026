@@ -21,7 +21,7 @@ import {
 } from "../core/MetadataFieldSelection";
 import { CreateChatInput, StoredChat } from "../core/chatTypes";
 import { renderMarkdownContent } from "./markdownRenderer";
-import type { LLMProvider, OllamaSetupMode } from "../addon";
+import type { LLMProvider } from "../addon";
 import { REQUIRED_EMBEDDING_MODEL } from "../ai/EmbeddingProvider.js";
 import { OLLAMA_DEFAULT_MODEL } from "../ai/providers/OllamaProvider.js";
 import { KISSKI_MODEL_OPTIONS } from "../ai/providers/KisskiProvider.js";
@@ -208,7 +208,7 @@ let activeChatCancelRequested = false;
 let modelPickerExpanded = false;
 let activeAssistantResponse: ActiveAssistantResponse | null = null;
 let ollamaSetupLaunchRunning = false;
-let ollamaSetupAwaitingCompletion = false;
+let ollamaSetupStatusText = "";
 let ollamaStartRunning = false;
 let ollamaTerminateRunning = false;
 let lastPromptContextRouteDebug: PromptContextRouteDebug | null = null;
@@ -436,10 +436,10 @@ export function bindAssistantChat(host: HTMLElement) {
     } else if (action === "open-semantic-settings") {
       openSemanticSearchPreference();
     } else if (action === "check-readiness") {
-      ollamaSetupAwaitingCompletion = false;
+      ollamaSetupStatusText = "";
       void revalidateCurrentReadiness(true);
     } else if (action === "launch-required-setup") {
-      void launchOllamaSetup(getRequiredOllamaSetupMode());
+      void launchOllamaSetup();
     } else if (action === "start-ollama") {
       void startOllama();
     } else if (action === "install-default-local-model") {
@@ -2388,10 +2388,8 @@ function syncSetupTimeline(
 
   if (liveStatus) {
     const statusText = ollamaSetupLaunchRunning
-      ? getString("sidebar-launching-ollama-setup")
-      : ollamaSetupAwaitingCompletion
-        ? getString("sidebar-setup-external-running")
-        : "";
+      ? getString("sidebar-setup-external-running")
+      : ollamaSetupStatusText;
     liveStatus.textContent = statusText;
     liveStatus.toggleAttribute("hidden", !statusText);
   }
@@ -2426,6 +2424,9 @@ function createSetupMilestoneElement(
   );
   const copy = getSetupMilestoneCopy(milestone, readiness);
   const download = getSetupMilestoneDownload(milestone.id);
+  const showDetails =
+    needsAttention || milestone.state === "checking" || Boolean(download);
+  item.classList.toggle("zai-setup-milestone-compact", !showDetails);
   const heading = createControllerHtmlElement(
     doc,
     "div",
@@ -2444,18 +2445,20 @@ function createSetupMilestoneElement(
     getMilestoneStateLabel(milestone.state),
   );
   heading.append(title, badge);
-  card.append(
-    heading,
-    createControllerHtmlElement(
-      doc,
-      "p",
-      "zai-setup-step-description",
-      copy.description,
-    ),
-  );
+  card.append(heading);
+  if (showDetails) {
+    card.append(
+      createControllerHtmlElement(
+        doc,
+        "p",
+        "zai-setup-step-description",
+        copy.description,
+      ),
+    );
+  }
 
   const statusText = download ? download.statusText : copy.status;
-  if (statusText) {
+  if (showDetails && statusText) {
     card.append(
       createControllerHtmlElement(
         doc,
@@ -2524,9 +2527,20 @@ function getSetupMilestoneCopy(
       };
     case "ollama-installation":
       return {
-        title: getString("sidebar-milestone-ollama-title"),
-        description: getString("sidebar-milestone-ollama-description"),
+        title: getString("sidebar-milestone-ollama-installation-title"),
+        description: getString(
+          "sidebar-milestone-ollama-installation-description",
+        ),
         status: getOllamaInstallationStatusText(
+          readiness.provider === "ollama" ? providerConnection : undefined,
+          embeddingConnection,
+        ),
+      };
+    case "ollama-service":
+      return {
+        title: getString("sidebar-milestone-ollama-service-title"),
+        description: getString("sidebar-milestone-ollama-service-description"),
+        status: getOllamaServiceStatusText(
           readiness.provider === "ollama" ? providerConnection : undefined,
           embeddingConnection,
         ),
@@ -2624,9 +2638,6 @@ function createSetupMilestoneActions(
   const providerConnection =
     addon.data.runtime.providerConnections[readiness.provider];
   const embeddingConnection = addon.data.runtime.embeddingConnection;
-  const ollamaNotRunning =
-    providerConnection?.issue === "ollama-not-running" ||
-    embeddingConnection.issue === "ollama-not-running";
 
   switch (milestone.id) {
     case "cloud-connection":
@@ -2642,75 +2653,51 @@ function createSetupMilestoneActions(
       }
       break;
     case "ollama-installation":
-      if (ollamaNotRunning && !ollamaSetupAwaitingCompletion) {
-        addAction(
-          "start-ollama",
-          ollamaStartRunning
-            ? getString("sidebar-starting-ollama")
-            : getString("sidebar-start-ollama"),
-        );
+      if (
+        providerConnection?.status === "missing-config" ||
+        embeddingConnection.status === "missing-config"
+      ) {
+        addAction("open-preferences", getString("sidebar-open-preferences"));
       } else {
         addAction(
-          ollamaSetupAwaitingCompletion
-            ? "check-readiness"
-            : "launch-required-setup",
-          ollamaSetupAwaitingCompletion
-            ? getString("sidebar-setup-check-again")
-            : getString("sidebar-launch-ollama-setup"),
+          "launch-required-setup",
+          getString("sidebar-launch-ollama-setup"),
         );
       }
+      break;
+    case "ollama-service":
       addAction(
-        "open-preferences",
-        getString("sidebar-open-preferences"),
-        true,
+        "start-ollama",
+        ollamaStartRunning
+          ? getString("sidebar-starting-ollama")
+          : getString("sidebar-start-ollama"),
       );
+      addAction("check-readiness", getString("sidebar-check-provider"), true);
       break;
     case "local-model":
       addAction(
-        ollamaSetupAwaitingCompletion
-          ? "check-readiness"
-          : getActiveModel("ollama") === OLLAMA_DEFAULT_MODEL
-            ? "install-default-local-model"
-            : "open-local-model-window",
-        ollamaSetupAwaitingCompletion
-          ? getString("sidebar-setup-check-again")
-          : getActiveModel("ollama") === OLLAMA_DEFAULT_MODEL
-            ? getString(
-                download?.status === "error"
-                  ? "sidebar-retry-model-download"
-                  : "sidebar-install-default-local-model",
-              )
-            : getString("sidebar-open-local-model-window"),
+        getActiveModel("ollama") === OLLAMA_DEFAULT_MODEL
+          ? "install-default-local-model"
+          : "open-local-model-window",
+        getActiveModel("ollama") === OLLAMA_DEFAULT_MODEL
+          ? getString(
+              download?.status === "error"
+                ? "sidebar-retry-model-download"
+                : "sidebar-install-default-local-model",
+            )
+          : getString("sidebar-open-local-model-window"),
       );
       addAction("check-readiness", getString("sidebar-check-provider"), true);
-      addAction(
-        "open-preferences",
-        getString("sidebar-open-preferences"),
-        true,
-      );
       break;
     case "embedding":
-      if (ollamaNotRunning && !ollamaSetupAwaitingCompletion) {
-        addAction(
-          "start-ollama",
-          ollamaStartRunning
-            ? getString("sidebar-starting-ollama")
-            : getString("sidebar-start-ollama"),
-        );
-      } else {
-        addAction(
-          ollamaSetupAwaitingCompletion
-            ? "check-readiness"
-            : "install-embedding-model",
-          ollamaSetupAwaitingCompletion
-            ? getString("sidebar-setup-check-again")
-            : getString(
-                download?.status === "error"
-                  ? "sidebar-retry-model-download"
-                  : "sidebar-install-embedding-model",
-              ),
-        );
-      }
+      addAction(
+        "install-embedding-model",
+        getString(
+          download?.status === "error"
+            ? "sidebar-retry-model-download"
+            : "sidebar-install-embedding-model",
+        ),
+      );
       addAction(
         "open-semantic-settings",
         getString("sidebar-disable-semantic-search"),
@@ -2741,6 +2728,36 @@ function getOllamaInstallationStatusText(
   ) {
     return getString("sidebar-ollama-not-installed");
   }
+
+  const active = providerConnection ?? embeddingConnection;
+  if (active.status === "checking") {
+    return getString("sidebar-checking-provider");
+  }
+  if (active.status === "missing-config") {
+    if (active.issue === "base-url-missing") {
+      return getString("sidebar-base-url-missing");
+    }
+    return getString("sidebar-local-config-incomplete");
+  }
+  if (active.status === "unknown" || active.status === "disabled") {
+    return getString("sidebar-connection-not-checked");
+  }
+  return getString("sidebar-milestone-ollama-installation-ready");
+}
+
+function getOllamaServiceStatusText(
+  providerConnection: ProviderConnectionResult | undefined,
+  embeddingConnection: EmbeddingConnectionResult,
+) {
+  const connections = [providerConnection, embeddingConnection];
+
+  if (
+    connections.some(
+      (connection) => connection?.issue === "ollama-not-installed",
+    )
+  ) {
+    return "";
+  }
   if (
     connections.some((connection) => connection?.issue === "ollama-not-running")
   ) {
@@ -2765,17 +2782,8 @@ function getOllamaInstallationStatusText(
   if (active.status === "checking") {
     return getString("sidebar-checking-provider");
   }
-  if (active.status === "missing-config") {
-    if (active.issue === "base-url-missing") {
-      return getString("sidebar-base-url-missing");
-    }
-    if (active.issue === "model-missing") {
-      return getString("sidebar-model-missing");
-    }
-    return getString("sidebar-local-config-incomplete");
-  }
   if (active.status === "ready" || active.status === "missing-model") {
-    return getString("sidebar-milestone-ollama-ready");
+    return getString("sidebar-milestone-ollama-service-ready");
   }
   if (active.status === "unknown" || active.status === "disabled") {
     return getString("sidebar-connection-not-checked");
@@ -4165,40 +4173,66 @@ async function checkEmbeddingConnection(force: boolean) {
   }
 }
 
-function getRequiredOllamaSetupMode(): OllamaSetupMode {
-  if (getActiveProvider() === "kisski") return "embedding";
-  return addon.data.settings.embeddingSearchEnabled
-    ? "local-with-embedding"
-    : "local";
-}
-
-async function launchOllamaSetup(
-  mode: OllamaSetupMode = getRequiredOllamaSetupMode(),
-) {
+async function launchOllamaSetup() {
   if (ollamaSetupLaunchRunning) return;
 
   ollamaSetupLaunchRunning = true;
+  ollamaSetupStatusText = "";
   renderAllHosts();
 
   try {
-    await addon.api.launchOllamaSetup(mode);
-    ollamaSetupAwaitingCompletion = true;
+    const result = await addon.api.launchOllamaSetup();
+    if (result.status === "cancelled") {
+      ollamaSetupStatusText = getString("sidebar-ollama-setup-cancelled");
+      return;
+    }
+    if (result.status === "error") {
+      const message = getOllamaSetupErrorText(result.code);
+      setOllamaSetupConnectionError(message);
+      ollamaSetupStatusText = message;
+      return;
+    }
+
+    ollamaSetupStatusText = getString("sidebar-ollama-setup-installed");
+    await startOllama();
   } catch (error) {
     Zotero.logError(error instanceof Error ? error : new Error(String(error)));
-    const currentConnection = addon.data.runtime.providerConnections.ollama;
-    addon.data.runtime.providerConnections.ollama = {
-      ...(currentConnection ??
-        createProviderConnectionResult("ollama", "error")),
-      status: "error",
-      ok: false,
-      issue: "unknown-error",
-      error: error instanceof Error ? error.message : String(error),
-      message: getString("sidebar-launch-ollama-setup-failed"),
-    };
+    const message = getString("sidebar-launch-ollama-setup-failed");
+    setOllamaSetupConnectionError(
+      message,
+      error instanceof Error ? error.message : String(error),
+    );
+    ollamaSetupStatusText = message;
   } finally {
     ollamaSetupLaunchRunning = false;
     renderAllHosts();
   }
+}
+
+function getOllamaSetupErrorText(code: string) {
+  if (code === "download-failed") {
+    return getString("sidebar-ollama-setup-download-failed");
+  }
+  if (
+    code === "invalid-signature" ||
+    code === "unexpected-publisher" ||
+    code === "not-notarized"
+  ) {
+    return getString("sidebar-ollama-setup-verification-failed");
+  }
+  return getString("sidebar-ollama-setup-install-failed");
+}
+
+function setOllamaSetupConnectionError(message: string, error = message) {
+  const currentConnection = addon.data.runtime.providerConnections.ollama;
+  addon.data.runtime.providerConnections.ollama = {
+    ...(currentConnection ??
+      createProviderConnectionResult("ollama", "unreachable", {
+        issue: "ollama-not-installed",
+      })),
+    error,
+    message,
+  };
 }
 
 async function startOllama() {
@@ -4218,7 +4252,7 @@ async function startOllama() {
         createProviderConnectionResult("ollama", "error")),
       status: "error",
       ok: false,
-      issue: "unknown-error",
+      issue: "ollama-start-failed",
       error: error instanceof Error ? error.message : String(error),
       message: getString("sidebar-start-ollama-failed"),
     };

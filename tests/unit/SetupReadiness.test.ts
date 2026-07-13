@@ -23,7 +23,7 @@ describe("setup readiness", () => {
     ]);
   });
 
-  it("shares one Ollama-installation step for cloud chat with embeddings", () => {
+  it("shares Ollama app and service steps for cloud chat with embeddings", () => {
     const readiness = deriveSetupReadiness(
       baseSettings,
       createProviderConnectionResult("kisski", "ready"),
@@ -34,6 +34,7 @@ describe("setup readiness", () => {
     expect(readiness.milestones).toEqual([
       { id: "cloud-connection", state: "complete" },
       { id: "ollama-installation", state: "complete" },
+      { id: "ollama-service", state: "complete" },
       { id: "embedding", state: "complete" },
     ]);
   });
@@ -50,7 +51,8 @@ describe("setup readiness", () => {
     expect(readiness.ready).toBe(false);
     expect(readiness.milestones).toEqual([
       { id: "cloud-connection", state: "complete" },
-      { id: "ollama-installation", state: "action" },
+      { id: "ollama-installation", state: "complete" },
+      { id: "ollama-service", state: "action" },
       { id: "embedding", state: "pending" },
     ]);
   });
@@ -97,6 +99,7 @@ describe("setup readiness", () => {
     expect(readiness.ready).toBe(true);
     expect(readiness.milestones).toEqual([
       { id: "ollama-installation", state: "complete" },
+      { id: "ollama-service", state: "complete" },
       { id: "local-model", state: "complete" },
     ]);
   });
@@ -118,6 +121,7 @@ describe("setup readiness", () => {
     expect(readiness.ready).toBe(false);
     expect(readiness.milestones).toEqual([
       { id: "ollama-installation", state: "action" },
+      { id: "ollama-service", state: "pending" },
       { id: "local-model", state: "pending" },
     ]);
   });
@@ -138,6 +142,7 @@ describe("setup readiness", () => {
     expect(readiness.ready).toBe(false);
     expect(readiness.milestones).toEqual([
       { id: "ollama-installation", state: "complete" },
+      { id: "ollama-service", state: "complete" },
       { id: "local-model", state: "action" },
       { id: "embedding", state: "action" },
     ]);
@@ -192,6 +197,10 @@ describe("setup readiness", () => {
       state: "complete",
     });
     expect(readiness.milestones).toContainEqual({
+      id: "ollama-service",
+      state: "complete",
+    });
+    expect(readiness.milestones).toContainEqual({
       id: "local-model",
       state: "pending",
     });
@@ -214,7 +223,32 @@ describe("setup readiness", () => {
     expect(readiness.ready).toBe(false);
     expect(readiness.milestones).toContainEqual({
       id: "ollama-installation",
+      state: "complete",
+    });
+    expect(readiness.milestones).toContainEqual({
+      id: "ollama-service",
       state: "action",
     });
+  });
+
+  it("keeps the app complete when only the Ollama service fails to start", () => {
+    const readiness = deriveSetupReadiness(
+      {
+        ...baseSettings,
+        provider: "ollama",
+        apiKey: "",
+        embeddingSearchEnabled: false,
+      },
+      createProviderConnectionResult("ollama", "error", {
+        issue: "ollama-start-failed",
+      }),
+      createEmbeddingConnectionResult("disabled"),
+    );
+
+    expect(readiness.milestones).toEqual([
+      { id: "ollama-installation", state: "complete" },
+      { id: "ollama-service", state: "error" },
+      { id: "local-model", state: "pending" },
+    ]);
   });
 });

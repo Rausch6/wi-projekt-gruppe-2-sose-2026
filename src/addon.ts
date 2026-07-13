@@ -76,15 +76,23 @@ type PaperEmbeddingReportOptions = {
 type PaperEmbeddingReportRequest = number | PaperEmbeddingReportOptions;
 
 type OllamaSetupPlatform = "windows" | "macos";
-export type OllamaSetupMode = "embedding" | "local" | "local-with-embedding";
+export type OllamaSetupResult = {
+  status: "success" | "cancelled" | "error";
+  code: string;
+  platform: OllamaSetupPlatform;
+  path: string;
+};
 
-const OLLAMA_SETUP_TEMP_DIR = "zaia-ollama-setup";
+const OLLAMA_SETUP_TEMP_PREFIX = "zaia-ollama-setup-";
 const OLLAMA_WINDOWS_SETUP_FILES = [
   "setup-ollama-windows.cmd",
   "setup-ollama-windows.ps1",
 ];
 const OLLAMA_MACOS_SETUP_FILE = "setup-ollama-macos.command";
-const OLLAMA_SETUP_MODE_FILE = "setup-mode.txt";
+const OLLAMA_SETUP_RESULT_FILE = "setup-result.json";
+const OLLAMA_SETUP_RESULT_TIMEOUT_MS = 30 * 60 * 1000;
+const OLLAMA_SETUP_RESULT_POLL_MS = 500;
+const OLLAMA_SETUP_CLEANUP_DELAY_MS = 5 * 60 * 1000;
 
 export type PluginSettings = {
   provider: LLMProvider;
@@ -602,23 +610,22 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-async function launchOllamaSetup(
-  mode: OllamaSetupMode = "local-with-embedding",
-) {
+async function launchOllamaSetup(): Promise<OllamaSetupResult> {
   const platform = getOllamaSetupPlatform();
-  const setupDir = await ensureOllamaSetupTempDirectory();
-  await Zotero.File.putContentsAsync(
-    PathUtils.join(setupDir, OLLAMA_SETUP_MODE_FILE),
-    mode,
-    "utf-8",
-  );
+  const setupDir = await createOllamaSetupTempDirectory();
+  const resultPath = PathUtils.join(setupDir, OLLAMA_SETUP_RESULT_FILE);
   const launcherPath =
     platform === "windows"
       ? await prepareWindowsOllamaSetup(setupDir)
       : await prepareMacOllamaSetup(setupDir);
 
-  Zotero.File.pathToFile(launcherPath).launch();
-  return { platform, path: launcherPath, mode };
+  try {
+    Zotero.File.pathToFile(launcherPath).launch();
+    const result = await waitForOllamaSetupResult(resultPath);
+    return { ...result, platform, path: launcherPath };
+  } finally {
+    scheduleOllamaSetupCleanup(setupDir);
+  }
 }
 
 async function startOllama(baseUrl: string) {
@@ -663,16 +670,12 @@ function getOllamaSetupPlatform(): OllamaSetupPlatform {
   throw new Error("Ollama setup is only available for Windows and macOS.");
 }
 
-async function ensureOllamaSetupTempDirectory() {
-  const setupDir = PathUtils.join(
+async function createOllamaSetupTempDirectory() {
+  return IOUtils.createUniqueDirectory(
     Zotero.getTempDirectory().path,
-    OLLAMA_SETUP_TEMP_DIR,
+    OLLAMA_SETUP_TEMP_PREFIX,
+    0o700,
   );
-  await IOUtils.makeDirectory(setupDir, {
-    createAncestors: true,
-    ignoreExisting: true,
-  });
-  return setupDir;
 }
 
 async function prepareWindowsOllamaSetup(setupDir: string) {
@@ -697,6 +700,51 @@ async function copyBundledSetupFile(fileName: string, targetDir: string) {
   const contents = await Zotero.File.getContentsFromURLAsync(sourceUrl);
   await Zotero.File.putContentsAsync(targetPath, contents, "utf-8");
   return targetPath;
+}
+
+async function waitForOllamaSetupResult(resultPath: string) {
+  const timeoutAt = Date.now() + OLLAMA_SETUP_RESULT_TIMEOUT_MS;
+  while (Date.now() < timeoutAt) {
+    if (await IOUtils.exists(resultPath)) {
+      const contents = (await IOUtils.readUTF8(resultPath)).replace(
+        /^\uFEFF/,
+        "",
+      );
+      return parseOllamaSetupResult(contents);
+    }
+    await new Promise((resolve) =>
+      setTimeout(resolve, OLLAMA_SETUP_RESULT_POLL_MS),
+    );
+  }
+
+  throw new Error("Ollama setup did not report a result before timing out.");
+}
+
+function parseOllamaSetupResult(
+  contents: string,
+): Pick<OllamaSetupResult, "status" | "code"> {
+  const parsed = JSON.parse(contents) as {
+    status?: unknown;
+    code?: unknown;
+  };
+  if (
+    parsed.status !== "success" &&
+    parsed.status !== "cancelled" &&
+    parsed.status !== "error"
+  ) {
+    throw new Error("Ollama setup returned an invalid status.");
+  }
+
+  return {
+    status: parsed.status,
+    code: typeof parsed.code === "string" ? parsed.code : "unknown",
+  };
+}
+
+function scheduleOllamaSetupCleanup(setupDir: string) {
+  setTimeout(() => {
+    void IOUtils.remove(setupDir, { recursive: true }).catch(() => undefined);
+  }, OLLAMA_SETUP_CLEANUP_DELAY_MS);
 }
 
 async function logSelectedPaperChunks(itemID?: number) {
