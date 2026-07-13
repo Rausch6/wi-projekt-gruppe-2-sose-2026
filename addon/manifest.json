@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "__addonName__",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "__description__",
   "homepage_url": "__homepage__",
   "author": "__author__",

@@ -1,7 +1,7 @@
 {
   "name": "zaia",
   "type": "module",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "ZAIA erweitert Zotero um einen KI-gestützten Assistenten für Fragen, Zusammenfassungen und die kontextbezogene Arbeit mit wissenschaftlichen Publikationen.",
   "config": {
     "addonName": "ZAIA - Zotero AI Assistent",
