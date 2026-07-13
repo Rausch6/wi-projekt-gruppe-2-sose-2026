@@ -5,11 +5,16 @@ import { PdfExtractor } from "../../src/core/PdfExtractor";
 import { vectorStore } from "../../src/core/OramaService";
 import { embeddingProvider } from "../../src/ai/EmbeddingProvider.js";
 import {
+  collectPapers,
   markInitialIndexPromptShown,
   shouldShowInitialIndexPrompt,
 } from "../../src/ui/indexManager/actions";
 import { filterPapersByLibrary } from "../../src/ui/indexManager/state";
 import type { PaperRecord } from "../../src/ui/indexManager/types";
+import {
+  getUnindexedPaperContextCount,
+  getUnindexedPaperContextWarning,
+} from "../../src/ui/paperContextIndexStatus";
 
 function createItem(id: number, libraryID: number, title: string) {
   return {
@@ -261,6 +266,52 @@ describe("indexing controls", () => {
       papers[2],
     ]);
     expect(filterPapersByLibrary(papers, new Set())).toEqual([]);
+  });
+
+  it("loads Zotero item data before creating index manager paper rows", async () => {
+    let loaded = false;
+    const initiallyUnloadedItem = {
+      ...item101,
+      loadAllData: vi.fn(async () => {
+        loaded = true;
+      }),
+      getField: vi.fn((field: string) => {
+        if (!loaded) throw new Error("Item data not loaded");
+        if (field === "title") return "Nachgeladener Titel";
+        if (field === "year") return "2026";
+        return "";
+      }),
+    };
+    vi.mocked(globalThis.Zotero.Items.getAll).mockResolvedValueOnce([
+      initiallyUnloadedItem,
+    ]);
+
+    const result = await collectPapers(vectorStore);
+
+    expect(initiallyUnloadedItem.loadAllData).toHaveBeenCalledWith(true);
+    expect(result.papers).toEqual([
+      expect.objectContaining({
+        itemID: 101,
+        title: "Nachgeladener Titel",
+      }),
+    ]);
+  });
+
+  it("counts unique unindexed papers in the active context", () => {
+    const references = [
+      { itemID: 101 },
+      { itemID: 202 },
+      { itemID: 202 },
+      { itemID: undefined },
+    ];
+
+    expect(getUnindexedPaperContextCount(references, new Set(["101"]))).toBe(1);
+    expect(getUnindexedPaperContextWarning(1)).toBe(
+      "Das Paper im Kontext ist noch nicht indexiert.",
+    );
+    expect(getUnindexedPaperContextWarning(2)).toBe(
+      "2 Paper im Kontext sind noch nicht indexiert.",
+    );
   });
 
   it("stores the initial indexing prompt preference after first use", () => {

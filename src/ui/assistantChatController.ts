@@ -55,6 +55,12 @@ import {
 } from "./localOllamaModelWindow";
 import { createWindowAbortController } from "../utils/AbortController";
 import { getSelectableLocalModelValues } from "./localOllamaModels";
+import { vectorStore } from "../core/OramaService";
+import { openIndexManagerWindow } from "./indexManagerLauncher";
+import {
+  getUnindexedPaperContextCount,
+  getUnindexedPaperContextWarning,
+} from "./paperContextIndexStatus";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -296,6 +302,9 @@ export function bindAssistantChat(host: HTMLElement) {
   ) as HTMLButtonElement[];
   const setupTimeline = host.querySelector<HTMLElement>(".zai-setup-timeline");
   const ownerWindow = host.ownerDocument?.defaultView ?? null;
+  const openIndexManagerButton = host.querySelector<HTMLButtonElement>(
+    ".zai-paper-context-index-manager-button",
+  );
 
   syncModelPicker(host);
   syncMetadataFieldControls(host);
@@ -576,6 +585,9 @@ export function bindAssistantChat(host: HTMLElement) {
     hosts.add(host);
     manualPaperContextEntries.delete(key);
     syncAllPaperContextControls();
+  });
+  openIndexManagerButton?.addEventListener("click", () => {
+    if (ownerWindow) openIndexManagerWindow(ownerWindow);
   });
   if (metadataControl?.ownerDocument) {
     ensureMetadataPopoverOutsideHandler(metadataControl.ownerDocument);
@@ -3440,6 +3452,8 @@ function syncPaperContextControls(host: HTMLElement) {
   );
   const results = host.querySelector<HTMLElement>(".zai-paper-library-results");
 
+  syncPaperContextIndexWarning(host, [...automaticEntries, ...manualEntries]);
+
   if (countBadge) {
     countBadge.textContent = String(count);
     countBadge.toggleAttribute("hidden", count === 0);
@@ -3458,6 +3472,28 @@ function syncPaperContextControls(host: HTMLElement) {
   if (list) {
     renderPaperContextList(list, automaticEntries, "Keine Paper ausgewählt");
   }
+}
+
+function syncPaperContextIndexWarning(
+  host: HTMLElement,
+  entries: PaperContextEntry[],
+) {
+  const banner = host.querySelector<HTMLElement>(
+    ".zai-paper-context-index-warning",
+  );
+  const text = banner?.querySelector<HTMLElement>(
+    ".zai-paper-context-index-warning-text",
+  );
+  if (!banner || !text) return;
+
+  const unindexedCount = getUnindexedPaperContextCount(
+    entries,
+    vectorStore.getIndexedItemIds(),
+  );
+  banner.toggleAttribute("hidden", unindexedCount === 0);
+  text.textContent = unindexedCount
+    ? getUnindexedPaperContextWarning(unindexedCount)
+    : "";
 }
 
 function renderPaperContextList(

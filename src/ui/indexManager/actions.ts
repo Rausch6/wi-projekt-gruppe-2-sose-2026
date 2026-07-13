@@ -1,9 +1,36 @@
 import { config } from "../../../package.json";
 import { LibraryScopeManager } from "../../core/LibraryScopeManager";
-import type { IndexManagerElements, IndexManagerState, BackgroundIndexerService, VectorStore, LibraryFilterOption, PaperRecord } from "./types";
-import { syncSelectedLibraries, trimQueuedItems, trimSelections, getSelectedPapers, getSelectedLibraryIDs, normalizeSearchText } from "./state";
-import { setBusy, setStatus, renderLibraryFilter, updateFilterOptions, renderIndexManager } from "./render";
-import { isIndexableItem, getItemTitle, getItemCreators, getItemField, getItemType } from "./zoteroUtils";
+import type {
+  IndexManagerElements,
+  IndexManagerState,
+  BackgroundIndexerService,
+  VectorStore,
+  LibraryFilterOption,
+  PaperRecord,
+} from "./types";
+import {
+  syncSelectedLibraries,
+  trimQueuedItems,
+  trimSelections,
+  getSelectedPapers,
+  getSelectedLibraryIDs,
+  normalizeSearchText,
+} from "./state";
+import {
+  setBusy,
+  setStatus,
+  renderLibraryFilter,
+  updateFilterOptions,
+  renderIndexManager,
+} from "./render";
+import {
+  isIndexableItem,
+  getItemTitle,
+  getItemCreators,
+  getItemField,
+  getItemType,
+  loadItemCompletely,
+} from "./zoteroUtils";
 
 declare const Zotero: any;
 
@@ -70,8 +97,10 @@ export async function collectPapers(
       continue;
     }
 
+    const loadedItems = await Promise.all(items.map(loadItemCompletely));
+
     papers.push(
-      ...items.filter(isIndexableItem).map((item: any) => {
+      ...loadedItems.filter(isIndexableItem).map((item: any) => {
         const title = getItemTitle(item);
         const author = getItemCreators(item);
         const year = getItemField(item, "year", "-");

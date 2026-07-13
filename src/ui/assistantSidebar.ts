@@ -206,6 +206,7 @@ function createSidebar(doc: Document, options: AssistantSidebarRenderOptions) {
 
   const footer = createHtmlElement(doc, "footer", "zai-footer");
   const indexingBanner = createIndexingStatusBanner(doc);
+  const paperContextIndexWarning = createPaperContextIndexWarning(doc);
   const composer = createHtmlElement(doc, "div", "zai-composer");
   const textarea = createHtmlElement(
     doc,
@@ -225,7 +226,7 @@ function createSidebar(doc: Document, options: AssistantSidebarRenderOptions) {
   sendButton.append(createSendIcon(doc));
 
   composer.append(textarea, composerTools, chatStatus, sendButton);
-  footer.append(indexingBanner, composer);
+  footer.append(indexingBanner, paperContextIndexWarning, composer);
 
   sidebar.append(top, main, footer);
   return sidebar;
@@ -1077,5 +1078,30 @@ function createIndexingStatusBanner(doc: Document) {
     });
   }
 
+  return banner;
+}
+
+function createPaperContextIndexWarning(doc: Document) {
+  const banner = createHtmlElement(
+    doc,
+    "div",
+    "zai-paper-context-index-warning",
+  );
+  banner.hidden = true;
+  banner.setAttribute("role", "status");
+
+  const text = createHtmlElement(
+    doc,
+    "span",
+    "zai-paper-context-index-warning-text",
+  );
+  const button = createButton(
+    doc,
+    "zai-paper-context-index-manager-button",
+    "Zum Index Manager",
+  );
+  button.setAttribute("aria-label", "Index Manager öffnen");
+
+  banner.append(text, button);
   return banner;
 }
