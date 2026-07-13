@@ -23,6 +23,7 @@ export type OllamaLifecycleDependencies = {
     env?: Record<string, string>,
   ) => ManagedOllamaProcess;
   wait: (milliseconds: number) => Promise<void>;
+  terminateAll?: (platform: OllamaPlatform) => Promise<void>;
 };
 
 export type EnsureReadyOptions = {
@@ -109,6 +110,19 @@ export class OllamaLifecycleManager {
       this.managedProcess = process;
       throw error;
     }
+  }
+
+  async terminateAll(): Promise<void> {
+    const terminateAll = this.dependencies.terminateAll;
+    if (!terminateAll) {
+      throw new OllamaLifecycleError(
+        "unsupported-platform",
+        "Terminating all Ollama processes is not available.",
+      );
+    }
+
+    await terminateAll(this.dependencies.getPlatform());
+    this.managedProcess = null;
   }
 
   private async startAndWait(baseUrl: string) {
@@ -276,7 +290,82 @@ function createDefaultDependencies(): OllamaLifecycleDependencies {
     },
     wait: (milliseconds) =>
       new Promise((resolve) => setTimeout(resolve, milliseconds)),
+    async terminateAll(platform) {
+      if (platform === "macos") {
+        await runSystemProcess(
+          "/usr/bin/osascript",
+          ["-e", 'quit app "Ollama"'],
+          [0, 1],
+        );
+        await runSystemProcess(
+          "/usr/bin/pkill",
+          ["-i", "-x", "ollama"],
+          [0, 1],
+        );
+        return;
+      }
+
+      const windowsDirectory = getEnvironmentValue("WINDIR") || "C:\\Windows";
+      const taskkill = PathUtils.join(
+        windowsDirectory,
+        "System32",
+        "taskkill.exe",
+      );
+      await runSystemProcess(
+        taskkill,
+        ["/F", "/T", "/IM", "ollama app.exe"],
+        [0, 128],
+      );
+      await runSystemProcess(
+        taskkill,
+        ["/F", "/T", "/IM", "ollama.exe"],
+        [0, 128],
+      );
+    },
   };
+}
+
+function runSystemProcess(
+  executablePath: string,
+  args: string[],
+  allowedExitCodes: number[],
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    try {
+      const executable = Zotero.File.pathToFile(executablePath);
+      const process = Components.classes[
+        "@mozilla.org/process/util;1"
+      ].createInstance(Components.interfaces.nsIProcess) as any;
+      process.init(executable);
+      process.startHidden = true;
+      process.noShell = true;
+      process.runAsync(
+        args,
+        args.length,
+        {
+          observe(_subject: unknown, topic: string) {
+            const exitCode = Number(process.exitValue);
+            if (
+              topic === "process-finished" &&
+              allowedExitCodes.includes(exitCode)
+            ) {
+              resolve();
+              return;
+            }
+
+            reject(
+              new Error(
+                `Process ${executablePath} failed with exit code ${exitCode}.`,
+              ),
+            );
+          },
+        },
+        false,
+      );
+    } catch (error) {
+      reject(error);
+    }
+  });
 }
 
 function getExecutableCandidates(platform: OllamaPlatform) {

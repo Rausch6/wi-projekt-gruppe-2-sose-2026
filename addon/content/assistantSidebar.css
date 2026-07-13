@@ -1378,11 +1378,18 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   box-shadow: 0 0 0 2px color-mix(in srgb, #2563eb 20%, transparent);
 }
 
-.zai-metadata-control {
+.zai-composer-tools {
+  align-items: center;
   bottom: 8px;
+  display: flex;
+  gap: 2px;
   left: 8px;
   position: absolute;
   z-index: 15;
+}
+
+.zai-metadata-control {
+  position: relative;
 }
 
 .zai-metadata-button {
@@ -1453,6 +1460,20 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
 
 .zai-metadata-button:focus-visible {
   box-shadow: 0 0 0 2px color-mix(in srgb, #2563eb 20%, transparent);
+}
+
+.zai-ollama-terminate-button {
+  position: relative;
+}
+
+.zai-ollama-terminate-button svg {
+  height: 18px;
+  width: 18px;
+}
+
+.zai-ollama-terminate-button:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 
 .zai-metadata-popover {

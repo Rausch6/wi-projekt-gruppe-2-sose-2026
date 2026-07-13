@@ -204,6 +204,7 @@ let activeAssistantResponse: ActiveAssistantResponse | null = null;
 let ollamaSetupLaunchRunning = false;
 let ollamaSetupAwaitingCompletion = false;
 let ollamaStartRunning = false;
+let ollamaTerminateRunning = false;
 let lastPromptContextRouteDebug: PromptContextRouteDebug | null = null;
 let lastAssistantRequestDebug: AssistantRequestDebug | null = null;
 let setupStalled = false;
@@ -271,6 +272,9 @@ export function bindAssistantChat(host: HTMLElement) {
   );
   const metadataPopover = host.querySelector<HTMLElement>(
     ".zai-metadata-popover",
+  );
+  const terminateOllamaButton = host.querySelector<HTMLButtonElement>(
+    ".zai-ollama-terminate-button",
   );
   const metadataCheckboxes = Array.from(
     host.querySelectorAll<HTMLInputElement>(".zai-metadata-checkbox[value]"),
@@ -492,6 +496,10 @@ export function bindAssistantChat(host: HTMLElement) {
     syncPaperContextControls(host);
     void ensurePaperLibraryOptionsLoaded();
     toggleMetadataPopover(metadataControl);
+  });
+  terminateOllamaButton?.addEventListener("click", () => {
+    if (ollamaTerminateRunning || !confirmTerminateOllama(host)) return;
+    void terminateOllamaCompletely();
   });
   metadataPopover?.addEventListener("keydown", (event) => {
     if ((event as KeyboardEvent).key === "Escape" && metadataControl) {
@@ -1702,10 +1710,7 @@ function configureProviderForRouting(provider: LLMProvider) {
 }
 
 function getEffectiveContextRouterProvider(): LLMProvider {
-  // Routing must never introduce an undeclared second provider dependency.
-  // The setup/readiness matrix is therefore based on the provider selected in
-  // the chat, and the same provider performs the lightweight routing request.
-  return getActiveProvider();
+  return addon.data.settings.contextRouterProvider;
 }
 
 function getRouterModel(provider: LLMProvider) {
@@ -2217,6 +2222,9 @@ function renderHost(host: HTMLElement) {
     ".zai-chat-delete-button",
   );
   const sendButton = host.querySelector<HTMLButtonElement>(".zai-send-button");
+  const terminateOllamaButton = host.querySelector<HTMLButtonElement>(
+    ".zai-ollama-terminate-button",
+  );
   const textarea = host.querySelector<HTMLTextAreaElement>(".zai-input");
   const status = host.querySelector<HTMLElement>(".zai-chat-status");
   const aboutView = host.querySelector<HTMLElement>(".zai-about-view");
@@ -2322,6 +2330,9 @@ function renderHost(host: HTMLElement) {
   }
 
   if (sendButton) syncSendButton(sendButton, chatReady);
+  if (terminateOllamaButton) {
+    terminateOllamaButton.disabled = ollamaTerminateRunning;
+  }
   if (textarea) textarea.disabled = requestRunning || !chatReady;
 
   if (status) {
@@ -3967,7 +3978,6 @@ function setActiveProvider(provider: LLMProvider) {
 
   syncAllModelPickers();
   void ensureModelOptionsLoaded(provider);
-  void releaseUnusedOllama();
   void revalidateCurrentReadiness(true);
 }
 
@@ -3993,22 +4003,42 @@ export function handleSetupRelevantSettingsChanged() {
   addon.api.configureAI();
   addon.api.configureEmbeddings();
   renderAllHosts();
-  void releaseUnusedOllama();
   void revalidateCurrentReadiness(true);
 }
 
-async function releaseUnusedOllama() {
-  if (
-    getActiveProvider() !== "kisski" ||
-    addon.data.settings.embeddingSearchEnabled
-  ) {
-    return;
-  }
+function confirmTerminateOllama(host: HTMLElement) {
+  const win = host.ownerDocument.defaultView;
+  if (!win) return false;
+
+  return win.confirm(
+    "Ollama vollständig beenden? Dadurch werden auch Ollama-Prozesse beendet, die nicht von ZAIA gestartet wurden.",
+  );
+}
+
+async function terminateOllamaCompletely() {
+  ollamaTerminateRunning = true;
+  renderAllHosts();
 
   try {
-    await addon.api.stopOllama();
+    await addon.api.terminateOllama();
+    modelLoadStates.delete("ollama");
+    modelOptionsByProvider.delete("ollama");
+    delete addon.data.runtime.providerConnections.ollama;
+    addon.data.runtime.embeddingConnection = addon.data.settings
+      .embeddingSearchEnabled
+      ? createCheckingEmbeddingConnectionResult()
+      : addon.data.runtime.embeddingConnection;
+    await Promise.all([
+      checkProviderConnection("ollama", true),
+      ...(addon.data.settings.embeddingSearchEnabled
+        ? [checkEmbeddingConnection(true)]
+        : []),
+    ]);
   } catch (error) {
     Zotero.logError(error instanceof Error ? error : new Error(String(error)));
+  } finally {
+    ollamaTerminateRunning = false;
+    renderAllHosts();
   }
 }
 
