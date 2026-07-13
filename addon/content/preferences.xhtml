@@ -185,6 +185,29 @@
       <html:summary data-l10n-id="pref-context-advanced-summary"></html:summary>
       <html:div class="zaia-pref-field">
         <html:label
+          for="zotero-prefpane-__addonRef__-context-router-provider"
+          data-l10n-id="pref-context-router-provider"
+        ></html:label>
+        <html:select
+          id="zotero-prefpane-__addonRef__-context-router-provider"
+          preference="contextRouterProvider"
+        >
+          <html:option
+            value="ollama"
+            data-l10n-id="pref-context-router-provider-local"
+          ></html:option>
+          <html:option
+            value="kisski"
+            data-l10n-id="pref-context-router-provider-cloud"
+          ></html:option>
+        </html:select>
+        <html:p
+          class="zaia-pref-help"
+          data-l10n-id="pref-context-router-provider-notice"
+        ></html:p>
+      </html:div>
+      <html:div class="zaia-pref-field">
+        <html:label
           for="zotero-prefpane-__addonRef__-max-items"
           data-l10n-id="pref-max-items"
         ></html:label>

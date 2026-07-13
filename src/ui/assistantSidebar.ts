@@ -95,6 +95,17 @@ function createSidebar(doc: Document, options: AssistantSidebarRenderOptions) {
   aboutButton.setAttribute("title", "Über ZAIA");
   aboutButton.append(createQuestionIcon(doc));
 
+  const terminateOllamaButton = createButton(
+    doc,
+    "zai-header-icon-button zai-ollama-terminate-button",
+  );
+  terminateOllamaButton.setAttribute(
+    "aria-label",
+    "Ollama vollständig beenden",
+  );
+  terminateOllamaButton.setAttribute("title", "Ollama vollständig beenden");
+  terminateOllamaButton.append(createPowerIcon(doc));
+
   const settingsButton = createButton(doc, "zai-header-icon-button");
   settingsButton.setAttribute("aria-label", "Einstellungen");
   settingsButton.setAttribute("title", "Einstellungen");
@@ -106,7 +117,7 @@ function createSidebar(doc: Document, options: AssistantSidebarRenderOptions) {
   if (options.showPopoutButton !== false) {
     headerActions.append(createPopoutButton(doc));
   }
-  headerActions.append(settingsButton);
+  headerActions.append(settingsButton, terminateOllamaButton);
   header.append(title, headerActions);
 
   const modelPicker = createModelPicker(doc);
@@ -207,11 +218,13 @@ function createSidebar(doc: Document, options: AssistantSidebarRenderOptions) {
   const chatStatus = createHtmlElement(doc, "span", "zai-chat-status", "");
   chatStatus.hidden = true;
   const metadataControl = createMetadataFieldControl(doc);
+  const composerTools = createHtmlElement(doc, "div", "zai-composer-tools");
+  composerTools.append(metadataControl);
   const sendButton = createButton(doc, "zai-send-button");
   sendButton.setAttribute("aria-label", "Nachricht senden");
   sendButton.append(createSendIcon(doc));
 
-  composer.append(textarea, metadataControl, chatStatus, sendButton);
+  composer.append(textarea, composerTools, chatStatus, sendButton);
   footer.append(indexingBanner, composer);
 
   sidebar.append(top, main, footer);
@@ -611,6 +624,19 @@ function createMetadataIcon(doc: Document) {
   bottomDot.setAttribute("d", "M10 15v4");
 
   svg.append(topLine, middleLine, bottomLine, topDot, middleDot, bottomDot);
+  return svg;
+}
+
+function createPowerIcon(doc: Document) {
+  const svg = createIconSvg(doc, "18");
+
+  const power = doc.createElementNS(SVG_NS, "path");
+  power.setAttribute("d", "M18.36 6.64a9 9 0 1 1-12.73 0");
+
+  const line = doc.createElementNS(SVG_NS, "path");
+  line.setAttribute("d", "M12 2v10");
+
+  svg.append(power, line);
   return svg;
 }
 

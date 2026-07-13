@@ -205,6 +205,51 @@ export class OllamaProvider extends AIProvider {
     }
   }
 
+  /**
+   * Releases every model currently kept in Ollama's RAM/VRAM without
+   * starting Ollama when it is not already running.
+   */
+  async unloadAllModels(options = {}) {
+    const psUrl = `${this.baseUrl}/api/ps`;
+    const psResponse = await httpClient.get(psUrl, {
+      timeout: options.timeout ?? 5_000,
+      mode: "local",
+    });
+    await assertHttpOk(psUrl, psResponse);
+
+    const payload = await psResponse.json();
+    const models = [
+      ...new Set(
+        (Array.isArray(payload?.models) ? payload.models : [])
+          .map((model) => model?.name ?? model?.model)
+          .filter((model) => typeof model === "string" && model.trim()),
+      ),
+    ];
+    const unloaded = [];
+    let firstError = null;
+
+    for (const model of models) {
+      const generateUrl = `${this.baseUrl}/api/generate`;
+      try {
+        const response = await httpClient.post(
+          generateUrl,
+          { model, keep_alive: 0, stream: false },
+          {
+            timeout: options.timeout ?? 5_000,
+            mode: "local",
+          },
+        );
+        await assertHttpOk(generateUrl, response);
+        unloaded.push(model);
+      } catch (error) {
+        firstError ??= error;
+      }
+    }
+
+    if (firstError) throw firstError;
+    return { models: unloaded };
+  }
+
   async chat(messages, options = {}) {
     await ollamaLifecycleManager.ensureReady(this.baseUrl);
     const url = `${this.baseUrl}/api/chat`;

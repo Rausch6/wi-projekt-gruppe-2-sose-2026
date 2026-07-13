@@ -140,6 +140,7 @@ class Addon {
     launchOllamaSetup: typeof launchOllamaSetup;
     startOllama: () => ReturnType<typeof startOllama>;
     stopOllama: () => ReturnType<typeof stopOllama>;
+    terminateOllama: () => ReturnType<typeof terminateOllama>;
     embeddings: typeof embeddingProvider;
     configureEmbeddings: () => ReturnType<
       typeof EmbeddingSearchService.configure
@@ -256,6 +257,7 @@ class Addon {
       launchOllamaSetup,
       startOllama: () => startOllama(this.data.settings.ollamaBaseUrl),
       stopOllama: () => stopOllama(this.data.settings.ollamaBaseUrl),
+      terminateOllama: () => terminateOllama(this.data.settings.ollamaBaseUrl),
       configureEmbeddings: () =>
         EmbeddingSearchService.configure({
           enabled: this.data.settings.embeddingSearchEnabled,
@@ -636,6 +638,22 @@ async function stopOllama(_baseUrl: string) {
   const platform = getOllamaSetupPlatform();
   const stopped = await ollamaLifecycleManager.shutdown();
   return { platform, stopped, alreadyStopped: !stopped };
+}
+
+async function unloadOllamaModels(baseUrl: string) {
+  const provider = new OllamaProvider({ baseUrl });
+  return provider.unloadAllModels();
+}
+
+async function terminateOllama(baseUrl: string) {
+  try {
+    await unloadOllamaModels(baseUrl);
+  } catch {
+    // Ollama may already be stopped; the explicit termination still applies.
+  }
+
+  await ollamaLifecycleManager.terminateAll();
+  return { terminated: true };
 }
 
 function getOllamaSetupPlatform(): OllamaSetupPlatform {
