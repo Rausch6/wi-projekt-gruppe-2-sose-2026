@@ -15,6 +15,7 @@ import {
 } from "../ai/providers/OllamaProvider.js";
 import type { LLMProvider, PluginSettings } from "../addon";
 import { DEFAULT_METADATA_FIELD_SELECTION } from "../core/MetadataFieldSelection";
+import { openIndexManagerWindow } from "../ui/indexManagerLauncher";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 
@@ -62,10 +63,6 @@ const FIELD_NAMES = [
   "auto-delete-old-chats",
 ] as const;
 
-const INDEX_MANAGER_DEFAULT_WIDTH = 800;
-const INDEX_MANAGER_DEFAULT_HEIGHT = 600;
-const INDEX_MANAGER_MIN_WIDTH = INDEX_MANAGER_DEFAULT_WIDTH;
-const INDEX_MANAGER_MIN_HEIGHT = INDEX_MANAGER_DEFAULT_HEIGHT;
 let semanticSearchFocusRequested = false;
 
 const PREFERENCE_FIELD_NAMES: Partial<Record<keyof PluginSettings, string>> = {
@@ -142,7 +139,7 @@ function bindPreferenceEvents(window: Window) {
     void testEmbeddingService(window);
   });
   bindCommand(window, "open-index-manager", () => {
-    openIndexManager(window);
+    openIndexManagerWindow(window);
   });
   bindCommand(window, "reset-preferences", () => {
     resetPreferences(window);
@@ -380,26 +377,6 @@ async function testEmbeddingService(window: Window) {
   } finally {
     setButtonBusy(button, false);
   }
-}
-
-function openIndexManager(window: Window) {
-  const url = `chrome://${config.addonRef}/content/indexManager.xhtml`;
-  const features = [
-    "chrome",
-    "titlebar",
-    "toolbar",
-    "centerscreen",
-    "resizable=yes",
-    `width=${INDEX_MANAGER_DEFAULT_WIDTH}`,
-    `height=${INDEX_MANAGER_DEFAULT_HEIGHT}`,
-    `minwidth=${INDEX_MANAGER_MIN_WIDTH}`,
-    `minheight=${INDEX_MANAGER_MIN_HEIGHT}`,
-  ].join(",");
-
-  window.openDialog(url, "_blank", features, {
-    addonInstance: config.addonInstance,
-    owner: window,
-  });
 }
 
 function resetPreferences(window: Window) {

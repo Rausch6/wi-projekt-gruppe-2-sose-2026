@@ -1,6 +1,6 @@
 declare const Zotero: any;
 declare namespace Zotero {
-    type Item = any;
+  type Item = any;
 }
 
 export function isIndexableItem(item: Zotero.Item): boolean {
@@ -40,6 +40,24 @@ export function isDeletedItem(item: Zotero.Item): boolean {
   }
 }
 
+export async function loadItemCompletely(
+  item: Zotero.Item,
+): Promise<Zotero.Item> {
+  try {
+    await item.loadAllData?.(true);
+    return item;
+  } catch (error) {
+    try {
+      return (await Zotero.Items.getAsync(item.id)) ?? item;
+    } catch (reloadError) {
+      Zotero.debug(
+        `ZAIA: Item ${item.id} konnte für den Index Manager nicht vollständig geladen werden: ${reloadError || error}`,
+      );
+      return item;
+    }
+  }
+}
+
 export function getItemTitle(item: Zotero.Item): string {
   const title = getItemField(item, "title", "");
   if (title) {
@@ -54,7 +72,11 @@ export function getItemTitle(item: Zotero.Item): string {
   }
 }
 
-export function getItemField(item: Zotero.Item, field: string, fallback: string): string {
+export function getItemField(
+  item: Zotero.Item,
+  field: string,
+  fallback: string,
+): string {
   try {
     const value = item.getField?.(field);
     return value ? String(value) : fallback;
