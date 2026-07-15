@@ -1,21 +1,41 @@
-param(
-  [ValidateSet("embedding", "local", "local-with-embedding")]
-  [string]$Mode = "local-with-embedding"
-)
-
 $ErrorActionPreference = "Stop"
 
-$ChatModel = "qwen2.5:3b"
-$EmbeddingModel = "bge-m3:latest"
-$BaseUrl = "http://localhost:11434"
-$InstallCommand = "irm https://ollama.com/install.ps1 | iex"
-$InstallChatModel = $Mode -in @("local", "local-with-embedding")
-$InstallEmbeddingModel = $Mode -in @("embedding", "local-with-embedding")
-$script:SetupOllamaProcess = $null
+$DownloadUrl = "https://ollama.com/download/OllamaSetup.exe"
+$ResultFile = Join-Path $PSScriptRoot "setup-result.json"
+$ResultTempFile = Join-Path $PSScriptRoot "setup-result.json.tmp"
+$InstallerPath = Join-Path $PSScriptRoot "OllamaSetup.exe"
+$script:ResultWritten = $false
+
+function Write-Result {
+  param(
+    [ValidateSet("success", "cancelled", "error")]
+    [string]$Status,
+    [string]$Code
+  )
+
+  $json = @{ status = $Status; code = $Code } | ConvertTo-Json -Compress
+  $utf8WithoutBom = New-Object -TypeName System.Text.UTF8Encoding -ArgumentList $false
+  [System.IO.File]::WriteAllText($ResultTempFile, $json, $utf8WithoutBom)
+  Move-Item -Path $ResultTempFile -Destination $ResultFile -Force
+  $script:ResultWritten = $true
+}
+
+function Complete-Setup {
+  param(
+    [string]$Status,
+    [string]$Code,
+    [int]$ExitCode = 0
+  )
+
+  Write-Result -Status $Status -Code $Code
+  exit $ExitCode
+}
 
 trap {
-  Stop-SetupOllamaService
-  Write-Host "Setup failed: $($_.Exception.Message)" -ForegroundColor Red
+  if (-not $script:ResultWritten) {
+    Write-Result -Status "error" -Code "installation-failed"
+  }
+  Write-Host "Setup fehlgeschlagen: $($_.Exception.Message)" -ForegroundColor Red
   exit 1
 }
 
@@ -28,7 +48,7 @@ function Confirm-Step($Question) {
   while ($true) {
     $answer = Read-Host "$Question [Y/N]"
     if ($answer -match "^[YyJj]") { return $true }
-    if ($answer -match "^[Nn]") { return $false }
+    if ($answer -match "^[Nn]" -or $answer -eq "") { return $false }
   }
 }
 
@@ -38,6 +58,7 @@ function Find-Ollama {
 
   $candidates = @(
     "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe",
+    "$env:LOCALAPPDATA\Ollama\ollama.exe",
     "$env:ProgramFiles\Ollama\ollama.exe",
     "${env:ProgramFiles(x86)}\Ollama\ollama.exe"
   )
@@ -49,158 +70,66 @@ function Find-Ollama {
   return $null
 }
 
-function Test-OllamaApi {
-  try {
-    Invoke-RestMethod -Uri "$BaseUrl/api/tags" -Method Get -TimeoutSec 3 | Out-Null
-    return $true
-  } catch {
-    return $false
-  }
-}
-
-function Wait-ForOllamaApi {
-  param([int]$Seconds = 45)
-
-  Write-Step "Waiting for Ollama service at $BaseUrl"
-  for ($i = 1; $i -le $Seconds; $i++) {
-    if (Test-OllamaApi) {
-      Write-Host "Ollama service is reachable."
-      return $true
-    }
-    Start-Sleep -Seconds 1
-  }
-
-  return $false
-}
-
-function Start-OllamaService {
-  param([string]$OllamaPath)
-
-  if (Test-OllamaApi) { return }
-
-  Write-Step "Starting Ollama in the background"
-  try {
-    $script:SetupOllamaProcess = Start-Process -FilePath $OllamaPath -ArgumentList "serve" -WindowStyle Hidden -PassThru
-  } catch {
-    Write-Warning "Could not start 'ollama serve': $($_.Exception.Message)"
-    Write-Host "If the Ollama desktop app is installed, start it from the Start menu."
-  }
-}
-
-function Stop-SetupOllamaService {
-  if ($script:SetupOllamaProcess -and -not $script:SetupOllamaProcess.HasExited) {
-    Stop-Process -Id $script:SetupOllamaProcess.Id -ErrorAction SilentlyContinue
-  }
-  $script:SetupOllamaProcess = $null
-}
-
-function Get-InstalledModels {
-  try {
-    $response = Invoke-RestMethod -Uri "$BaseUrl/api/tags" -Method Get -TimeoutSec 10
-    return @($response.models | ForEach-Object { $_.name })
-  } catch {
-    return @()
-  }
-}
-
-function Ensure-ModelInstalled {
-  param(
-    [string]$Model,
-    [string]$Label
-  )
-
-  $installedModels = Get-InstalledModels
-  if ($installedModels -contains $Model) {
-    Write-Step "$Label already installed"
-    Write-Host $Model
-    return
-  }
-
-  Write-Step "$Label $Model is not installed"
-  Write-Host "This download can take a while and may use several GB of disk space."
-  if (-not (Confirm-Step "Download $Model now?")) {
-    throw "$Label download cancelled by user."
-  }
-
-  Write-Step "Downloading $Model"
-  & $ollamaPath pull $Model
-}
-
-function Assert-ModelInstalled {
-  param(
-    [string]$Model,
-    [string]$Label
-  )
-
-  Write-Step "Verifying $Label"
-  $installedModels = Get-InstalledModels
-  if ($installedModels -notcontains $Model) {
-    throw "$Label $Model was not found after download."
-  }
-}
-
-Write-Host "ZAIA Ollama Setup - Windows 11" -ForegroundColor Green
-Write-Host "Setup mode: $Mode"
-Write-Host "This setup installs Ollama and downloads only the models needed for the selected ZAIA mode."
-Write-Host "ZAIA expects Ollama at $BaseUrl."
+Write-Host "ZAIA Ollama-App-Setup - Windows" -ForegroundColor Green
+Write-Host ""
+Write-Host "Dieses Setup installiert nur die Ollama-App."
+Write-Host "Modelle werden anschließend direkt in ZAIA ausgewählt und heruntergeladen."
 
 $ollamaPath = Find-Ollama
-if (-not $ollamaPath) {
-  Write-Step "Ollama was not found"
-  Write-Host "The official Ollama Windows install command is:"
-  Write-Host "  $InstallCommand"
-  if (-not (Confirm-Step "Install Ollama now?")) {
-    throw "Installation cancelled by user."
-  }
+if ($ollamaPath) {
+  Write-Step "Ollama ist bereits installiert"
+  Write-Host $ollamaPath
+  Complete-Setup -Status "success" -Code "already-installed"
+}
 
-  Write-Step "Installing Ollama"
-  Invoke-Expression $InstallCommand
+Write-Step "Ollama wurde nicht gefunden"
+Write-Host "Quelle: $DownloadUrl"
+Write-Host "Vor der Installation wird die digitale Signatur des Installers geprüft."
+if (-not (Confirm-Step "Offizielle Ollama-App jetzt herunterladen und installieren?")) {
+  Write-Host "Installation abgebrochen."
+  Complete-Setup -Status "cancelled" -Code "user-cancelled"
+}
 
-  $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
-    [System.Environment]::GetEnvironmentVariable("Path", "User")
+Write-Step "Offizieller Ollama-Installer wird heruntergeladen"
+try {
+  Invoke-WebRequest -Uri $DownloadUrl -OutFile $InstallerPath -UseBasicParsing
+} catch {
+  Write-Result -Status "error" -Code "download-failed"
+  throw
+}
+
+Write-Step "Download wird geprüft"
+$signature = Get-AuthenticodeSignature -FilePath $InstallerPath
+if ($signature.Status -ne "Valid" -or -not $signature.SignerCertificate) {
+  Write-Result -Status "error" -Code "invalid-signature"
+  throw "Die digitale Signatur des Ollama-Installers ist ungültig."
+}
+if ($signature.SignerCertificate.Subject -notmatch "Ollama") {
+  Write-Result -Status "error" -Code "unexpected-publisher"
+  throw "Der Ollama-Installer wurde von einem unerwarteten Herausgeber signiert."
+}
+
+Write-Step "Ollama wird installiert"
+$installer = Start-Process -FilePath $InstallerPath -Wait -PassThru
+if ($installer.ExitCode -ne 0) {
+  Write-Result -Status "error" -Code "installer-exit-$($installer.ExitCode)"
+  throw "Der Ollama-Installer wurde mit Code $($installer.ExitCode) beendet."
+}
+
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
+  [System.Environment]::GetEnvironmentVariable("Path", "User")
+
+for ($attempt = 0; $attempt -lt 30; $attempt++) {
   $ollamaPath = Find-Ollama
+  if ($ollamaPath) { break }
+  Start-Sleep -Seconds 1
 }
 
 if (-not $ollamaPath) {
-  Write-Host "Ollama CLI was not found after installation."
-  Write-Host "Opening the official download page as fallback..."
-  Start-Process "https://ollama.com/download"
-  throw "Please finish the Ollama installation manually and run this setup again."
+  Write-Result -Status "error" -Code "not-found-after-install"
+  throw "Ollama wurde nach der Installation nicht gefunden."
 }
 
-Write-Step "Using Ollama CLI"
+Write-Step "Ollama-App wurde installiert"
 Write-Host $ollamaPath
-
-Start-OllamaService -OllamaPath $ollamaPath
-if (-not (Wait-ForOllamaApi)) {
-  throw "Ollama service did not become reachable at $BaseUrl."
-}
-
-if ($InstallChatModel) {
-  Ensure-ModelInstalled -Model $ChatModel -Label "Chat model"
-}
-if ($InstallEmbeddingModel) {
-  Ensure-ModelInstalled -Model $EmbeddingModel -Label "Embedding model"
-}
-
-if ($InstallChatModel) {
-  Assert-ModelInstalled -Model $ChatModel -Label "chat model"
-}
-if ($InstallEmbeddingModel) {
-  Assert-ModelInstalled -Model $EmbeddingModel -Label "embedding model"
-}
-
-Write-Step "ZAIA local LLM configuration"
-Write-Host "Base URL:        $BaseUrl"
-if ($InstallChatModel) {
-  Write-Host "Chat model:      $ChatModel"
-}
-if ($InstallEmbeddingModel) {
-  Write-Host "Embedding model: $EmbeddingModel"
-}
-Write-Host ""
-Write-Host "The plugin defaults already match these values."
-Write-Host "If you changed Zotero preferences manually, set the Ollama and embedding base URLs to $BaseUrl."
-Write-Host ""
-Write-Host "Done."
-Stop-SetupOllamaService
+Complete-Setup -Status "success" -Code "installed"

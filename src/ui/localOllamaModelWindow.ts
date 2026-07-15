@@ -210,7 +210,7 @@ function createWindowContent(
   const setupButton = createHtmlButton(
     doc,
     "zai-local-model-secondary-button",
-    "Setup öffnen",
+    "Ollama-App installieren",
   );
   const refreshButton = createHtmlButton(
     doc,
@@ -393,8 +393,8 @@ async function refreshInstalledModels(
 }
 
 async function launchSetupAndRefresh(
-  _context: LocalModelWindowContext,
-  _state: LocalModelWindowState,
+  context: LocalModelWindowContext,
+  state: LocalModelWindowState,
   elements: LocalModelWindowElements,
 ) {
   try {
@@ -402,22 +402,36 @@ async function launchSetupAndRefresh(
       throw new Error("setup-unavailable");
     }
 
-    await addon.api.launchOllamaSetup(
-      addon.data.settings.embeddingSearchEnabled
-        ? "local-with-embedding"
-        : "local",
-    );
     setNotice(
       elements,
-      "Das Ollama-Setup wurde geöffnet. Prüfe danach erneut.",
+      "Die Ollama-App wird in einem externen Fenster installiert...",
       "warning",
-      { showActions: true },
     );
+    elements.setupButton.disabled = true;
+    elements.refreshButton.disabled = true;
+
+    const result = await addon.api.launchOllamaSetup();
+    if (result.status === "cancelled") {
+      setNotice(elements, "Installation wurde abgebrochen.", "warning", {
+        showActions: true,
+      });
+      return;
+    }
+    if (result.status === "error") {
+      throw new Error(`ollama-setup-${result.code}`);
+    }
+
+    await addon.api.startOllama();
+    setNotice(elements, "Ollama ist installiert und erreichbar.", "success");
+    await refreshInstalledModels(context, state, elements);
   } catch (error) {
     logLocalModelError(error);
     setNotice(elements, getFriendlyErrorMessage(error), "error", {
       showActions: true,
     });
+  } finally {
+    elements.setupButton.disabled = false;
+    elements.refreshButton.disabled = false;
   }
 }
 
@@ -1019,6 +1033,19 @@ export function getFriendlyErrorMessage(error: unknown) {
   }
   if (/setup-unavailable/i.test(message)) {
     return "Das Ollama-Setup ist in dieser Umgebung nicht verfügbar.";
+  }
+  if (/ollama-setup-download-failed/i.test(message)) {
+    return "Die Ollama-App konnte nicht heruntergeladen werden.";
+  }
+  if (
+    /ollama-setup-(invalid-signature|unexpected-publisher|not-notarized)/i.test(
+      message,
+    )
+  ) {
+    return "Die Signatur der Ollama-App konnte nicht bestätigt werden. Die Installation wurde gestoppt.";
+  }
+  if (/ollama-setup-/i.test(message)) {
+    return "Die Ollama-App konnte nicht installiert werden. Details stehen im Setup-Fenster.";
   }
   if (
     /network|fetch|failed|refused|unreachable|offline/i.test(message) ||
