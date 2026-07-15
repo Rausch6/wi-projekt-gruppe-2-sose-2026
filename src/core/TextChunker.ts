@@ -36,10 +36,18 @@ const DEFAULT_OVERLAP_TOKENS = 100;
 const WORDS_PER_TOKEN = 0.75;
 const REFERENCE_SECTION_HEADING =
   /(^|\n)\s*(?:\d+(?:\.\d+)*\.?\s+)?(?:references|bibliography|works cited|literatur|literaturverzeichnis|quellen|quellenverzeichnis)\b/iu;
+const NEGATION_WORDS = new Set([
+  "no", "not", "nor", "never", "neither", "none", "nobody",
+  "nothing", "nowhere", "cannot",
+  "nicht", "nichts", "nie", "niemals", "niemand",
+  "niemandem", "niemanden", "nirgendwo", "kein",
+  "keine", "keinem", "keinen", "keiner", "keines",
+  "weder", "ohne",
+]);
 const STOP_WORDS = new Set(
   [...naturalStopWords, ...stopwordsIso.de]
     .map(normalizeTerm)
-    .filter(isStopWordCandidate),
+    .filter((term) => isStopWordCandidate(term) && !NEGATION_WORDS.has(term)),
 );
 
 export function cleanPaperPages(pages: PageTextChunk[]) {
