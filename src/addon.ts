@@ -227,7 +227,7 @@ class Addon {
         metadataFieldSelection: "title,creators,publicationDate",
         autoDeleteOldChats: true,
         initialIndexPromptShown: false,
-        chunkTargetTokens: 512,
+        chunkTargetTokens: 1024,
         chunkOverlapTokens: 100,
         chunkCount: 3,
       },

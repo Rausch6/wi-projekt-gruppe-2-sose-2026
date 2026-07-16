@@ -93,7 +93,7 @@ function loadSettings() {
       "initialIndexPromptShown",
       false,
     ),
-    chunkTargetTokens: getNumberSetting("chunkTargetTokens", 512),
+    chunkTargetTokens: getNumberSetting("chunkTargetTokens", 1024),
     chunkOverlapTokens: getNumberSetting("chunkOverlapTokens", 100),
     chunkCount: getNumberSetting("chunkCount", 3),
   };

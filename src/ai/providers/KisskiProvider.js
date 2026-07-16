@@ -41,7 +41,19 @@ export const KISSKI_MODEL_OPTIONS = [
   },
 ];
 
+/**
+ * Provider fuer die OpenAI-kompatible KISSKI DeepSeek API.
+ */
 export class KisskiProvider extends AIProvider {
+  /**
+   * Erstellt den KISSKI-Provider.
+   *
+   * @param {object} [options={}] - Provider-Konfiguration.
+   * @param {string} [options.baseUrl] - KISSKI API-Basis-URL.
+   * @param {string} [options.model] - Standardmodell.
+   * @param {string} [options.apiKey] - KISSKI API-Key.
+   * @param {number} [options.timeout] - Request-Timeout in Millisekunden.
+   */
   constructor(options = {}) {
     super({
       id: "kisski",
@@ -53,11 +65,21 @@ export class KisskiProvider extends AIProvider {
     this.timeout = options.timeout ?? 120_000;
   }
 
+  /**
+   * Erstellt die Authorization-Header fuer KISSKI.
+   *
+   * @returns {object} HTTP-Header mit Bearer-Token.
+   */
   getAuthHeaders() {
     this.requireApiKey();
     return { Authorization: `Bearer ${this.apiKey}` };
   }
 
+  /**
+   * Prueft, ob KISSKI mit aktueller Konfiguration erreichbar ist.
+   *
+   * @returns {Promise<boolean>} True, wenn Modelle erfolgreich geladen werden koennen.
+   */
   async isAvailable() {
     if (!this.apiKey) return false;
 
@@ -69,6 +91,11 @@ export class KisskiProvider extends AIProvider {
     }
   }
 
+  /**
+   * Laedt die verfuegbaren KISSKI-Modelle.
+   *
+   * @returns {Promise<Array<object>>} Normalisierte Modellliste.
+   */
   async listModels() {
     const url = `${this.baseUrl}/models`;
     const requestOptions = {
@@ -99,6 +126,13 @@ export class KisskiProvider extends AIProvider {
     return models;
   }
 
+  /**
+   * Sendet eine nicht-streamende Chat-Anfrage an KISSKI.
+   *
+   * @param {Array<object>} messages - Chat-Nachrichten.
+   * @param {object} [options={}] - Chat-Optionen.
+   * @returns {Promise<object>} Normalisierte Provider-Antwort.
+   */
   async chat(messages, options = {}) {
     const url = `${this.baseUrl}/chat/completions`;
     const model = options.model ?? this.model;
@@ -145,6 +179,13 @@ export class KisskiProvider extends AIProvider {
     }
   }
 
+  /**
+   * Streamt eine Chat-Antwort von KISSKI.
+   *
+   * @param {Array<object>} messages - Chat-Nachrichten.
+   * @param {object} [options={}] - Streaming-Optionen.
+   * @returns {AsyncGenerator<object>} Stream mit Start-, Content-, Reasoning- und Done-Events.
+   */
   async *chatStream(messages, options = {}) {
     const url = `${this.baseUrl}/chat/completions`;
     const model = options.model ?? this.model;
@@ -237,6 +278,14 @@ export class KisskiProvider extends AIProvider {
     }
   }
 
+  /**
+   * Erstellt den Request-Body fuer KISSKI Chat-Completions.
+   *
+   * @param {Array<object>} messages - Chat-Nachrichten.
+   * @param {object} options - Chat-Optionen.
+   * @param {boolean} stream - Ob Streaming aktiviert werden soll.
+   * @returns {object} Request-Body ohne undefined-Werte.
+   */
   createChatCompletionBody(messages, options, stream) {
     return removeUndefined({
       model: options.model ?? this.model,
@@ -253,6 +302,12 @@ export class KisskiProvider extends AIProvider {
   }
 }
 
+/**
+ * Normalisiert verschiedene Modelllisten-Formate der KISSKI API.
+ *
+ * @param {*} payload - Rohantwort der Modell-API.
+ * @returns {Array<object>} Normalisierte Modellobjekte.
+ */
 function normalizeModelList(payload) {
   const entries = Array.isArray(payload)
     ? payload
@@ -293,6 +348,13 @@ function normalizeModelList(payload) {
     .filter(Boolean);
 }
 
+/**
+ * Parst Server-Sent-Events aus einer KISSKI Streaming-Antwort.
+ *
+ * @param {AsyncIterable<string>} textStream - Textstream der HTTP-Antwort.
+ * @param {string} providerId - Provider-ID fuer Fehlerkontext.
+ * @returns {AsyncGenerator<object>} Geparste SSE-Payloads.
+ */
 async function* parseChatCompletionSse(textStream, providerId) {
   let buffer = "";
   let dataLines = [];
@@ -342,6 +404,13 @@ async function* parseChatCompletionSse(textStream, providerId) {
   if (finalData !== null) yield parseSseData(finalData, providerId);
 }
 
+/**
+ * Parst eine einzelne SSE data-Zeile.
+ *
+ * @param {string} data - SSE-Dateninhalt.
+ * @param {string} providerId - Provider-ID fuer Fehlerkontext.
+ * @returns {object} Geparste JSON-Payload oder Done-Marker.
+ */
 function parseSseData(data, providerId) {
   if (data.trim() === "[DONE]") {
     return { done: true };
@@ -361,6 +430,12 @@ function parseSseData(data, providerId) {
   }
 }
 
+/**
+ * Entscheidet, ob bei Streaming-Fehlern auf normale Chat-Anfragen gewechselt wird.
+ *
+ * @param {*} cause - Ausgeloester Fehler.
+ * @returns {boolean} True, wenn Non-Streaming-Fallback sinnvoll ist.
+ */
 function shouldFallbackToNonStreaming(cause) {
   if (cause instanceof HttpStreamingUnsupportedError) return true;
   if (!(cause instanceof HttpResponseError)) return false;
@@ -373,12 +448,24 @@ function shouldFallbackToNonStreaming(cause) {
   );
 }
 
+/**
+ * Entfernt undefined-Werte aus einem Objekt.
+ *
+ * @param {object} object - Eingangsobjekt.
+ * @returns {object} Objekt ohne undefined-Werte.
+ */
 function removeUndefined(object) {
   return Object.fromEntries(
     Object.entries(object).filter(([, value]) => value !== undefined),
   );
 }
 
+/**
+ * Entfernt reasoning_content rekursiv aus Provider-Rohdaten.
+ *
+ * @param {*} value - Eingehender Wert.
+ * @returns {*} Bereinigter Wert ohne reasoning_content-Felder.
+ */
 function removeReasoningContent(value) {
   if (Array.isArray(value)) {
     return value.map((entry) => removeReasoningContent(entry));
@@ -395,6 +482,12 @@ function removeReasoningContent(value) {
   );
 }
 
+/**
+ * Normalisiert Token-Nutzungsdaten.
+ *
+ * @param {*} usage - Usage-Objekt der Provider-Antwort.
+ * @returns {object|null} Normalisierte Token-Nutzung oder null.
+ */
 function normalizeUsage(usage) {
   if (!usage) return null;
 

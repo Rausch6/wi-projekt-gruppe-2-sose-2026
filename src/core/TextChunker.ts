@@ -65,7 +65,7 @@ export function chunkPaperText(
   pages: PageTextChunk[],
   options: ChunkOptions = {},
 ): TextChunk[] {
-  let defaultTarget = 512;
+  let defaultTarget = 1024;
   let defaultOverlap = 100;
 
   try {
