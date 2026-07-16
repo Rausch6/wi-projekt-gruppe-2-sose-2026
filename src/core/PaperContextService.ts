@@ -429,58 +429,10 @@ export class PaperContextService {
     ].join("\n");
   }
 
-  /**
-   * Stellt einen komprimierten Kontext mit Bibliotheks-Metadaten für das LLM bereit.
-   * Das Query-Rewriting-Modul kann 'requestedFields' nutzen, um unnötige Metadaten herauszufiltern.
-   */
-  static async buildLibraryMetadataContext(
-    requestedFields: Array<"title" | "firstCreator" | "year" | "itemType"> = [
-      "title",
-      "firstCreator",
-      "year",
-    ],
-  ): Promise<string> {
-    const items = await ItemManager.getAllLibraryItemsMetadata();
-
-    if (!items.length) {
-      return "Die Bibliothek des Nutzers enthält keine relevanten Items oder konnte nicht ausgelesen werden.";
-    }
-
-    const lines = items.map((item) => {
-      let line = `[Zotero-ID: ${item.id}]`;
-      if (requestedFields.includes("title")) {
-        line += ` "${item.title}"`;
-      }
-      if (requestedFields.includes("firstCreator")) {
-        line += ` | Autor: ${item.firstCreator}`;
-      }
-      if (requestedFields.includes("year") && item.year) {
-        line += ` | Jahr: ${item.year}`;
-      }
-      if (requestedFields.includes("itemType")) {
-        line += ` | Typ: ${item.itemType}`;
-      }
-      return line;
-    });
-
-    return [
-      "Hier sind die gewünschten Metadaten der Paper in der Bibliothek:",
-      lines.join("\n"),
-      "Nutze diese Liste für deine Antwort.",
-    ].join("\n");
-  }
-
   static clearCache() {
     paperCache.clear();
     EmbeddingSearchService.clearCache();
   }
-}
-
-function formatItemCitation(item: Zotero.Item) {
-  const itemData = ItemManager.extractItemData(item);
-  const authorLabel = itemData.firstCreator || "Unbekannt";
-  const yearLabel = itemData.year ? ` ${itemData.year}` : "";
-  return `${authorLabel}${yearLabel}`;
 }
 
 function buildVectorSearchQuery(query: string, options: VectorContextOptions) {
@@ -706,29 +658,6 @@ function formatSingleContextMetadata(
 
   lines.push("[/PAPER]");
   return lines.join("\n");
-}
-
-function formatSingleContextMetadataFull(metadata: ContextPaperMetadata) {
-  return [
-    `[PAPER Zotero-ID=${metadata.itemID}]`,
-    `Item-Key: ${normalizeMetadataValue(metadata.itemKey, "unbekannt")}`,
-    `Bibliothek: ${normalizeMetadataValue(metadata.libraryName, "Unbekannte Bibliothek")} (Library-ID: ${metadata.libraryID})`,
-    `Titel: ${normalizeMetadataValue(metadata.title, "Ohne Titel")}`,
-    `Autorenschaft: ${normalizeMetadataValue(metadata.creators, "Unbekannte Autorenschaft")}`,
-    `Veröffentlichungsdatum: ${normalizeMetadataValue(metadata.publicationDate, "Unbekannt")}`,
-    `Jahr: ${normalizeMetadataValue(metadata.year, "Unbekannt")}`,
-    `Publikation/Journal: ${normalizeMetadataValue(metadata.publicationTitle, "Unbekannt")}`,
-    `Verlag: ${normalizeMetadataValue(metadata.publisher, "Unbekannt")}`,
-    `DOI: ${normalizeMetadataValue(metadata.doi, "Nicht vorhanden")}`,
-    `ISBN: ${normalizeMetadataValue(metadata.isbn, "Nicht vorhanden")}`,
-    `URL: ${normalizeMetadataValue(metadata.url, "Nicht vorhanden")}`,
-    `Abstract vorhanden: ${normalizeMetadataValue(metadata.abstractNote) ? "Ja" : "Nein"}`,
-    `Typ: ${normalizeMetadataValue(metadata.itemType, "unknown")}`,
-    `Tags: ${metadata.tags.length ? metadata.tags.map((tag) => normalizeMetadataValue(tag)).join(", ") : "Keine Tags"}`,
-    `Zotero hinzugefügt: ${normalizeMetadataValue(metadata.dateAdded, "Unbekannt")}`,
-    `Zotero geändert: ${normalizeMetadataValue(metadata.dateModified, "Unbekannt")}`,
-    "[/PAPER]",
-  ].join("\n");
 }
 
 function formatMetadataCitation(

@@ -1449,41 +1449,6 @@ function formatCandidateMetadata(
   return [...lines, "[/PAPER]"].join("\n");
 }
 
-function formatCandidateMetadataFull(
-  candidate: RagItemCandidate,
-  fields: PromptContextRouteDecision["requestedFields"],
-) {
-  const include = (field: NonNullable<typeof fields>[number]) =>
-    !fields?.length || fields.includes(field);
-  const lines = [
-    `[PAPER Zotero-ID=${candidate.itemID}]`,
-    `Item-Key: ${normalizeMetadataValue(candidate.itemKey, "unbekannt")}`,
-    `Bibliothek: ${normalizeMetadataValue(candidate.library.name, "Unbekannte Bibliothek")} (Library-ID: ${candidate.library.libraryID})`,
-    `Titel: ${normalizeMetadataValue(candidate.title, "Ohne Titel")}`,
-    `Autorenschaft: ${normalizeMetadataValue(candidate.creators, "Unbekannte Autorenschaft")}`,
-    `Veröffentlichungsdatum: ${normalizeMetadataValue(candidate.publicationDate, "Unbekannt")}`,
-    `Jahr: ${normalizeMetadataValue(candidate.year, "Unbekannt")}`,
-    `Publikation/Journal: ${normalizeMetadataValue(candidate.publicationTitle, "Unbekannt")}`,
-    `Verlag: ${normalizeMetadataValue(candidate.publisher, "Unbekannt")}`,
-    `DOI: ${normalizeMetadataValue(candidate.doi, "Nicht vorhanden")}`,
-    `ISBN: ${normalizeMetadataValue(candidate.isbn, "Nicht vorhanden")}`,
-    `URL: ${normalizeMetadataValue(candidate.url, "Nicht vorhanden")}`,
-    `Abstract vorhanden: ${normalizeMetadataValue(candidate.abstractNote) ? "Ja" : "Nein"}`,
-    `Typ: ${normalizeMetadataValue(candidate.itemType, "unknown")}`,
-    `Tags: ${candidate.tags.length ? candidate.tags.map((tag) => normalizeMetadataValue(tag)).join(", ") : "Keine Tags"}`,
-    `Zotero hinzugefügt: ${normalizeMetadataValue(candidate.dateAdded, "Unbekannt")}`,
-    `Zotero geändert: ${normalizeMetadataValue(candidate.dateModified, "Unbekannt")}`,
-  ];
-
-  if (include("tags")) {
-    lines.push(
-      `Hinweis: Tags koennen fuer thematische Filter und Gruppierungen genutzt werden.`,
-    );
-  }
-
-  return [...lines, "[/PAPER]"].join("\n");
-}
-
 function normalizeMetadataValue(value: unknown, fallback = "") {
   const normalized = String(value ?? "")
     .replace(/\s+/g, " ")
