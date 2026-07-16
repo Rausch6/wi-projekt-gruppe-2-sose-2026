@@ -1,0 +1,619 @@
+% ============================================================
+% ZAIA - Projektbericht, ausgefuellte Fassung
+% Stand der inhaltlichen Auswertung: 16. Juli 2026
+% ============================================================
+
+\documentclass[11pt,a4paper,oneside,parskip=half]{scrartcl}
+
+\usepackage[ngerman]{babel}
+\usepackage{fontspec}
+\defaultfontfeatures{Ligatures=TeX}
+\setmainfont[
+  Path=fonts/Satoshi_Complete/Fonts/OTF/,
+  UprightFont=Satoshi-Regular.otf,
+  ItalicFont=Satoshi-Italic.otf,
+  BoldFont=Satoshi-Bold.otf,
+  BoldItalicFont=Satoshi-BoldItalic.otf
+]{Satoshi}
+\newfontfamily\clashdisplay[
+  Path=fonts/ClashDisplay_Complete/Fonts/OTF/,
+  UprightFont=ClashDisplay-Medium.otf,
+  BoldFont=ClashDisplay-Bold.otf,
+  FontFace={bx}{n}{ClashDisplay-Bold.otf},
+  FontFace={sb}{n}{ClashDisplay-Semibold.otf},
+  FontFace={sbx}{n}{ClashDisplay-Semibold.otf}
+]{Clash Display}
+\usepackage{microtype}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit}
+\usepackage{hyperref}
+\usepackage[automark,headsepline]{scrlayer-scrpage}
+
+\geometry{left=2.6cm,right=2.6cm,top=2.5cm,bottom=2.5cm,headheight=15pt}
+\setlist[itemize]{topsep=0.25em,itemsep=0.15em,leftmargin=1.5em}
+\setlist[enumerate]{topsep=0.25em,itemsep=0.2em,leftmargin=1.7em}
+\renewcommand{\arraystretch}{1.18}
+\setlength{\emergencystretch}{2em}
+% KOMA's parskip option reserves one em at paragraph ends. Full-width tables
+% need the regular flexible paragraph fill to stay exactly within the text area.
+\setlength{\parfillskip}{0pt plus 1fil}
+\urlstyle{same}
+
+\definecolor{ZAIAred}{HTML}{E03340}
+\definecolor{ZAIAcharcoal}{HTML}{242425}
+\definecolor{ZAIAmidgray}{HTML}{6B6B70}
+\definecolor{ZAIAsoftgray}{HTML}{F3F3F4}
+\definecolor{ZAIAdarkgreen}{HTML}{246B45}
+\definecolor{ZAIAamber}{HTML}{9A6500}
+
+\setkomafont{section}{\Large\clashdisplay\bfseries\color{ZAIAcharcoal}}
+\setkomafont{subsection}{\large\clashdisplay\fontseries{sb}\selectfont\color{ZAIAcharcoal}}
+\setkomafont{subsubsection}{\normalsize\clashdisplay\mdseries\color{ZAIAcharcoal}}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=ZAIAred,
+  urlcolor=ZAIAred,
+  pdftitle={Projektbericht - ZAIA - Zotero AI Assistent},
+  pdfauthor={Frank Baum, Vincent Korsch, Nicolas Medda, Timo Rausch, Henrik Schneider}
+}
+
+\clearpairofpagestyles
+\ihead{ZAIA -- Research reimagined}
+\ohead{Projektbericht}
+\cfoot{\pagemark}
+
+% ------------------------------------------------------------
+% Projektdaten
+% ------------------------------------------------------------
+\newcommand{\projecttitle}{ZAIA - Zotero AI Assistent}
+\newcommand{\module}{Wirtschaftsinformatik Projekt}
+\newcommand{\semester}{Sommersemester 2026}
+\newcommand{\supervisor}{Till Schirrmeister}
+\newcommand{\team}{%
+  \begin{tabular}[t]{@{}l@{}}
+    Frank Baum, Vincent Korsch, Nicolas Medda \\
+    Timo Rausch, Henrik Schneider
+  \end{tabular}%
+}
+\newcommand{\submissiondate}{25.07.2026}
+
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcommand{\done}{\textbf{\textcolor{ZAIAdarkgreen}{Umgesetzt}}}
+\newcommand{\partlydone}{\textbf{\textcolor{ZAIAamber}{Teilweise}}}
+
+\begin{document}
+
+% ============================================================
+% Titelseite
+% ============================================================
+\begin{titlepage}
+  \thispagestyle{empty}
+
+  \begin{tikzpicture}[remember picture,overlay]
+    \fill[ZAIAcharcoal] (current page.north west)
+      rectangle ([yshift=-4cm]current page.north east);
+    \fill[ZAIAred] ([yshift=-4cm]current page.north west)
+      rectangle ([yshift=-4.15cm]current page.north east);
+    \node[anchor=north west,text=white,align=left]
+      at ([xshift=2.6cm,yshift=-1.2cm]current page.north west) {
+        {\clashdisplay\LARGE\bfseries ZAIA}\\[0.25cm]
+        {\large Research reimagined}
+      };
+    \node[anchor=north east]
+      at ([xshift=-2.6cm,yshift=-0.75cm]current page.north east) {
+        \includegraphics[width=2.5cm]{images/LogoPlugin.png}
+      };
+  \end{tikzpicture}
+
+  \vspace*{6cm}
+  {\clashdisplay\Huge\bfseries Projektbericht\par}
+  \vspace{0.45cm}
+  {\clashdisplay\Large\fontseries{sb}\selectfont
+    \color{ZAIAmidgray}\projecttitle\par}
+
+  \vfill
+
+  \begin{tabular}{@{}L{4cm}L{9.2cm}@{}}
+    \textbf{Modul:} & \module \\
+    \textbf{Semester:} & \semester \\
+    \textbf{Betreuer:} & \supervisor \\
+    \textbf{Projektteam:} & \team \\
+    \textbf{Abgabedatum:} & \submissiondate \\
+  \end{tabular}
+
+  \vspace{1.3cm}
+  {\large\bfseries\color{ZAIAcharcoal}Universität Potsdam}
+\end{titlepage}
+
+% Die kompakte Berichtsform verzichtet bewusst auf Verzeichnisse.
+
+% ============================================================
+\section{Projektüberblick}
+
+\subsection{Ausgangssituation und Problemstellung}
+
+Zotero unterstützt die Sammlung, Strukturierung und Zitation wissenschaftlicher
+Literatur. Für inhaltliche Fragen, Vergleiche oder Zusammenfassungen müssen
+Nutzer:innen ihre Quellen jedoch häufig in ein separates KI-Werkzeug übertragen.
+Dadurch entstehen Medienbrüche: Dokumente werden mehrfach ausgewählt oder
+hochgeladen, der Bezug zur bestehenden Bibliotheksstruktur geht verloren und bei
+externen Diensten ist nicht immer transparent, welche Inhalte den lokalen
+Arbeitsplatz verlassen.
+
+ZAIA adressiert dieses Problem als direkt in Zotero eingebetteter
+Forschungsassistent. Das Plugin verbindet den Chat mit den bereits vorhandenen
+Einträgen, PDF-Dateien, Metadaten und Gruppenbibliotheken. Nutzer:innen können
+dabei zwischen einem institutionellen Cloud-Zugang über KISSKI/Academic Cloud
+und einer lokalen Verarbeitung mit Ollama wählen. Damit soll ein durchgängiger
+Arbeitsablauf von der Literaturverwaltung bis zur kontextbezogenen KI-Anfrage
+entstehen.
+
+\subsection{Zielbild und Anforderungen}
+
+Das Projektziel war ein installierbarer, alltagstauglicher Prototyp, der folgende
+Kernanforderungen erfüllt:
+\begin{itemize}
+  \item native Bedienung in Zotero über Sidebar, Pop-out und Tastenkürzel,
+  \item austauschbare lokale und cloudbasierte Sprachmodelle,
+  \item gezielte Auswahl von Paper-Kontext sowie bibliotheksweite Suche,
+  \item lokale semantische Suche mit kontrollierbarer Indexierung,
+  \item persistente, verwaltbare Chatverläufe,
+  \item Unterstützung persönlicher und gemeinsamer Zotero-Bibliotheken sowie
+  \item ein geführter Setup-Prozess für die technisch anspruchsvolle lokale KI.
+\end{itemize}
+
+Das Ergebnis liegt als Version \texttt{1.0.0} vor und setzt Zotero ab Version
+\texttt{9.0.4} voraus. Der Quellcode ist als AGPL-3.0-or-later deklariert. Neben
+dem Add-on gehören eine Projektwebsite, ein öffentlicher GitHub-Auftritt und eine
+deutschsprachige Bedienoberfläche zum erreichten Projektstand.
+
+\subsection{Projektabgrenzung}
+
+Der Schwerpunkt lag auf einer Desktop-Erweiterung für Zotero, nicht auf einer
+eigenständigen Web- oder Mobilanwendung. Das automatische Installieren und
+Starten von Ollama ist auf Windows und macOS ausgelegt; entfernte
+Ollama-Endpunkte werden zwar angesprochen, aber nicht durch ZAIA verwaltet. Nicht
+Gegenstand des bisherigen Stands sind eine fachliche Garantie für KI-Antworten,
+eine automatische Prüfung erzeugter Literaturangaben oder eine belastbare
+Messung der Zeitersparnis im realen Forschungsalltag.
+
+% ============================================================
+\section{Key-Deliveries und Zielerreichung}
+
+\subsection{Ergebnisübersicht}
+
+\noindent\begin{tabularx}{\linewidth}{@{}L{3.5cm}Y L{2.35cm}@{}}
+\toprule
+\textbf{Deliverable} & \textbf{Erreichter Stand} & \textbf{Status} \\
+\midrule
+Zotero-Integration & Sidebar, Toolbar-Zugang und separates Pop-out-Fenster im
+  Zotero-Add-on-Kontext & \done \\
+Lokale und Cloud-KI & Umschaltbare Provider für KISSKI/Academic Cloud und
+  Ollama einschließlich Modellauswahl & \done \\
+Kontext und RAG & Manuelle Paper-Auswahl, Metadaten-Routing, PDF-Chunking,
+  Hybrid- bzw. Keyword-Suche & \done \\
+Index-Management & Bibliotheksübergreifender Index, Statusanzeige, Filter,
+  Einzel-/Mehrfachaktionen und Abbruch & \done \\
+Group Libraries & Erkennung persönlicher und gemeinsamer Bibliotheken samt
+  bibliotheksbezogener Metadaten & \done \\
+Chatverlauf & Lokale SQLite-Speicherung, Titel, Favoriten, Löschen und optionale
+  Bereinigung alter Chats & \done \\
+Setup und Betrieb & Readiness-Anzeige, signaturgeprüfte Ollama-Installation,
+  Modell-Download und Prozessverwaltung & \done \\
+Qualitätsnachweis & Automatisierte Unit- und Integrationstests; reproduzierbarer
+  Produktions-Build & \done \\
+Praxisevaluation & Systematische Nutzungsstudie und quantitative
+  Nutzenmessung & \partlydone \\
+\bottomrule
+\end{tabularx}
+
+\subsection{Nutzeroberfläche und Arbeitsablauf}
+
+Die zentrale Oberfläche ist eine ZAIA-Seitenleiste innerhalb von Zotero. Sie
+vereint Chatverlauf, Prompt-Eingabe, Provider- und Modellauswahl sowie die
+Kontextsteuerung. Ausgewählte Zotero-Einträge werden automatisch als möglicher
+Paper-Kontext erkannt; weitere Paper lassen sich über eine Bibliothekssuche
+manuell hinzufügen und auch wieder entfernen. Eine Badge zeigt die Zahl der
+aktiven Kontextquellen. Antworten werden als strukturiertes Markdown mit
+Überschriften, Listen, Tabellen, Code- und Mathematikblöcken dargestellt und
+können kopiert werden. Laufende Anfragen lassen sich abbrechen.
+
+Für längere Arbeitsphasen kann dieselbe Chatoberfläche in einem eigenen Fenster
+geöffnet werden. Sechs plattformgerechte Tastenkürzel decken häufige Aktionen
+wie Öffnen, neuen Chat, Pop-out, Favorisieren, Kontext und Modellauswahl ab, ohne
+bekannte Zotero-Standardkürzel zu überschreiben. Die Oberfläche enthält außerdem
+eine Projekt- und Teamansicht mit Links zu Website, GitHub und Instagram.
+
+\subsection{Flexible KI-Anbindung und geführtes Setup}
+
+Eine Provider-Abstraktion trennt die Fachlogik von den konkreten KI-Endpunkten.
+Im Cloud-Modus nutzt ZAIA eine OpenAI-kompatible KISSKI-Schnittstelle und lädt
+die dort verfügbaren Modelle dynamisch. Im lokalen Modus spricht das Plugin die
+Ollama-API an; als schlankes Standardmodell ist \texttt{qwen2.5:3b}
+vorkonfiguriert. Weitere Chatmodelle können in einem eigenen Modellfenster
+heruntergeladen, ausgewählt und gelöscht werden.
+
+Der Setup-Status wird nicht als einzelner Fehler, sondern als Folge von
+Meilensteinen dargestellt: Cloud-Verbindung, Ollama-Installation,
+Ollama-Dienst, lokales Chatmodell und Embedding-Modell. Fehlt Ollama, startet
+ZAIA unter Windows beziehungsweise macOS einen Helfer, der das offizielle
+Installationsartefakt lädt und dessen Plattformsignatur prüft. Ist Ollama zwar
+installiert, aber nicht erreichbar, kann ZAIA \texttt{ollama serve} im
+Hintergrund starten. Beim Beenden des Add-ons wird nur ein Prozess beendet, den
+ZAIA selbst gestartet hat.
+
+\subsection{Kontextauswahl, Indexierung und Retrieval}
+
+ZAIA extrahiert Text aus PDF-Anhängen und zerlegt ihn standardmäßig in Abschnitte
+von ungefähr 512 Tokens mit 100 Tokens Überlappung. Abstrakte werden als eigene
+Quellen berücksichtigt. Für die semantische Suche erzeugt das lokale
+Embedding-Modell \texttt{bge-m3:latest} Vektoren mit 1024 Dimensionen. Die
+Dokumente und Vektoren werden in einer lokalen Orama-Datenbank gespeichert. Je
+nach Verfügbarkeit kombiniert die Suche Vektorähnlichkeit und Volltextsuche oder
+fällt kontrolliert auf eine stichwortbasierte Suche zurück.
+
+Ein vorgeschalteter Kontext-Router unterscheidet unter anderem zwischen
+allgemeinen Fragen, reinen Metadatenfragen, einem einzelnen Paper, gefilterten
+Papern und der gesamten Bibliothek. Dadurch muss nicht für jede Anfrage der
+gesamte Bestand an das Chatmodell übergeben werden. Der Index-Manager macht den
+Zustand transparent: Er zeigt indexierte und nicht indexierte Paper, bietet
+Bibliotheks-, Typ-, Jahres- und Textfilter und ermöglicht Neuaufbau, Leeren,
+gezielte Indexierung sowie Abbruch laufender Vorgänge.
+
+\subsection{Chatverwaltung und Produktivitätsfunktionen}
+
+Chats und Nachrichten werden in einer lokalen SQLite-Datenbank im
+Zotero-Datenverzeichnis abgelegt. Gespeichert werden neben Inhalt und Reihenfolge
+auch Zeitstempel, Bibliotheks-/Item-Bezug, Favoritenstatus und -- sofern vom
+Provider geliefert -- Tokenzahlen. Der erste Prompt kann zur automatischen
+Benennung eines Chats verwendet werden. Nicht favorisierte Chats lassen sich
+optional nach 14 Tagen automatisch entfernen; Favoriten bleiben erhalten.
+
+In Summe wurden die funktionalen Kernziele erreicht. Teilweise offen bleibt die
+Validierung außerhalb des Entwicklungsteams: Der vorhandene Testbestand prüft
+zentrale Softwarepfade, ersetzt aber keine langfristige Feldstudie mit
+Studierenden und Forschenden.
+
+% ============================================================
+\section{Softwarearchitektur}
+
+\subsection{Architekturüberblick}
+
+ZAIA läuft vollständig im Zotero-Add-on-Kontext. Die Architektur trennt
+Darstellung, Ablaufsteuerung, fachliche Kontextaufbereitung, Provider und lokale
+Persistenz. Externe Kommunikation findet nur mit dem gewählten Cloud-LLM oder
+dem konfigurierten Ollama-Endpunkt statt.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{0.98\linewidth}{!}{%
+\begin{tikzpicture}[
+  box/.style={draw,rounded corners=2pt,align=center,minimum width=3.4cm,
+    minimum height=1.05cm,fill=ZAIAsoftgray},
+  main/.style={draw=ZAIAred,very thick,rounded corners=2pt,align=center,
+    minimum width=4.2cm,minimum height=1.25cm},
+  ext/.style={draw=ZAIAmidgray,dashed,rounded corners=2pt,align=center,
+    minimum width=3.4cm,minimum height=1.05cm},
+  arrow/.style={-{Latex[length=2.5mm]},thick}
+]
+  \node[box] (ui) {Zotero-UI\\Sidebar und Pop-out};
+  \node[main,right=1.6cm of ui] (controller) {Chat-Controller\\und Setup-Steuerung};
+  \node[box,right=1.6cm of controller] (rag) {Kontext-Router\\RAG und Indexierung};
+  \node[box,above=1.35cm of rag] (zotero) {Zotero-Bibliotheken\\Metadaten und PDFs};
+  \node[box,below=1.35cm of controller] (storage) {Lokale Persistenz\\SQLite und Orama-Index};
+  \node[ext,right=1.6cm of rag,yshift=0.75cm] (cloud) {KISSKI/Academic Cloud\\Cloud-LLM};
+  \node[ext,right=1.6cm of rag,yshift=-0.75cm] (ollama) {Ollama\\Chat und Embeddings};
+
+  \draw[arrow,<->] (ui) -- (controller);
+  \draw[arrow,<->] (controller) -- (rag);
+  \draw[arrow,<->] (rag) -- (zotero);
+  \draw[arrow,<->] (controller) -- (storage);
+  \draw[arrow] (controller.east) -- ++(0.65,0) |- (cloud.west);
+  \draw[arrow] (controller.east) -- ++(0.65,0) |- (ollama.west);
+\end{tikzpicture}%
+}
+\caption{Vereinfachte Systemarchitektur von ZAIA}
+\end{figure}
+
+\subsection{Zentrale Komponenten}
+
+\noindent\begin{tabularx}{\linewidth}{@{}L{3.7cm}Y@{}}
+\toprule
+\textbf{Komponente} & \textbf{Verantwortung und Beispiele} \\
+\midrule
+UI-Schicht & Aufbau und Synchronisierung von Sidebar, Pop-out,
+  Einstellungsseite, Modellfenster und Index-Manager \\
+Chat-Controller & Chat-Lebenszyklus, Request-Aufbau, Streaming-Anzeige,
+  Abbruch, Kontextsteuerung und Persistenzaufrufe \\
+Kontext-Router & Entscheidung, ob keine Quellen, nur Metadaten, einzelne,
+  gefilterte oder alle Paper benötigt werden \\
+Paper-Pipeline & Item-Auflösung, PDF-Extraktion, Chunking,
+  Metadatenformatierung und Retrieval \\
+Indexierung & Hintergrundverarbeitung, Ereignisse, Abbruch und persistenter
+  hybrider Orama-Index \\
+Provider-Schicht & Einheitlicher Zugriff auf KISSKI und Ollama sowie getrennte
+  lokale Embedding-Anbindung \\
+Persistenz & SQLite-Repository für Chats und Nachrichten; Zotero-Präferenzen
+  für Konfiguration; JSON-basierter Vektorindex \\
+Betriebsschicht & Readiness-Prüfung, signaturgeprüftes Setup,
+  Modell-Downloads und Ollama-Prozessverwaltung \\
+\bottomrule
+\end{tabularx}
+
+\subsection{Ablauf einer Anfrage}
+
+\begin{enumerate}
+  \item Der Chat-Controller validiert Eingabe und Betriebsbereitschaft des
+    gewählten Providers sowie -- falls aktiviert -- des Embedding-Dienstes.
+  \item ZAIA persistiert den Nutzer-Prompt und ermittelt automatisch markierte
+    sowie manuell angehängte Paper.
+  \item Wenn kein Kontext erzwungen wurde, bewertet der Kontext-Router die
+    Anfrage anhand von Prompt, verfügbaren Metadaten und Bibliotheksbestand.
+  \item Die Paper-Pipeline erzeugt je nach Route einen Metadatenblock oder sucht
+    relevante Chunks in bestimmten beziehungsweise allen indexierten Papern.
+  \item Der Chat-Controller kombiniert Systemkontext und bisherigen Verlauf zu
+    einer Provider-unabhängigen Nachrichtenliste.
+  \item Der aktive Provider verarbeitet die Anfrage. Die Oberfläche zeigt den
+    Fortschritt, übernimmt Antwort und Tokeninformationen und reagiert auf einen
+    Abbruch durch die Nutzer:innen.
+  \item Nach erfolgreichem Abschluss werden Antwort und aktualisierte
+    Chat-Metadaten lokal gespeichert und in Sidebar sowie Pop-out synchronisiert.
+\end{enumerate}
+
+Fällt die semantische Suche aus, versucht ZAIA die Retrieval-Anfrage als
+Volltext-/Keyword-Suche weiterzuführen. Scheitert die Router-Entscheidung, greift
+ein älterer, einfacherer Kontextpfad. Diese Fallbacks verbessern die
+Fehlertoleranz, können aber eine schwächere Kontextauswahl bewirken.
+
+\subsection{Architekturentscheidungen und Abwägungen}
+
+\textbf{Direkte Zotero-Integration.} Die Erweiterung kann Auswahlzustand,
+Metadaten, Anhänge und Gruppenbibliotheken ohne Export nutzen. Dafür besteht eine
+enge Bindung an Zotero-APIs und an die unterstützte Hauptversion 9.
+
+\textbf{Provider-Abstraktion.} Cloud und lokale Modelle folgen derselben
+Schnittstelle. Dadurch bleiben Chat- und Kontextlogik austauschbar. Unterschiede
+in Modellfähigkeiten, Antwortformaten und Tokenzählung müssen dennoch durch die
+Provider normalisiert werden.
+
+\textbf{Lokales RAG.} Embeddings, Vektorindex und Chatdaten liegen standardmäßig
+lokal. Das reduziert Datenabfluss und laufende API-Kosten, verlangt aber lokale
+Rechenleistung, Speicherplatz und einen zusätzlichen Ollama-Dienst.
+
+\textbf{Explizite Indexkontrolle.} Ein eigener Index-Manager macht Zustand und
+Fortschritt sichtbar und erlaubt gezielte Aktionen. Dies erhöht die
+Nachvollziehbarkeit, bringt gegenüber einer vollständig unsichtbaren
+Hintergrundindexierung aber zusätzliche Bedienkomplexität mit sich.
+
+\subsection{Datenhaltung und Datenschutz}
+
+Im reinen lokalen Modus werden Chat- und Embedding-Anfragen an die konfigurierte
+Ollama-Instanz gesendet; bei der Standardadresse bleibt die Verarbeitung auf dem
+eigenen Rechner. Chatverläufe liegen in \nolinkurl{zaia-chats.sqlite}, der
+Rechercheindex in \nolinkurl{orama_vector_index_v2.json} innerhalb des lokalen
+Zotero-Umfelds. API-Schlüssel werden als Zotero-Präferenz verwaltet und nicht in
+den Chatdatensätzen abgelegt.
+
+Im Cloud-Modus werden der Prompt und die für die Antwort aufgebauten Nachrichten
+an den KISSKI-Endpunkt übertragen. Die Übermittlung von Paper-Kontext kann in den
+Einstellungen deaktiviert werden. Diese Option verhindert jedoch nicht die
+Cloud-Verarbeitung des eigentlichen Prompts. Für vertrauliche oder noch nicht
+veröffentlichte Inhalte ist daher der lokale Modus beziehungsweise eine vorab
+geklärte institutionelle Cloud-Nutzung vorzuziehen.
+
+% ============================================================
+\section{Projektvorgehen und Qualitätssicherung}
+
+\subsection{Arbeitsteilung und iteratives Vorgehen}
+
+Der im Plugin selbst dokumentierte Teamzuschnitt verbindet klare Schwerpunkte
+mit gemeinsamer Umsetzung:
+
+\noindent\begin{tabularx}{\linewidth}{@{}L{3.4cm}Y@{}}
+\toprule
+\textbf{Teammitglied} & \textbf{Schwerpunkt} \\
+\midrule
+Frank Baum & Setup und KI-Anbindung \\
+Vincent Korsch & UI-Design und Branding \\
+Nicolas Medda & Embedding und Indexierung \\
+Timo Rausch & KI-Anbindung und Architektur \\
+Henrik Schneider & Indexierung und Datenspeicherung \\
+\bottomrule
+\end{tabularx}
+
+Die Repository-Historie dokumentiert eine iterative Entwicklung vom ersten
+Commit am 11. Mai 2026 bis zum betrachteten Stand am 15. Juli 2026. Insgesamt
+umfasst sie 208 Commits, darunter 61 Merge-Commits. Feature-Branches und Pull
+Requests wurden unter anderem für UI, Chat-Persistenz, lokale Modelle,
+Text-Extraktion, Embeddings, Kontext-Routing, Einstellungen, Shortcuts und den
+Index-Manager eingesetzt. Der Tag \texttt{V.1.0.0} markiert den ersten
+abgeschlossenen Release-Stand.
+
+\subsection{Automatisierte Prüfungen}
+
+Zum Berichtsstand wurden alle vorhandenen Prüfungen erneut ausgeführt. Das
+Ergebnis waren 74 bestandene Tests in 14 Testdateien. Zusätzlich lief der
+Produktions-Build einschließlich TypeScript-Typprüfung ohne Fehler durch.
+
+\noindent\begin{tabularx}{\linewidth}{@{}L{4.1cm}Y@{}}
+\toprule
+\textbf{Prüfbereich} & \textbf{Abgedeckte Aspekte} \\
+\midrule
+Provider und HTTP & Basisklassen, Provider-Manager, KISSKI/Ollama,
+  Fehlernormalisierung und HTTP-Client \\
+Setup und Betrieb & Readiness-Logik, Ollama-Lebenszyklus,
+  Installationsskripte und lokale Modellauswahl \\
+Kontext und Retrieval & Embedding-Fallback, Kontext-Router,
+  Metadatenfelder und Paper-Kontext-Pipeline \\
+Index-Manager & Auswahlzustand, UI-Aktionen, Abbruch und Indexsteuerung \\
+Integration & Provider-Pipeline sowie Paper-Kontext vom Zotero-Mock bis zum
+  Retrieval-Ergebnis \\
+Build & Add-on-Bündelung, XPI-Erzeugung und \texttt{tsc --noEmit} \\
+\bottomrule
+\end{tabularx}
+
+\subsection{Verbleibende Qualitätsgrenzen}
+
+Die Tests konzentrieren sich auf isolierte Logik und simulierte
+Integrationspfade. Im Repository ist keine automatisierte Ende-zu-Ende-Prüfung
+in einer real gestarteten Zotero-Instanz dokumentiert. Ebenso fehlen bislang
+eine systematische Usability-Studie, Lasttests mit sehr großen Bibliotheken und
+eine vergleichende Qualitätsmessung der Antworten verschiedener Modelle. Da
+PDF-Qualität, OCR, Hardware und Modellwahl stark variieren, müssen diese Punkte
+vor einem breiten produktiven Einsatz gesondert untersucht werden.
+
+% ============================================================
+\section{Ökonomische Betrachtung und Wettbewerbsanalyse}
+
+\subsection{Zielgruppen und Nutzenversprechen}
+
+\noindent\begin{tabularx}{\linewidth}{@{}L{3.5cm}Y@{}}
+\toprule
+\textbf{Zielgruppe} & \textbf{Nutzenversprechen} \\
+\midrule
+Studierende & Schnellere Orientierung in Seminar-, Abschluss- und
+  Prüfungsliteratur ohne Wechsel aus Zotero \\
+Forschende & Fragen, Vergleiche und Zusammenfassungen über kuratierte eigene
+  Bestände mit wählbarem Datenschutzprofil \\
+Arbeitsgruppen & Einbezug gemeinsamer Zotero-Bibliotheken und konsistenter
+  Metadaten in Rechercheprozesse \\
+Hochschulen & Offen lizenzierbare, lokal betreibbare Ergänzung zu
+  institutionellen Cloud-Angeboten wie KISSKI \\
+\bottomrule
+\end{tabularx}
+
+Der wichtigste qualitative Nutzen liegt in der Vermeidung von Medienbrüchen.
+Quellen müssen nicht erneut hochgeladen oder außerhalb Zotero organisiert
+werden. Der Kontext kann aus Auswahl, Metadaten und Bibliotheksindex erzeugt
+werden; das verkürzt insbesondere wiederkehrende Orientierungs- und
+Vergleichsaufgaben. Eine monetäre Bewertung wäre zum aktuellen Stand jedoch
+spekulativ, weil weder Bearbeitungszeiten noch Antwortqualität in einer
+kontrollierten Nutzerstudie gemessen wurden.
+
+\subsection{Aufwand und Kostenstruktur}
+
+Die Software selbst ist als Open-Source-Projekt ohne vorgesehene Lizenzgebühr
+angelegt. Kosten entstehen an anderen Stellen:
+\begin{itemize}
+  \item \textbf{Entwicklung und Wartung:} Anpassungen an neue Zotero-Versionen,
+    Modell-APIs, Betriebssysteme und Sicherheitsanforderungen erfordern
+    kontinuierliche Pflege.
+  \item \textbf{Cloud-Nutzung:} Für den KISSKI-Modus werden ein berechtigter
+    Zugang und ein API-Schlüssel benötigt. Kosten beziehungsweise Kontingente
+    hängen vom institutionellen Angebot ab.
+  \item \textbf{Lokaler Betrieb:} Ollama vermeidet nutzungsabhängige
+    API-Gebühren, beansprucht aber Arbeitsspeicher, Rechenzeit, Energie und
+    Speicherplatz für Modelle und Index.
+  \item \textbf{Support:} Installation, Modellwahl, OCR-Probleme und
+    Datenschutzfragen erzeugen Unterstützungsbedarf, besonders bei einer
+    hochschulweiten Bereitstellung.
+\end{itemize}
+
+Für eine Weiterführung bietet sich ein gemeinschaftlich gepflegtes
+Open-Source-Modell mit institutionellem Sponsoring an. Eine Hochschule könnte
+ein geprüftes Release, vorkonfigurierte KISSKI-Zugänge und Support bereitstellen,
+während die lokale Option Forschenden mit erhöhtem Schutzbedarf erhalten bleibt.
+
+\subsection{Wettbewerbsanalyse}
+
+Die folgende Einordnung verwendet öffentlich dokumentierte Funktionen mit Stand
+Juli 2026. \glqq Nicht dokumentiert\grqq bedeutet nicht zwingend, dass eine
+Funktion technisch unmöglich ist, sondern dass sie auf den geprüften offiziellen
+Produktseiten nicht als regulärer Betriebsmodus beschrieben wird.
+
+\small
+\noindent\begin{tabularx}{\linewidth}{@{}L{2.2cm}L{2.65cm}L{2.25cm}Y L{2.65cm}@{}}
+\toprule
+\textbf{Angebot} & \textbf{Zotero-Bezug} & \textbf{Lokale KI} &
+\textbf{Eigener Quellenkontext} & \textbf{Zugang und Kosten} \\
+\midrule
+ZAIA & Native Erweiterung & Ollama für Chat und Embeddings & Persönliche und
+  Gruppenbibliotheken, Metadaten, PDFs und lokaler Index & AGPL; lokale
+  Infrastruktur bzw. KISSKI-Zugang erforderlich \\
+PapersGPT & Native Zotero-Erweiterung & Lokale Modelle und Ollama dokumentiert &
+  Einzelne/mehrere PDFs bis zur Bibliothek & Kostenlose Teststufe und bezahlte
+  Stufen; Quellcode AGPL \\
+Elicit & Import aus Zotero in Elicit Library & Nicht dokumentiert & Importierte
+  Referenzen/PDFs, Suche, Extraktion und Reviews & Kostenloser Basic-Plan,
+  kostenpflichtige Plus-/Pro-/Teamstufen \\
+SciSpace & Zotero-Konto wird mit Webplattform verbunden & Nicht dokumentiert &
+  Importierte PDFs und Copilot-/Library-Workflows & Kostenloser Basiszugang,
+  kreditbasierte Abonnements \\
+\bottomrule
+\end{tabularx}
+\normalsize
+
+\medskip
+\noindent\textbf{Geprüfte Produktquellen:}
+\begin{itemize}
+  \item PapersGPT: \href{https://github.com/papersgpt/papersgpt-for-zotero}{
+    GitHub-Repository} und \href{https://www.papersgpt.com/en/pricing}{Preisseite}
+  \item Elicit: \href{https://elicit.com/solutions/library}{Library-Funktionen}
+    und \href{https://elicit.com/pricing}{Preisseite}
+  \item SciSpace: \href{https://scispace.com/help/en/articles/10719251-how-to-connect-scispace-with-zotero}{
+    Anleitung zur Zotero-Verbindung} und
+    \href{https://scispace.com/resources/credits-pricing-guide/}{Tarifübersicht}
+\end{itemize}
+
+ZAIA differenziert sich gegenüber den beiden Webplattformen vor allem durch den
+Verbleib im bestehenden Zotero-Arbeitsablauf und den lokalen Retrieval-Stack.
+Nutzer:innen können sowohl Chatmodell als auch Embeddings lokal ausführen, ohne
+ihre Bibliothek zunächst in einen separaten Dienst zu importieren. Gegenüber
+PapersGPT ist diese Positionierung weniger eindeutig, weil auch dort native
+Zotero-Integration, lokale Modelle und bibliotheksweite Auswertung dokumentiert
+sind. ZAIA kann hier insbesondere mit der Anbindung an den deutschen
+Hochschulkontext, dem expliziten KISSKI-Pfad, der Unterstützung von
+Gruppenbibliotheken und einem transparent steuerbaren Index argumentieren.
+
+Die etablierten Alternativen besitzen zugleich Vorteile: Elicit und SciSpace
+bieten breitere, spezialisierte Web-Workflows etwa für systematische Reviews und
+strukturierte Extraktion. PapersGPT dokumentiert eine größere Modellauswahl und
+weitergehende Batch-Funktionen. ZAIA ist demgegenüber ein junges Projekt mit
+kleinerem Wartungs- und Supportnetz. Seine attraktivste Zielgruppe sind daher
+Zotero-Nutzer:innen an Hochschulen, die einen nachvollziehbaren, lokal
+betreibbaren Assistenten mit institutioneller Cloud-Option suchen.
+
+% ============================================================
+\section{Fazit und Ausblick}
+
+ZAIA erreicht das zentrale Projektziel: Version \texttt{1.0.0} verbindet eine
+ausgereifte Zotero-Oberfläche mit lokaler und cloudbasierter KI,
+bibliotheksbezogener Kontextauswahl, semantischem Retrieval und lokaler
+Chat-Persistenz. Besonders relevant sind die durchgängige Integration in den
+Literaturbestand, die Unterstützung von Gruppenbibliotheken sowie die Wahl
+zwischen Komfort und lokalem Datenschutz. Der erfolgreiche Build und 74
+bestandene automatisierte Tests belegen, dass nicht nur ein Oberflächenentwurf,
+sondern ein technisch zusammenhängender Prototyp vorliegt.
+
+Gleichzeitig bleibt ZAIA ein Forschungs- und Lehrprojekt. Die Aussagequalität
+hängt von Modell, Prompt, Index und PDF-Text ab; KI-Antworten ersetzen keine
+Prüfung der Originalquellen. Für eine nachhaltige Weiterführung sollten die
+nächsten Schritte in folgender Reihenfolge bearbeitet werden:
+\begin{enumerate}
+  \item Ende-zu-Ende-Tests in realen Zotero-Installationen und eine strukturierte
+    Usability-Studie mit den primären Zielgruppen,
+  \item nachvollziehbare Quellenverweise aus Antworten zurück zu Paper, Chunk
+    und Seitenzahl sowie Evaluation der Retrieval-Qualität,
+  \item Performance- und Robustheitstests mit großen, heterogenen Bibliotheken
+    einschließlich OCR-fehlerhafter Dokumente,
+  \item automatisierte Release- und Updateprozesse, vollständige
+    Installationsdokumentation und Prüfung weiterer Plattformen sowie
+  \item ein geklärtes Wartungs-, Datenschutz- und Supportkonzept für eine
+    mögliche hochschulweite Bereitstellung.
+\end{enumerate}
+
+Damit bietet das Projekt eine tragfähige Grundlage für weitere Entwicklung. Der
+größte nächste Erkenntnisgewinn liegt nicht in zusätzlichen Einzel-Features,
+sondern in der systematischen Prüfung, wie zuverlässig, verständlich und
+zeitsparend ZAIA im tatsächlichen wissenschaftlichen Arbeitsprozess ist.
+
+\end{document}
