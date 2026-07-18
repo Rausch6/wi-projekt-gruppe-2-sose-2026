@@ -1,5 +1,7 @@
+/** Vom automatischen lokalen Ollama-Lifecycle unterstützte Plattformen. */
 export type OllamaPlatform = "windows" | "macos";
 
+/** Maschinenlesbare Gründe für fehlende lokale Ollama-Bereitschaft. */
 export type OllamaLifecycleIssue =
   | "unsupported-platform"
   | "remote-endpoint-unreachable"
@@ -8,11 +10,13 @@ export type OllamaLifecycleIssue =
   | "start-failed"
   | "startup-timeout";
 
+/** Minimale Prozessschnittstelle, die der Lifecycle-Manager benötigt. */
 export type ManagedOllamaProcess = {
   isRunning: () => boolean;
   kill: () => void;
 };
 
+/** Austauschbare Systemabhängigkeiten für Laufzeit und Tests. */
 export type OllamaLifecycleDependencies = {
   getPlatform: () => OllamaPlatform;
   isReachable: (baseUrl: string) => Promise<boolean>;
@@ -28,17 +32,23 @@ export type OllamaLifecycleDependencies = {
 
 export type EnsureReadyOptions = {
   /**
-   * When false, ensureReady only probes reachability and reports whether
-   * Ollama is installed/running instead of spawning and waiting for it.
-   * Used by passive status checks so they don't block for the full
-   * startup timeout just to render a readiness indicator.
+   * Bei `false` prüft `ensureReady` nur Erreichbarkeit und Installation, ohne
+   * einen Prozess zu starten. Passive Setup-Prüfungen blockieren dadurch nicht
+   * bis zum vollständigen Start-Timeout.
    */
   autoStart?: boolean;
 };
 
+/**
+ * Fehler mit maschinenlesbarem Grund für die Setup- und Statusanzeige.
+ */
 export class OllamaLifecycleError extends Error {
   readonly issue: OllamaLifecycleIssue;
 
+  /**
+   * @param issue - Maschinenlesbarer Fehlergrund für Provider und UI.
+   * @param message - Technische Fehlermeldung für Protokollierung und Diagnose.
+   */
   constructor(issue: OllamaLifecycleIssue, message: string) {
     super(message);
     this.name = "OllamaLifecycleError";
@@ -46,16 +56,35 @@ export class OllamaLifecycleError extends Error {
   }
 }
 
+/**
+ * Verwaltet den lokalen Ollama-Dienst nach der Installation. Die Klasse prüft
+ * Installation und Erreichbarkeit, startet Ollama bei Bedarf und beendet nur
+ * Prozesse, die sie selbst gestartet hat, sofern nicht ausdrücklich alle
+ * Ollama-Prozesse terminiert werden sollen.
+ */
 export class OllamaLifecycleManager {
   private managedProcess: ManagedOllamaProcess | null = null;
   private startupPromise: Promise<void> | null = null;
 
+  /**
+   * @param dependencies - Plattform- und Prozessfunktionen des Managers.
+   * @param startupTimeoutMs - Maximale Wartezeit auf die lokale Ollama-API.
+   * @param pollIntervalMs - Abstand zwischen zwei Erreichbarkeitsprüfungen.
+   */
   constructor(
     private readonly dependencies: OllamaLifecycleDependencies,
     private readonly startupTimeoutMs = 20_000,
     private readonly pollIntervalMs = 500,
   ) {}
 
+  /**
+   * Stellt sicher, dass der konfigurierte lokale Ollama-Endpunkt erreichbar ist.
+   * Bei passiver Prüfung wird nur ein präziser Statusfehler geliefert; bei
+   * aktiver Prüfung darf Ollama automatisch gestartet werden.
+   *
+   * @param baseUrl - Zu prüfende Ollama-Basis-URL.
+   * @param options - Steuerung des automatischen Starts.
+   */
   async ensureReady(
     baseUrl: string,
     options: EnsureReadyOptions = {},
@@ -88,16 +117,23 @@ export class OllamaLifecycleManager {
     return this.startupPromise;
   }
 
+  /** Prüft, ob die Ollama-Programmdatei an einem bekannten Ort vorhanden ist. */
   async isInstalled(): Promise<boolean> {
     return Boolean(
       await this.dependencies.findExecutable(this.dependencies.getPlatform()),
     );
   }
 
+  /** Prüft, ob der Manager aktuell einen selbst gestarteten Prozess verwaltet. */
   ownsRunningProcess() {
     return Boolean(this.managedProcess?.isRunning());
   }
 
+  /**
+   * Beendet ausschließlich den vom Manager selbst gestarteten Ollama-Prozess.
+   *
+   * @returns Ob ein laufender Prozess beendet wurde.
+   */
   async shutdown(): Promise<boolean> {
     const process = this.managedProcess;
     this.managedProcess = null;
@@ -112,6 +148,7 @@ export class OllamaLifecycleManager {
     }
   }
 
+  /** Beendet plattformspezifisch alle bekannten Ollama-Prozesse. */
   async terminateAll(): Promise<void> {
     const terminateAll = this.dependencies.terminateAll;
     if (!terminateAll) {
@@ -125,6 +162,11 @@ export class OllamaLifecycleManager {
     this.managedProcess = null;
   }
 
+  /**
+   * Startet `ollama serve` und wartet bis zum Timeout auf die lokale API.
+   *
+   * @param baseUrl - Lokaler Endpunkt, dessen Erreichbarkeit erwartet wird.
+   */
   private async startAndWait(baseUrl: string) {
     const platform = this.dependencies.getPlatform();
     const executablePath = await this.dependencies.findExecutable(platform);
@@ -162,7 +204,7 @@ export class OllamaLifecycleManager {
       try {
         this.managedProcess.kill();
       } catch {
-        // The process may have terminated between the checks.
+        // Der Prozess kann zwischen Prüfung und Beenden bereits beendet worden sein.
       }
     }
     this.managedProcess = null;
@@ -173,10 +215,12 @@ export class OllamaLifecycleManager {
   }
 }
 
+/** Entfernt Leerraum und abschließende Schrägstriche aus der Basis-URL. */
 function normalizeBaseUrl(baseUrl: string) {
   return baseUrl.trim().replace(/\/+$/, "");
 }
 
+/** Ermittelt den Wert für OLLAMA_HOST aus der konfigurierten Basis-URL. */
 function getOllamaHostFromBaseUrl(baseUrl: string): string {
   try {
     const url = new URL(baseUrl);
@@ -186,6 +230,7 @@ function getOllamaHostFromBaseUrl(baseUrl: string): string {
   }
 }
 
+/** Prüft, ob die URL auf den lokalen Rechner zeigt und automatisch startbar ist. */
 function isLocalOllamaUrl(baseUrl: string) {
   try {
     const hostname = new URL(baseUrl).hostname;
@@ -197,10 +242,15 @@ function isLocalOllamaUrl(baseUrl: string) {
   }
 }
 
+/** Wandelt beliebige Fehlerwerte in einen protokollierbaren Text um. */
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * Setzt Umgebungsvariablen nur für den Prozessstart und liefert eine Funktion
+ * zum Wiederherstellen der vorherigen Werte.
+ */
 function applyTemporaryEnv(env: Record<string, string>): () => void {
   const previousValues = new Map<string, string | null>();
   for (const [key, value] of Object.entries(env)) {
@@ -218,6 +268,7 @@ function applyTemporaryEnv(env: Record<string, string>): () => void {
   };
 }
 
+/** Erstellt die Zotero- und betriebssystemspezifischen Standardabhängigkeiten. */
 function createDefaultDependencies(): OllamaLifecycleDependencies {
   return {
     getPlatform() {
@@ -230,6 +281,8 @@ function createDefaultDependencies(): OllamaLifecycleDependencies {
       );
     },
     async isReachable(baseUrl) {
+      // Zotero.HTTP ist der bevorzugte Prüfpfad; fetch dient als Fallback für
+      // Laufzeitumgebungen, in denen der Zotero-Request fehlschlägt.
       if (typeof Zotero === "undefined") return true;
       const url = `${baseUrl}/api/tags`;
       try {
@@ -254,6 +307,7 @@ function createDefaultDependencies(): OllamaLifecycleDependencies {
       }
     },
     async findExecutable(platform) {
+      // Der erste vorhandene bekannte Pfad wird als Ollama-CLI verwendet.
       if (typeof IOUtils === "undefined" || typeof PathUtils === "undefined") {
         return null;
       }
@@ -272,10 +326,9 @@ function createDefaultDependencies(): OllamaLifecycleDependencies {
       process.startHidden = true;
       process.noShell = true;
 
-      // nsIProcess has no per-child environment option; the child inherits
-      // whatever is set on our own process at the moment it forks. Set the
-      // vars right before spawning and restore them right after so this
-      // doesn't leak into the rest of Zotero's environment.
+      // nsIProcess unterstützt keine Umgebung pro Kindprozess. Deshalb werden
+      // die Variablen unmittelbar vor dem Start gesetzt und direkt danach
+      // wiederhergestellt, damit sie nicht in Zotero bestehen bleiben.
       const restoreEnv = env ? applyTemporaryEnv(env) : null;
       try {
         process.runAsync(args, args.length);
@@ -291,6 +344,8 @@ function createDefaultDependencies(): OllamaLifecycleDependencies {
     wait: (milliseconds) =>
       new Promise((resolve) => setTimeout(resolve, milliseconds)),
     async terminateAll(platform) {
+      // Das vollständige Beenden ist bewusst plattformspezifisch und umfasst
+      // auch Ollama-Prozesse, die nicht von ZAIA gestartet wurden.
       if (platform === "macos") {
         await runSystemProcess(
           "/usr/bin/osascript",
@@ -325,6 +380,10 @@ function createDefaultDependencies(): OllamaLifecycleDependencies {
   };
 }
 
+/**
+ * Führt einen Systemprozess versteckt aus und akzeptiert nur festgelegte
+ * Exit-Codes als erfolgreichen Abschluss.
+ */
 function runSystemProcess(
   executablePath: string,
   args: string[],
@@ -368,6 +427,7 @@ function runSystemProcess(
   });
 }
 
+/** Liefert die üblichen Ollama-Programmpfade für die aktuelle Plattform. */
 function getExecutableCandidates(platform: OllamaPlatform) {
   if (platform === "windows") {
     const localAppData = getEnvironmentValue("LOCALAPPDATA");
@@ -416,12 +476,14 @@ function getExecutableCandidates(platform: OllamaPlatform) {
   ];
 }
 
+/** Liest eine Umgebungsvariable sicher über die Mozilla-Services. */
 function getEnvironmentValue(name: string) {
   return typeof Services !== "undefined" && Services.env.exists(name)
     ? Services.env.get(name)
     : "";
 }
 
+// Gemeinsame Lifecycle-Instanz für Addon-API, Setup-Status und Shutdown-Hook.
 export const ollamaLifecycleManager = new OllamaLifecycleManager(
   createDefaultDependencies(),
 );

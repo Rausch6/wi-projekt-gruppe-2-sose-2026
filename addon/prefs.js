@@ -2,6 +2,8 @@
 pref("provider", "kisski");
 pref("apiKey", "");
 pref("baseUrl", "https://chat-ai.academiccloud.de/v1");
+// Getrennte Standardwerte erhalten für Cloud und Ollama jeweils eine eigene
+// persistente Modellauswahl.
 pref("model", "deepseek-r1-distill-llama-70b");
 pref("sendPaperContextToKisski", true);
 pref("contextRouterProvider", "ollama");

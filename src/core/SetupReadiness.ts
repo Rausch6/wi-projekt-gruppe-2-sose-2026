@@ -31,10 +31,15 @@ export type SetupReadiness = {
 };
 
 /**
- * Chat and embeddings share one local Ollama installation and service. The
- * installation and the running service are separate milestones so setup can
- * install the signed desktop app without also downloading models. Once the
- * service is reachable, the model milestones only check their own model.
+ * Leitet aus Einstellungen und Verbindungszuständen die Meilensteine der
+ * Setup-Timeline ab. Chat und Embeddings teilen sich eine lokale
+ * Ollama-Installation, behandeln Installation, Dienst und Modelle aber als
+ * getrennte Schritte.
+ *
+ * @param settings - Für das Setup relevante Plugin-Einstellungen.
+ * @param providerConnection - Aktueller Zustand des ausgewählten Providers.
+ * @param embeddingConnection - Aktueller Zustand der Embedding-Verbindung.
+ * @returns Vollständiger Einrichtungsstand für die Sidebar.
  */
 export function deriveSetupReadiness(
   settings: Pick<
@@ -106,6 +111,13 @@ export function deriveSetupReadiness(
   };
 }
 
+/**
+ * Überführt einen Provider-Verbindungszustand in den Zustand eines
+ * Setup-Meilensteins.
+ *
+ * @param connection - Aktueller Provider-Verbindungszustand.
+ * @returns Passender Zustand für die Setup-Timeline.
+ */
 function getProviderMilestoneState(
   connection: ProviderConnectionResult | undefined,
 ): SetupMilestoneState {
@@ -122,9 +134,12 @@ function getProviderMilestoneState(
 }
 
 /**
- * Only judges whether the embedding *model* is installed. Whether Ollama
- * itself is reachable is the "ollama-installation" milestone's job - this
- * is only evaluated once that milestone is already "complete".
+ * Bewertet ausschließlich, ob das Embedding-Modell vorhanden ist. Installation
+ * und Erreichbarkeit von Ollama werden bereits durch eigene Meilensteine
+ * abgebildet.
+ *
+ * @param connection - Aktueller Embedding-Verbindungszustand.
+ * @returns Zustand des Embedding-Modell-Meilensteins.
  */
 function getEmbeddingModelState(
   connection: EmbeddingConnectionResult,
@@ -136,6 +151,15 @@ function getEmbeddingModelState(
   return "error";
 }
 
+/**
+ * Bestimmt getrennt, ob Ollama installiert ist und ob der lokale Dienst läuft.
+ * Dafür werden die Statusinformationen von Chat- und Embedding-Verbindung
+ * gemeinsam ausgewertet.
+ *
+ * @param providerConnection - Optionaler Zustand des Ollama-Chat-Providers.
+ * @param embeddingConnection - Aktueller Zustand der Embedding-Verbindung.
+ * @returns Zustände der Installations- und Dienst-Meilensteine.
+ */
 function getOllamaStates(
   providerConnection: ProviderConnectionResult | undefined,
   embeddingConnection: EmbeddingConnectionResult,
@@ -145,7 +169,7 @@ function getOllamaStates(
 } {
   const connections = [providerConnection, embeddingConnection];
 
-  // A reachable API proves both that Ollama exists and that its service runs.
+  // Eine erreichbare API belegt sowohl die Installation als auch den laufenden Dienst.
   if (
     connections.some(
       (connection) =>
@@ -197,6 +221,12 @@ function getOllamaStates(
   return { installation: "error", service: "error" };
 }
 
+/**
+ * Prüft, ob eine Verbindung noch keine verwertbare Setup-Aussage erlaubt.
+ *
+ * @param connection - Zu prüfender Provider- oder Embedding-Zustand.
+ * @returns `true`, wenn die Verbindung noch unbekannt oder deaktiviert ist.
+ */
 function isConnectionPending(
   connection: ProviderConnectionResult | EmbeddingConnectionResult | undefined,
 ): boolean {

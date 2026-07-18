@@ -97,10 +97,14 @@ function getBooleanSetting(key: string, fallback: boolean) {
  * @returns void.
  */
 function loadSettings() {
+  // Der persistierte Provider wird zusammen mit seinen jeweiligen Modell- und
+  // Verbindungswerten geladen, bevor die öffentlichen APIs konfiguriert werden.
   addon.data.settings = {
     provider: getProviderSetting(),
     apiKey: getStringSetting("apiKey"),
     baseUrl: getStringSetting("baseUrl", "https://chat-ai.academiccloud.de/v1"),
+    // Cloud- und Ollama-Modell werden getrennt geladen, damit die zuletzt
+    // getroffene Auswahl beim Wechsel des Providers erhalten bleibt.
     model: getStringSetting("model", "deepseek-r1-distill-llama-70b"),
     sendPaperContextToKisski: getBooleanSetting(
       "sendPaperContextToKisski",
@@ -127,6 +131,8 @@ function loadSettings() {
     chunkOverlapTokens: getNumberSetting("chunkOverlapTokens", 100),
     chunkCount: getNumberSetting("chunkCount", 3),
   };
+  // Erst nach dem vollständigen Laden darf der Provider-Manager umgeschaltet
+  // werden, damit er sofort die passenden Cloud- oder Ollama-Werte erhält.
   addon.api.configureAI();
   addon.api.configureEmbeddings();
 }
@@ -208,6 +214,8 @@ async function cleanupOldChatsOnStartup() {
  * @returns Normalisierte Provider-ID.
  */
 function getProviderSetting(): LLMProvider {
+  // Alte oder ungültige Preference-Werte dürfen keinen unbekannten Provider in
+  // den Manager übertragen und fallen deshalb auf KISSKI zurück.
   const value = getStringSetting("provider", "kisski");
   return value === "ollama" ? "ollama" : "kisski";
 }

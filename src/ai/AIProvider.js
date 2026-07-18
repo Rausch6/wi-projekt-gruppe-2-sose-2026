@@ -1,5 +1,7 @@
 /**
- * Common contract for cloud and local AI providers.
+ * Gemeinsamer Vertrag für Cloud- und lokale KI-Provider. Die Basisklasse
+ * normalisiert Konfiguration und Nachrichten und stellt ein Streaming-Fallback
+ * für Provider wie Ollama bereit, die hier eine normale Chat-Antwort liefern.
  */
 export class AIProvider {
   /**
@@ -191,6 +193,8 @@ export class AIProvider {
    * @returns {AsyncGenerator<object>} Stream mit Content- und Done-Events.
    */
   async *chatStream(messages, options = {}) {
+    // Provider ohne eigene Streaming-Implementierung werden über eine reguläre
+    // Chat-Anfrage in ein einheitliches Content- und Done-Ereignis übersetzt.
     const response = await this.chat(messages, options);
     const content =
       typeof response?.content === "string" ? response.content : "";

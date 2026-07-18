@@ -418,6 +418,8 @@ export function bindAssistantChat(host: HTMLElement) {
     hosts.add(host);
     setModelPickerExpanded(!modelPickerExpanded);
   });
+  // Jeder Provider-Button übergibt seine data-provider-ID an den zentralen
+  // Umschaltpfad. Dadurch bleibt die eigentliche Wechselwirkung an einer Stelle.
   for (const providerButton of providerButtons) {
     providerButton.addEventListener("click", () => {
       hosts.add(host);
@@ -468,6 +470,8 @@ export function bindAssistantChat(host: HTMLElement) {
     void ensureModelOptionsLoaded(getActiveProvider());
     toggleModelDropdown(modelDropdown);
   });
+  // Das Dropdown unterscheidet zwischen der Aktion zum Hinzufügen eines lokalen
+  // Modells und einer echten Modellauswahl mit data-model-value.
   modelDropdown?.addEventListener("click", (event) => {
     const addButton = (
       event.target as Element | null
@@ -627,6 +631,13 @@ function ensureLocalModelInstallEventHandler(win: Window | null) {
   });
 }
 
+/**
+ * Wechselt nach der Installation eines lokalen Modells automatisch zu Ollama,
+ * speichert Provider und Modell und synchronisiert anschließend Verbindung,
+ * Modelloptionen und alle sichtbaren Provider-Toggles.
+ *
+ * @param model - Neu installiertes und auszuwählendes Ollama-Modell.
+ */
 async function useInstalledLocalModel(model: string) {
   addon.data.settings.provider = "ollama";
   savePluginPreference("provider", "ollama");
@@ -1053,6 +1064,12 @@ async function requestBufferedAssistantResponse(
   return finalizeActiveAssistantMessage() ?? assistantMessage ?? failNoAnswer();
 }
 
+/**
+ * Liest den aktuell gespeicherten Chat-Provider und normalisiert unbekannte
+ * Werte auf den Cloud-Provider.
+ *
+ * @returns Aktive technische Provider-ID.
+ */
 function getActiveProvider(): LLMProvider {
   return addon.data.settings.provider === "ollama" ? "ollama" : "kisski";
 }
@@ -1074,6 +1091,12 @@ function isChatReady() {
   return getCurrentSetupReadiness().ready;
 }
 
+/**
+ * Ermittelt den aktuellen Einrichtungsstand aus Provider-, Ollama- und
+ * Embedding-Status für die Setup-Anzeige der Sidebar.
+ *
+ * @returns Zusammengefasster Setup-Status mit den erforderlichen Meilensteinen.
+ */
 function getCurrentSetupReadiness(): SetupReadiness {
   const provider = getActiveProvider();
   return deriveSetupReadiness(
@@ -1090,6 +1113,14 @@ function getChatReadinessErrorText() {
   return getString("sidebar-active-provider-not-connected-error");
 }
 
+/**
+ * Liest das persistent geladene Chatmodell des angegebenen Providers. Ein
+ * versehentlich als Chatmodell gespeichertes Embedding-Modell wird bei Ollama
+ * durch das vorgesehene lokale Standardmodell ersetzt.
+ *
+ * @param provider - Provider, dessen ausgewähltes Modell benötigt wird.
+ * @returns Aktuell verwendete Modell-ID.
+ */
 function getActiveModel(provider: LLMProvider = getActiveProvider()) {
   if (provider !== "ollama") return addon.data.settings.model;
 
@@ -2152,6 +2183,13 @@ function renderAllHosts() {
  * like a provider switch) this forces the setup view open so the user
  * isn't left staring at a dead end.
  */
+/**
+ * Erkennt, ob eine laufende Setup-Prüfung festhängt, und aktualisiert den dafür
+ * verwendeten Zeitstempel.
+ *
+ * @param readiness - Aktuell berechneter Einrichtungsstand.
+ * @returns Ob die Prüfung länger als zulässig unverändert läuft.
+ */
 function updateSetupStallState(
   chatReady: boolean,
   hasActionableMilestone: boolean,
@@ -2322,6 +2360,14 @@ function renderHost(host: HTMLElement) {
   main.scrollTop = showWelcome || showAbout ? 0 : main.scrollHeight;
 }
 
+/**
+ * Synchronisiert Sichtbarkeit, Meilensteine und Live-Status der Setup-Timeline
+ * mit dem aktuellen Einrichtungsstand.
+ *
+ * @param host - Sidebar-Element, dessen Setup-Anzeige aktualisiert wird.
+ * @param showSetup - Legt fest, ob die Setup-Timeline sichtbar ist.
+ * @param readiness - Aktueller Einrichtungsstand.
+ */
 function syncSetupTimeline(
   host: HTMLElement,
   showSetup: boolean,
@@ -2360,6 +2406,16 @@ function syncSetupTimeline(
   }
 }
 
+/**
+ * Erstellt die vollständige UI-Karte für einen Setup-Meilenstein einschließlich
+ * Status, Fortschritt und verfügbarer Aktionen.
+ *
+ * @param doc - Dokument, in dem das Element erzeugt wird.
+ * @param milestone - Darzustellender Setup-Meilenstein.
+ * @param needsAttention - Markiert den Meilenstein als handlungsbedürftig.
+ * @param readiness - Aktueller Einrichtungsstand.
+ * @returns Fertiges Listenelement für die Setup-Timeline.
+ */
 function createSetupMilestoneElement(
   doc: Document,
   milestone: SetupMilestone,
@@ -2463,12 +2519,25 @@ function createSetupMilestoneElement(
   return item;
 }
 
+/**
+ * Liefert den laufenden Modelldownload für einen downloadfähigen Meilenstein.
+ *
+ * @param milestoneId - Kennung des Setup-Meilensteins.
+ * @returns Downloadstatus oder `undefined`, wenn kein Download zugeordnet ist.
+ */
 function getSetupMilestoneDownload(milestoneId: SetupMilestone["id"]) {
   return milestoneId === "local-model" || milestoneId === "embedding"
     ? setupModelDownloads.get(milestoneId)
     : undefined;
 }
 
+/**
+ * Ermittelt Titel, Beschreibung und Statustext eines Setup-Meilensteins.
+ *
+ * @param milestone - Darzustellender Setup-Meilenstein.
+ * @param readiness - Aktueller Einrichtungsstand.
+ * @returns Lokalisierte Texte für die Setup-Karte.
+ */
 function getSetupMilestoneCopy(
   milestone: SetupMilestone,
   readiness: SetupReadiness,
@@ -2539,6 +2608,13 @@ function getSetupMilestoneCopy(
   }
 }
 
+/**
+ * Übersetzt den technischen Zustand eines Setup-Meilensteins in eine
+ * lokalisierte UI-Beschriftung.
+ *
+ * @param state - Technischer Zustand des Meilensteins.
+ * @returns Lokalisierte Zustandsbezeichnung.
+ */
 function getMilestoneStateLabel(state: SetupMilestone["state"]) {
   switch (state) {
     case "complete":
@@ -2554,6 +2630,15 @@ function getMilestoneStateLabel(state: SetupMilestone["state"]) {
   }
 }
 
+/**
+ * Erzeugt die zum jeweiligen Setup-Meilenstein passenden Aktionsbuttons und
+ * sperrt sie während laufender Installations- oder Startvorgänge.
+ *
+ * @param doc - Dokument, in dem die Buttons erzeugt werden.
+ * @param milestone - Meilenstein, für den Aktionen angeboten werden.
+ * @param readiness - Aktueller Einrichtungsstand.
+ * @returns Container mit den verfügbaren Setup-Aktionen.
+ */
 function createSetupMilestoneActions(
   doc: Document,
   milestone: SetupMilestone,
@@ -2680,6 +2765,14 @@ function createSetupMilestoneActions(
   return actions;
 }
 
+/**
+ * Leitet aus Provider- und Embedding-Verbindung den Statustext der
+ * Ollama-Installation ab.
+ *
+ * @param providerConnection - Aktueller Status des lokalen Chat-Providers.
+ * @param embeddingConnection - Aktueller Status der Embedding-Verbindung.
+ * @returns Lokalisierter Installationstext.
+ */
 function getOllamaInstallationStatusText(
   providerConnection: ProviderConnectionResult | undefined,
   embeddingConnection: EmbeddingConnectionResult,
@@ -2710,6 +2803,13 @@ function getOllamaInstallationStatusText(
   return getString("sidebar-milestone-ollama-installation-ready");
 }
 
+/**
+ * Leitet aus den Verbindungsdaten den Statustext des Ollama-Dienstes ab.
+ *
+ * @param providerConnection - Aktueller Status des lokalen Chat-Providers.
+ * @param embeddingConnection - Aktueller Status der Embedding-Verbindung.
+ * @returns Lokalisierter Dienststatus.
+ */
 function getOllamaServiceStatusText(
   providerConnection: ProviderConnectionResult | undefined,
   embeddingConnection: EmbeddingConnectionResult,
@@ -2816,6 +2916,13 @@ function syncSendButton(button: HTMLButtonElement, providerReady: boolean) {
   );
 }
 
+/**
+ * Formatiert den Embedding-Verbindungsstatus für die Setup-Anzeige und
+ * berücksichtigt dabei laufende Ollama-Installations- und Startvorgänge.
+ *
+ * @param connection - Aktueller Embedding-Verbindungsstatus.
+ * @returns Lokalisierter Statustext oder ein leerer String bei Bereitschaft.
+ */
 function getEmbeddingConnectionStatusText(
   connection: EmbeddingConnectionResult,
 ) {
@@ -2870,6 +2977,14 @@ function getEmbeddingConnectionStatusText(
   return getString("sidebar-embedding-check-failed");
 }
 
+/**
+ * Formatiert den Provider-Verbindungsstatus für die Setup-Anzeige und blendet
+ * für Ollama laufende Installations- oder Startvorgänge ein.
+ *
+ * @param provider - Provider, dessen Status dargestellt wird.
+ * @param connection - Aktueller Verbindungsstatus des Providers.
+ * @returns Lokalisierter Statustext oder ein leerer String bei Bereitschaft.
+ */
 function getProviderConnectionStatusText(
   provider: LLMProvider,
   connection: ProviderConnectionResult | undefined,
@@ -3283,6 +3398,10 @@ function formatRelativeTime(value: string) {
   return `${Math.floor(elapsedDays / 7)} w`;
 }
 
+/**
+ * Überträgt den aktiven Provider und dessen Modellzustand auf alle geöffneten
+ * Sidebars, sodass mehrere Zotero-Fenster denselben Toggle-Zustand anzeigen.
+ */
 function syncAllModelPickers() {
   for (const host of [...hosts]) {
     syncModelPicker(host);
@@ -3356,6 +3475,12 @@ function ensurePaperContextSelectionEventHandlers(win: Window | null) {
   win.document.addEventListener("select", scheduleRefresh, true);
 }
 
+/**
+ * Synchronisiert Modellbereich und Provider-Toggle einer Sidebar mit dem
+ * aktuell aktiven Provider.
+ *
+ * @param host - Zu aktualisierende Sidebar.
+ */
 function syncModelPicker(host: HTMLElement) {
   const provider = getActiveProvider();
   const picker = host.querySelector<HTMLElement>(".zai-model-picker");
@@ -3960,6 +4085,13 @@ function setModelPickerExpanded(expanded: boolean) {
   syncAllModelPickers();
 }
 
+/**
+ * Aktualisiert in einer bereits gebundenen Sidebar die visuelle und
+ * barrierefreie Auswahl des Provider-Toggles.
+ *
+ * @param host - Sidebar mit den Provider-Buttons.
+ * @param provider - Provider, der als aktiv dargestellt werden soll.
+ */
 function syncProviderToggleButtons(host: HTMLElement, provider: LLMProvider) {
   host
     .querySelectorAll<HTMLButtonElement>(
@@ -3972,10 +4104,24 @@ function syncProviderToggleButtons(host: HTMLElement, provider: LLMProvider) {
     });
 }
 
+/**
+ * Übersetzt den `data-provider`-Wert eines Buttons in eine gültige Provider-ID.
+ *
+ * @param button - Angeklickter Provider-Button.
+ * @returns `ollama` für Lokal, andernfalls `kisski` für Cloud.
+ */
 function getProviderButtonValue(button: HTMLButtonElement): LLMProvider {
   return button.dataset.provider === "ollama" ? "ollama" : "kisski";
 }
 
+/**
+ * Führt den eigentlichen Wechsel des LLM-Providers aus. Bei einer Änderung
+ * werden Einstellung und Zotero-Präferenz gespeichert und Chat- sowie
+ * Embedding-Konfiguration neu aufgebaut. Anschließend werden Modellanzeige und
+ * Setup-Readiness für alle Sidebars aktualisiert.
+ *
+ * @param provider - Neu ausgewählter Cloud- oder Lokal-Provider.
+ */
 function setActiveProvider(provider: LLMProvider) {
   const currentProvider = getActiveProvider();
   if (provider !== currentProvider) {
@@ -3985,6 +4131,8 @@ function setActiveProvider(provider: LLMProvider) {
     addon.api.configureEmbeddings();
   }
 
+  // Auch ein Klick auf den bereits aktiven Provider synchronisiert die UI und
+  // stößt eine aktuelle Modell- und Verbindungsprüfung an.
   syncAllModelPickers();
   void ensureModelOptionsLoaded(provider);
   void revalidateCurrentReadiness(true);
@@ -4051,6 +4199,14 @@ async function terminateOllamaCompletely() {
   }
 }
 
+/**
+ * Prüft nach einem Providerwechsel die aktive Chat-Verbindung und bei Bedarf
+ * zusätzlich Ollama-Embeddings. Danach werden Setup-Timeline, Toggle und
+ * Composer anhand des neuen Readiness-Zustands neu gerendert.
+ *
+ * @param force - Erzwingt neue Prüfungen trotz vorhandener Statuswerte.
+ * @returns Aktualisierter Einrichtungsstand des aktiven Providers.
+ */
 async function revalidateCurrentReadiness(force: boolean) {
   const provider = getActiveProvider();
   const tasks: Promise<unknown>[] = [checkProviderConnection(provider, force)];
@@ -4138,6 +4294,11 @@ async function checkEmbeddingConnection(force: boolean) {
   }
 }
 
+/**
+ * Startet über die öffentliche Addon-API das externe Ollama-Setup, verarbeitet
+ * dessen Ergebnis und startet Ollama nach erfolgreicher Installation.
+ * Mehrfachstarts werden verhindert und alle Sidebar-Ansichten aktualisiert.
+ */
 async function launchOllamaSetup() {
   if (ollamaSetupLaunchRunning) return;
 
@@ -4174,6 +4335,13 @@ async function launchOllamaSetup() {
   }
 }
 
+/**
+ * Ordnet die technischen Ergebnis-Codes der Setup-Skripte verständlichen,
+ * lokalisierten Fehlermeldungen zu.
+ *
+ * @param code - Von `setup-result.json` gelieferter Ergebnis-Code.
+ * @returns Lokalisierte Fehlermeldung für die Sidebar.
+ */
 function getOllamaSetupErrorText(code: string) {
   if (code === "download-failed") {
     return getString("sidebar-ollama-setup-download-failed");
@@ -4188,6 +4356,13 @@ function getOllamaSetupErrorText(code: string) {
   return getString("sidebar-ollama-setup-install-failed");
 }
 
+/**
+ * Überträgt einen Fehler des externen Setups in den Ollama-Verbindungsstatus,
+ * damit die Setup-Timeline ihn unmittelbar darstellen kann.
+ *
+ * @param message - Benutzerfreundliche Fehlermeldung.
+ * @param error - Optionaler technischer Fehlertext für Diagnosezwecke.
+ */
 function setOllamaSetupConnectionError(message: string, error = message) {
   const currentConnection = addon.data.runtime.providerConnections.ollama;
   addon.data.runtime.providerConnections.ollama = {
@@ -4200,6 +4375,10 @@ function setOllamaSetupConnectionError(message: string, error = message) {
   };
 }
 
+/**
+ * Startet den Ollama-Dienst nach der Installation oder über die Setup-Aktion
+ * und prüft anschließend alle davon abhängigen Verbindungen erneut.
+ */
 async function startOllama() {
   if (ollamaStartRunning) return;
 
@@ -4227,15 +4406,23 @@ async function startOllama() {
   }
 }
 
+/**
+ * Wartet auf die Ollama-Verbindung und aktualisiert danach zusätzlich den
+ * Embedding-Status der Setup-Timeline.
+ */
 async function refreshOllamaDependentConnections() {
   await waitForOllamaConnection();
   await checkEmbeddingConnection(true);
 }
 
 /**
- * Pulls a model straight from the sidebar's setup card, the same way the
- * local model window does it (direct `pullModel` call with streamed
- * progress) instead of shelling out to the external setup script.
+ * Lädt ein Modell direkt aus der Setup-Karte der Sidebar herunter. Der Download
+ * verwendet `pullModel` mit Fortschrittsmeldungen und nicht das externe
+ * Installationsskript.
+ *
+ * @param target - Setup-Bereich, dem der Download zugeordnet wird.
+ * @param model - Name des herunterzuladenden Ollama-Modells.
+ * @param win - Fenster für Fortschritts- und Installationsereignisse.
  */
 async function pullSetupModel(
   target: SetupModelDownloadTarget,
@@ -4334,6 +4521,11 @@ async function pullSetupModel(
   }
 }
 
+/**
+ * Bricht einen aus der Setup-Timeline gestarteten Modelldownload ab.
+ *
+ * @param target - Setup-Bereich des abzubrechenden Downloads.
+ */
 function cancelSetupModelDownload(target: SetupModelDownloadTarget) {
   const state = setupModelDownloads.get(target);
   if (state?.status !== "downloading") return;
@@ -4365,6 +4557,14 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Lädt die Modelloptionen des ausgewählten Providers und synchronisiert während
+ * Lade-, Erfolgs- und Fehlerzustand alle Modellanzeigen. Für den aktiven
+ * Provider wird zuvor dessen aktuelle Laufzeitkonfiguration übernommen.
+ *
+ * @param provider - Provider, dessen Modelle geladen werden sollen.
+ * @param force - Ignoriert einen bereits vorhandenen Ladezustand.
+ */
 async function ensureModelOptionsLoaded(provider: LLMProvider, force = false) {
   const state = modelLoadStates.get(provider);
   if (!force) {
@@ -4454,6 +4654,13 @@ function isLocalEmbeddingModel(model: string) {
   );
 }
 
+/**
+ * Baut die Modellauswahl für den aktiven Provider neu auf und markiert den
+ * persistent gespeicherten Modellwert als ausgewählt.
+ *
+ * @param dropdown - Zu aktualisierendes Dropdown.
+ * @param provider - Provider, dessen Modelle angezeigt werden.
+ */
 function syncModelDropdown(
   dropdown: HTMLElement | null,
   provider: LLMProvider = getActiveProvider(),
@@ -4490,6 +4697,16 @@ function syncModelDropdown(
   updateModelDropdownDisplay(dropdown, value, provider);
 }
 
+/**
+ * Ermittelt die auswählbaren Modell-IDs. Für Ollama werden Embedding-Modelle aus
+ * der Chat-Auswahl entfernt; bei Cloud bleibt auch ein gespeicherter Wert
+ * sichtbar, wenn die aktuelle API-Liste ihn nicht enthält.
+ *
+ * @param models - Vom Provider geladene Modelle.
+ * @param selectedValue - Persistierter aktueller Modellwert.
+ * @param provider - Zugehöriger Provider.
+ * @returns Eindeutige und sortierte Modell-IDs für das Dropdown.
+ */
 function getModelDropdownValues(
   models: ModelOption[],
   selectedValue: string,
@@ -4546,6 +4763,10 @@ function createModelDropdownState(
   return element;
 }
 
+/**
+ * Erstellt eine auswählbare Modelloption und kennzeichnet ihren Auswahlzustand
+ * barrierefrei über `aria-selected`.
+ */
 function createModelDropdownOption(
   doc: Document,
   value: string,
@@ -4573,6 +4794,14 @@ function createModelDropdownAddButton(doc: Document) {
   return button;
 }
 
+/**
+ * Aktualisiert den sichtbaren Modellwert und die Auswahlmarkierungen, ohne den
+ * gespeicherten Wert selbst zu verändern.
+ *
+ * @param dropdown - Zu aktualisierende Modellauswahl.
+ * @param value - Aktuell gespeicherte Modell-ID.
+ * @param provider - Zugehöriger Provider.
+ */
 function updateModelDropdownDisplay(
   dropdown: HTMLElement,
   value: string,
@@ -4601,6 +4830,13 @@ function updateModelDropdownDisplay(
     });
 }
 
+/**
+ * Übernimmt eine Auswahl aus dem Dropdown, speichert sie providerbezogen und
+ * synchronisiert danach alle geöffneten Sidebars.
+ *
+ * @param dropdown - Dropdown, in dem die Auswahl erfolgte.
+ * @param value - Ausgewählte Modell-ID.
+ */
 function selectModelDropdownValue(dropdown: HTMLElement, value: string) {
   const provider = getDropdownProvider(dropdown);
   setProviderModel(provider, value);
@@ -4608,14 +4844,26 @@ function selectModelDropdownValue(dropdown: HTMLElement, value: string) {
   syncAllModelPickers();
 }
 
+/** Liest den Provider, dem das aktuell dargestellte Dropdown zugeordnet ist. */
 function getDropdownProvider(dropdown: HTMLElement): LLMProvider {
   return dropdown.dataset.provider === "ollama" ? "ollama" : "kisski";
 }
 
+/**
+ * Speichert ein ausgewähltes Modell getrennt für Ollama und KISSKI. Neben dem
+ * Laufzeitwert wird die passende Zotero-Präferenz (`ollamaModel` oder `model`)
+ * aktualisiert. Danach erhält der Provider-Manager das Modell und ein veralteter
+ * Verbindungsstatus wird verworfen.
+ *
+ * @param provider - Provider, dessen Modell geändert wird.
+ * @param value - Neue Modell-ID.
+ */
 function setProviderModel(provider: LLMProvider, value: string) {
   const model = value.trim();
   if (!model) return;
 
+  // Cloud- und Lokalmodell besitzen absichtlich getrennte Speicherfelder, damit
+  // ein Providerwechsel jeweils die vorherige Modellauswahl wiederherstellt.
   if (provider === "ollama") {
     addon.data.settings.ollamaModel = model;
     savePluginPreference("ollamaModel", model);
@@ -4624,6 +4872,8 @@ function setProviderModel(provider: LLMProvider, value: string) {
     savePluginPreference("model", model);
   }
 
+  // Der Manager wird sofort aktualisiert; nur beim aktiven Provider müssen auch
+  // Verbindungen und davon abhängige Embeddings neu geprüft werden.
   addon.api.ai.setModel(model, provider);
   delete addon.data.runtime.providerConnections[provider];
   if (provider === getActiveProvider()) {
@@ -4633,10 +4883,17 @@ function setProviderModel(provider: LLMProvider, value: string) {
   }
 }
 
+/** Liefert die kurze sichtbare Beschriftung des gewählten Providers. */
 function getProviderLabel(provider: LLMProvider) {
   return provider === "ollama" ? "Lokal" : "Cloud";
 }
 
+/**
+ * Speichert eine Provider- oder Modelleinstellung dauerhaft in Zotero.
+ *
+ * @param key - Einstellungsname ohne Add-on-Präfix.
+ * @param value - Zu speichernder Wert.
+ */
 function savePluginPreference(key: string, value: string) {
   Zotero.Prefs.set(`${addon.data.config.prefsPrefix}.${key}`, value, true);
 }
