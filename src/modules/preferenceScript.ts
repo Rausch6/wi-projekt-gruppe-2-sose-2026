@@ -219,9 +219,17 @@ function readSettingsFromFields(window: Window): PluginSettings {
   };
 }
 
+/**
+ * Synchronisiert den in den Einstellungen ausgewählten Provider mit dem
+ * Provider-Manager und aktualisiert anschließend beide Providerkonfigurationen.
+ * Dadurch stehen bei einem späteren Toggle bereits die aktuellen Cloud- und
+ * Ollama-Werte bereit.
+ */
 function configureProvidersFromSettings() {
   const settings = addon.data.settings;
 
+  // Die aktive ID steuert das Standardziel aller Anfragen ohne explizite
+  // providerId; die Konfigurationen beider Provider bleiben parallel erhalten.
   addon.api.ai.setActiveProvider(settings.provider);
   addon.api.ai.configureProvider("kisski", {
     apiKey: settings.apiKey,

@@ -418,6 +418,8 @@ export function bindAssistantChat(host: HTMLElement) {
     hosts.add(host);
     setModelPickerExpanded(!modelPickerExpanded);
   });
+  // Jeder Provider-Button übergibt seine data-provider-ID an den zentralen
+  // Umschaltpfad. Dadurch bleibt die eigentliche Wechselwirkung an einer Stelle.
   for (const providerButton of providerButtons) {
     providerButton.addEventListener("click", () => {
       hosts.add(host);
@@ -627,6 +629,13 @@ function ensureLocalModelInstallEventHandler(win: Window | null) {
   });
 }
 
+/**
+ * Wechselt nach der Installation eines lokalen Modells automatisch zu Ollama,
+ * speichert Provider und Modell und synchronisiert anschließend Verbindung,
+ * Modelloptionen und alle sichtbaren Provider-Toggles.
+ *
+ * @param model - Neu installiertes und auszuwählendes Ollama-Modell.
+ */
 async function useInstalledLocalModel(model: string) {
   addon.data.settings.provider = "ollama";
   savePluginPreference("provider", "ollama");
@@ -1053,6 +1062,12 @@ async function requestBufferedAssistantResponse(
   return finalizeActiveAssistantMessage() ?? assistantMessage ?? failNoAnswer();
 }
 
+/**
+ * Liest den aktuell gespeicherten Chat-Provider und normalisiert unbekannte
+ * Werte auf den Cloud-Provider.
+ *
+ * @returns Aktive technische Provider-ID.
+ */
 function getActiveProvider(): LLMProvider {
   return addon.data.settings.provider === "ollama" ? "ollama" : "kisski";
 }
@@ -3373,6 +3388,10 @@ function formatRelativeTime(value: string) {
   return `${Math.floor(elapsedDays / 7)} w`;
 }
 
+/**
+ * Überträgt den aktiven Provider und dessen Modellzustand auf alle geöffneten
+ * Sidebars, sodass mehrere Zotero-Fenster denselben Toggle-Zustand anzeigen.
+ */
 function syncAllModelPickers() {
   for (const host of [...hosts]) {
     syncModelPicker(host);
@@ -3446,6 +3465,12 @@ function ensurePaperContextSelectionEventHandlers(win: Window | null) {
   win.document.addEventListener("select", scheduleRefresh, true);
 }
 
+/**
+ * Synchronisiert Modellbereich und Provider-Toggle einer Sidebar mit dem
+ * aktuell aktiven Provider.
+ *
+ * @param host - Zu aktualisierende Sidebar.
+ */
 function syncModelPicker(host: HTMLElement) {
   const provider = getActiveProvider();
   const picker = host.querySelector<HTMLElement>(".zai-model-picker");
@@ -4050,6 +4075,13 @@ function setModelPickerExpanded(expanded: boolean) {
   syncAllModelPickers();
 }
 
+/**
+ * Aktualisiert in einer bereits gebundenen Sidebar die visuelle und
+ * barrierefreie Auswahl des Provider-Toggles.
+ *
+ * @param host - Sidebar mit den Provider-Buttons.
+ * @param provider - Provider, der als aktiv dargestellt werden soll.
+ */
 function syncProviderToggleButtons(host: HTMLElement, provider: LLMProvider) {
   host
     .querySelectorAll<HTMLButtonElement>(
@@ -4062,10 +4094,24 @@ function syncProviderToggleButtons(host: HTMLElement, provider: LLMProvider) {
     });
 }
 
+/**
+ * Übersetzt den `data-provider`-Wert eines Buttons in eine gültige Provider-ID.
+ *
+ * @param button - Angeklickter Provider-Button.
+ * @returns `ollama` für Lokal, andernfalls `kisski` für Cloud.
+ */
 function getProviderButtonValue(button: HTMLButtonElement): LLMProvider {
   return button.dataset.provider === "ollama" ? "ollama" : "kisski";
 }
 
+/**
+ * Führt den eigentlichen Wechsel des LLM-Providers aus. Bei einer Änderung
+ * werden Einstellung und Zotero-Präferenz gespeichert und Chat- sowie
+ * Embedding-Konfiguration neu aufgebaut. Anschließend werden Modellanzeige und
+ * Setup-Readiness für alle Sidebars aktualisiert.
+ *
+ * @param provider - Neu ausgewählter Cloud- oder Lokal-Provider.
+ */
 function setActiveProvider(provider: LLMProvider) {
   const currentProvider = getActiveProvider();
   if (provider !== currentProvider) {
@@ -4075,6 +4121,8 @@ function setActiveProvider(provider: LLMProvider) {
     addon.api.configureEmbeddings();
   }
 
+  // Auch ein Klick auf den bereits aktiven Provider synchronisiert die UI und
+  // stößt eine aktuelle Modell- und Verbindungsprüfung an.
   syncAllModelPickers();
   void ensureModelOptionsLoaded(provider);
   void revalidateCurrentReadiness(true);
@@ -4141,6 +4189,14 @@ async function terminateOllamaCompletely() {
   }
 }
 
+/**
+ * Prüft nach einem Providerwechsel die aktive Chat-Verbindung und bei Bedarf
+ * zusätzlich Ollama-Embeddings. Danach werden Setup-Timeline, Toggle und
+ * Composer anhand des neuen Readiness-Zustands neu gerendert.
+ *
+ * @param force - Erzwingt neue Prüfungen trotz vorhandener Statuswerte.
+ * @returns Aktualisierter Einrichtungsstand des aktiven Providers.
+ */
 async function revalidateCurrentReadiness(force: boolean) {
   const provider = getActiveProvider();
   const tasks: Promise<unknown>[] = [checkProviderConnection(provider, force)];
@@ -4491,6 +4547,14 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Lädt die Modelloptionen des ausgewählten Providers und synchronisiert während
+ * Lade-, Erfolgs- und Fehlerzustand alle Modellanzeigen. Für den aktiven
+ * Provider wird zuvor dessen aktuelle Laufzeitkonfiguration übernommen.
+ *
+ * @param provider - Provider, dessen Modelle geladen werden sollen.
+ * @param force - Ignoriert einen bereits vorhandenen Ladezustand.
+ */
 async function ensureModelOptionsLoaded(provider: LLMProvider, force = false) {
   const state = modelLoadStates.get(provider);
   if (!force) {
@@ -4759,10 +4823,17 @@ function setProviderModel(provider: LLMProvider, value: string) {
   }
 }
 
+/** Liefert die kurze sichtbare Beschriftung des gewählten Providers. */
 function getProviderLabel(provider: LLMProvider) {
   return provider === "ollama" ? "Lokal" : "Cloud";
 }
 
+/**
+ * Speichert eine Provider- oder Modelleinstellung dauerhaft in Zotero.
+ *
+ * @param key - Einstellungsname ohne Add-on-Präfix.
+ * @param value - Zu speichernder Wert.
+ */
 function savePluginPreference(key: string, value: string) {
   Zotero.Prefs.set(`${addon.data.config.prefsPrefix}.${key}`, value, true);
 }

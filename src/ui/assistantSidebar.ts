@@ -412,6 +412,14 @@ function createModelPicker(doc: Document) {
   return picker;
 }
 
+/**
+ * Erstellt den Umschalter zwischen Cloud-Provider und lokalem Ollama-Provider.
+ * Die technische Provider-ID wird über `data-provider` an den Controller
+ * übergeben; die sichtbaren Beschriftungen bleiben davon unabhängig.
+ *
+ * @param doc - Dokument der Sidebar.
+ * @returns Gruppe mit Cloud- und Lokal-Button.
+ */
 function createProviderToggle(doc: Document) {
   const toggle = createHtmlElement(doc, "div", "zai-provider-toggle");
   toggle.setAttribute("role", "group");
@@ -423,6 +431,8 @@ function createProviderToggle(doc: Document) {
   const localButton = createButton(doc, "zai-provider-toggle-button", "Lokal");
   localButton.dataset.provider = "ollama";
 
+  // Beim Erzeugen der Sidebar wird der gespeicherte Provider sofort visuell
+  // markiert, bevor der Controller die weiteren Ereignisse bindet.
   const buttons = [cloudButton, localButton];
   syncProviderToggleButtons(buttons, addon.data.settings.provider);
 
@@ -558,10 +568,24 @@ function createMetadataFieldControl(doc: Document) {
   return control;
 }
 
+/**
+ * Liest die technische Provider-ID eines Toggle-Buttons aus.
+ * Unbekannte oder fehlende Werte fallen sicher auf den Cloud-Provider zurück.
+ *
+ * @param button - Auszuwertender Provider-Button.
+ * @returns `ollama` für Lokal, andernfalls `kisski` für Cloud.
+ */
 function getToggleProvider(button: HTMLButtonElement): LLMProvider {
   return button.dataset.provider === "ollama" ? "ollama" : "kisski";
 }
 
+/**
+ * Markiert den aktiven Provider-Button optisch und über `aria-pressed` auch für
+ * unterstützende Technologien.
+ *
+ * @param buttons - Zu synchronisierende Toggle-Buttons.
+ * @param provider - Aktuell ausgewählter Provider.
+ */
 function syncProviderToggleButtons(
   buttons: HTMLButtonElement[],
   provider: LLMProvider,

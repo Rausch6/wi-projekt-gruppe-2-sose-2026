@@ -260,6 +260,9 @@ class Addon {
     this.api = {
       ai: aiProviderManager,
       embeddings: embeddingProvider,
+      // Übernimmt den in den Einstellungen gewählten Provider in den Manager
+      // und konfiguriert ausschließlich die dafür relevanten Zugangsdaten.
+      // Ollama verwendet lokale URL und Modell, KISSKI zusätzlich den API-Key.
       configureAI: () => {
         const provider = this.data.settings.provider;
         const providerConfig =
@@ -274,6 +277,8 @@ class Addon {
                 model: this.data.settings.model || undefined,
               };
 
+        // setActiveProvider bestimmt das Ziel kommender Chat-Anfragen;
+        // configureProvider aktualisiert anschließend dessen Laufzeitwerte.
         return aiProviderManager
           .setActiveProvider(provider)
           .configureProvider(provider, providerConfig);
