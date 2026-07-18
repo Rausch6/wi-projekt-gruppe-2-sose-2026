@@ -428,11 +428,6 @@ export class PaperContextService {
       excerpts,
     ].join("\n");
   }
-
-  static clearCache() {
-    paperCache.clear();
-    EmbeddingSearchService.clearCache();
-  }
 }
 
 function buildVectorSearchQuery(query: string, options: VectorContextOptions) {
