@@ -103,6 +103,8 @@ function loadSettings() {
     provider: getProviderSetting(),
     apiKey: getStringSetting("apiKey"),
     baseUrl: getStringSetting("baseUrl", "https://chat-ai.academiccloud.de/v1"),
+    // Cloud- und Ollama-Modell werden getrennt geladen, damit die zuletzt
+    // getroffene Auswahl beim Wechsel des Providers erhalten bleibt.
     model: getStringSetting("model", "deepseek-r1-distill-llama-70b"),
     sendPaperContextToKisski: getBooleanSetting(
       "sendPaperContextToKisski",

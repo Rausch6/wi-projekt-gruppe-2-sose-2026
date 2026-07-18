@@ -440,6 +440,13 @@ function createProviderToggle(doc: Document) {
   return toggle;
 }
 
+/**
+ * Erstellt die zunächst leere Modellauswahl. Der Controller befüllt sie später
+ * mit den Modellen des aktiven Providers und dem persistent gespeicherten Wert.
+ *
+ * @param doc - Dokument der Sidebar.
+ * @returns Dropdown-Grundstruktur für Modellwert und Modelloptionen.
+ */
 function createModelSelect(doc: Document) {
   const modelWrap = createHtmlElement(doc, "div", "zai-model-select-wrap");
   const modelSelect = createButton(doc, "zai-model-select");

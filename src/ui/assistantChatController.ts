@@ -470,6 +470,8 @@ export function bindAssistantChat(host: HTMLElement) {
     void ensureModelOptionsLoaded(getActiveProvider());
     toggleModelDropdown(modelDropdown);
   });
+  // Das Dropdown unterscheidet zwischen der Aktion zum Hinzufügen eines lokalen
+  // Modells und einer echten Modellauswahl mit data-model-value.
   modelDropdown?.addEventListener("click", (event) => {
     const addButton = (
       event.target as Element | null
@@ -1111,6 +1113,14 @@ function getChatReadinessErrorText() {
   return getString("sidebar-active-provider-not-connected-error");
 }
 
+/**
+ * Liest das persistent geladene Chatmodell des angegebenen Providers. Ein
+ * versehentlich als Chatmodell gespeichertes Embedding-Modell wird bei Ollama
+ * durch das vorgesehene lokale Standardmodell ersetzt.
+ *
+ * @param provider - Provider, dessen ausgewähltes Modell benötigt wird.
+ * @returns Aktuell verwendete Modell-ID.
+ */
 function getActiveModel(provider: LLMProvider = getActiveProvider()) {
   if (provider !== "ollama") return addon.data.settings.model;
 
@@ -4644,6 +4654,13 @@ function isLocalEmbeddingModel(model: string) {
   );
 }
 
+/**
+ * Baut die Modellauswahl für den aktiven Provider neu auf und markiert den
+ * persistent gespeicherten Modellwert als ausgewählt.
+ *
+ * @param dropdown - Zu aktualisierendes Dropdown.
+ * @param provider - Provider, dessen Modelle angezeigt werden.
+ */
 function syncModelDropdown(
   dropdown: HTMLElement | null,
   provider: LLMProvider = getActiveProvider(),
@@ -4680,6 +4697,16 @@ function syncModelDropdown(
   updateModelDropdownDisplay(dropdown, value, provider);
 }
 
+/**
+ * Ermittelt die auswählbaren Modell-IDs. Für Ollama werden Embedding-Modelle aus
+ * der Chat-Auswahl entfernt; bei Cloud bleibt auch ein gespeicherter Wert
+ * sichtbar, wenn die aktuelle API-Liste ihn nicht enthält.
+ *
+ * @param models - Vom Provider geladene Modelle.
+ * @param selectedValue - Persistierter aktueller Modellwert.
+ * @param provider - Zugehöriger Provider.
+ * @returns Eindeutige und sortierte Modell-IDs für das Dropdown.
+ */
 function getModelDropdownValues(
   models: ModelOption[],
   selectedValue: string,
@@ -4736,6 +4763,10 @@ function createModelDropdownState(
   return element;
 }
 
+/**
+ * Erstellt eine auswählbare Modelloption und kennzeichnet ihren Auswahlzustand
+ * barrierefrei über `aria-selected`.
+ */
 function createModelDropdownOption(
   doc: Document,
   value: string,
@@ -4763,6 +4794,14 @@ function createModelDropdownAddButton(doc: Document) {
   return button;
 }
 
+/**
+ * Aktualisiert den sichtbaren Modellwert und die Auswahlmarkierungen, ohne den
+ * gespeicherten Wert selbst zu verändern.
+ *
+ * @param dropdown - Zu aktualisierende Modellauswahl.
+ * @param value - Aktuell gespeicherte Modell-ID.
+ * @param provider - Zugehöriger Provider.
+ */
 function updateModelDropdownDisplay(
   dropdown: HTMLElement,
   value: string,
@@ -4791,6 +4830,13 @@ function updateModelDropdownDisplay(
     });
 }
 
+/**
+ * Übernimmt eine Auswahl aus dem Dropdown, speichert sie providerbezogen und
+ * synchronisiert danach alle geöffneten Sidebars.
+ *
+ * @param dropdown - Dropdown, in dem die Auswahl erfolgte.
+ * @param value - Ausgewählte Modell-ID.
+ */
 function selectModelDropdownValue(dropdown: HTMLElement, value: string) {
   const provider = getDropdownProvider(dropdown);
   setProviderModel(provider, value);
@@ -4798,14 +4844,26 @@ function selectModelDropdownValue(dropdown: HTMLElement, value: string) {
   syncAllModelPickers();
 }
 
+/** Liest den Provider, dem das aktuell dargestellte Dropdown zugeordnet ist. */
 function getDropdownProvider(dropdown: HTMLElement): LLMProvider {
   return dropdown.dataset.provider === "ollama" ? "ollama" : "kisski";
 }
 
+/**
+ * Speichert ein ausgewähltes Modell getrennt für Ollama und KISSKI. Neben dem
+ * Laufzeitwert wird die passende Zotero-Präferenz (`ollamaModel` oder `model`)
+ * aktualisiert. Danach erhält der Provider-Manager das Modell und ein veralteter
+ * Verbindungsstatus wird verworfen.
+ *
+ * @param provider - Provider, dessen Modell geändert wird.
+ * @param value - Neue Modell-ID.
+ */
 function setProviderModel(provider: LLMProvider, value: string) {
   const model = value.trim();
   if (!model) return;
 
+  // Cloud- und Lokalmodell besitzen absichtlich getrennte Speicherfelder, damit
+  // ein Providerwechsel jeweils die vorherige Modellauswahl wiederherstellt.
   if (provider === "ollama") {
     addon.data.settings.ollamaModel = model;
     savePluginPreference("ollamaModel", model);
@@ -4814,6 +4872,8 @@ function setProviderModel(provider: LLMProvider, value: string) {
     savePluginPreference("model", model);
   }
 
+  // Der Manager wird sofort aktualisiert; nur beim aktiven Provider müssen auch
+  // Verbindungen und davon abhängige Embeddings neu geprüft werden.
   addon.api.ai.setModel(model, provider);
   delete addon.data.runtime.providerConnections[provider];
   if (provider === getActiveProvider()) {

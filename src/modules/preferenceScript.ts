@@ -154,6 +154,10 @@ function bindCommand(
   getElement(window, name)?.addEventListener("command", handler);
 }
 
+/**
+ * Übernimmt Einstellungsfelder in den Laufzeitzustand und konfiguriert Provider
+ * einschließlich ihrer getrennt gespeicherten Modellwerte neu.
+ */
 function syncRuntimeSettings(window: Window) {
   const nextSettings = readSettingsFromFields(window);
   const semanticSearchWasEnabled = addon.data.settings.embeddingSearchEnabled;
@@ -170,6 +174,10 @@ function syncRuntimeSettings(window: Window) {
   );
 }
 
+/**
+ * Liest die Einstellungsfelder aus. Das aktive Chatmodell und das Ollama-Modell
+ * bleiben in `model` und `ollamaModel` dauerhaft voneinander getrennt.
+ */
 function readSettingsFromFields(window: Window): PluginSettings {
   const provider = addon.data.settings.provider || DEFAULT_SETTINGS.provider;
   const contextRouterProvider = readProviderValue(
