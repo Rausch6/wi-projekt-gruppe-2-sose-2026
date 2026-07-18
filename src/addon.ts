@@ -58,10 +58,16 @@ import { indexingEvents } from "./core/IndexingEventBus";
 import { backgroundIndexer } from "./core/BackgroundIndexer";
 import { vectorStore } from "./core/OramaService";
 
+/**
+ * Unterstuetzte Chat-Provider des Addons.
+ */
 export type LLMProvider = "kisski" | "ollama";
 let lastPaperChunkReport = "";
 let lastPaperEmbeddingReport = "";
 
+/**
+ * Optionen fuer den Embedding-Debugbericht eines Papers.
+ */
 type PaperEmbeddingReportOptions = {
   itemID?: number;
   query?: string;
@@ -76,6 +82,10 @@ type PaperEmbeddingReportOptions = {
 type PaperEmbeddingReportRequest = number | PaperEmbeddingReportOptions;
 
 type OllamaSetupPlatform = "windows" | "macos";
+
+/**
+ * Ergebnis des plattformabhaengigen Ollama-Setups.
+ */
 export type OllamaSetupResult = {
   status: "success" | "cancelled" | "error";
   code: string;
@@ -94,6 +104,9 @@ const OLLAMA_SETUP_RESULT_TIMEOUT_MS = 30 * 60 * 1000;
 const OLLAMA_SETUP_RESULT_POLL_MS = 500;
 const OLLAMA_SETUP_CLEANUP_DELAY_MS = 5 * 60 * 1000;
 
+/**
+ * Laufende Plugin-Einstellungen aus Zotero Preferences.
+ */
 export type PluginSettings = {
   provider: LLMProvider;
   apiKey: string;
@@ -114,6 +127,9 @@ export type PluginSettings = {
   chunkCount: number;
 };
 
+/**
+ * Zentrale Addon-Instanz mit Runtime-Daten, Einstellungen und oeffentlicher API.
+ */
 class Addon {
   public data: {
     alive: boolean;
@@ -205,6 +221,9 @@ class Addon {
     vectorStore: typeof import("./core/OramaService").vectorStore;
   };
 
+  /**
+   * Initialisiert Default-Daten, Runtime-Status und die oeffentliche Addon-API.
+   */
   constructor() {
     this.data = {
       alive: true,
@@ -357,6 +376,12 @@ class Addon {
     };
   }
 
+  /**
+   * Konfiguriert den angegebenen LLM-Provider anhand der aktuellen Einstellungen.
+   *
+   * @param provider - Provider, der konfiguriert werden soll.
+   * @returns Aktuelle Provider-Konfiguration.
+   */
   private configureProvider(provider: LLMProvider) {
     const providerConfig =
       provider === "ollama"
@@ -373,6 +398,12 @@ class Addon {
     return aiProviderManager.configureProvider(provider, providerConfig);
   }
 
+  /**
+   * Prueft die Verbindung zu Cloud- oder lokalem Chat-Provider.
+   *
+   * @param provider - Zu pruefender LLM-Provider.
+   * @returns Normalisiertes Verbindungsergebnis.
+   */
   private async checkProviderConnection(
     provider: LLMProvider,
   ): Promise<ProviderConnectionResult> {
@@ -442,6 +473,11 @@ class Addon {
     }
   }
 
+  /**
+   * Prueft die Verbindung zum lokalen Embedding-Modell.
+   *
+   * @returns Normalisiertes Embedding-Verbindungsergebnis.
+   */
   private async checkEmbeddingConnection(): Promise<EmbeddingConnectionResult> {
     if (!this.data.settings.embeddingSearchEnabled) {
       const result = createEmbeddingConnectionResult("disabled", {
@@ -507,6 +543,12 @@ class Addon {
     }
   }
 
+  /**
+   * Erstellt ein Fehlerergebnis fuer fehlende Provider-Konfiguration.
+   *
+   * @param provider - Zu pruefender LLM-Provider.
+   * @returns Verbindungsergebnis bei fehlender Konfiguration oder null.
+   */
   private getMissingProviderConfigResult(provider: LLMProvider) {
     const baseUrl = this.getConfiguredProviderBaseUrl(provider);
     const model = this.getConfiguredProviderModel(provider);
@@ -538,12 +580,24 @@ class Addon {
     return null;
   }
 
+  /**
+   * Liest die konfigurierte Basis-URL eines Providers.
+   *
+   * @param provider - LLM-Provider.
+   * @returns Getrimmte Basis-URL.
+   */
   private getConfiguredProviderBaseUrl(provider: LLMProvider) {
     return provider === "ollama"
       ? this.data.settings.ollamaBaseUrl.trim()
       : this.data.settings.baseUrl.trim();
   }
 
+  /**
+   * Liest das konfigurierte Modell eines Providers.
+   *
+   * @param provider - LLM-Provider.
+   * @returns Getrimmte Modell-ID.
+   */
   private getConfiguredProviderModel(provider: LLMProvider) {
     return provider === "ollama"
       ? this.data.settings.ollamaModel.trim()
@@ -551,6 +605,13 @@ class Addon {
   }
 }
 
+/**
+ * Prueft, ob eine Modellliste das konfigurierte Modell enthaelt.
+ *
+ * @param models - Rohdaten der Provider-Modellliste.
+ * @param configuredModel - Erwartete Modell-ID.
+ * @returns True, wenn das Modell gefunden wurde.
+ */
 function hasModel(models: unknown, configuredModel: string) {
   if (!Array.isArray(models)) return false;
   return models.some((model) => {
@@ -561,12 +622,24 @@ function hasModel(models: unknown, configuredModel: string) {
   });
 }
 
+/**
+ * Leitet aus einem Provider-Fehler den Verbindungsstatus ab.
+ *
+ * @param error - Urspruenglicher Fehler.
+ * @returns Provider-Verbindungsstatus fuer die UI.
+ */
 function getConnectionFailureStatus(error: unknown) {
   if (error instanceof OllamaLifecycleError) return "unreachable";
   const name = getErrorName(error);
   return name === "AIProviderResponseError" ? "error" : "unreachable";
 }
 
+/**
+ * Leitet aus einem Provider-Fehler die konkrete Fehlerursache ab.
+ *
+ * @param error - Urspruenglicher Fehler.
+ * @returns Provider-Verbindungsproblem fuer die UI.
+ */
 function getConnectionFailureIssue(error: unknown) {
   const lifecycleIssue = getOllamaLifecycleConnectionIssue(error);
   if (lifecycleIssue) return lifecycleIssue;
@@ -576,12 +649,24 @@ function getConnectionFailureIssue(error: unknown) {
     : "provider-unreachable";
 }
 
+/**
+ * Leitet aus einem Embedding-Fehler den Verbindungsstatus ab.
+ *
+ * @param error - Urspruenglicher Fehler.
+ * @returns Embedding-Verbindungsstatus fuer die UI.
+ */
 function getEmbeddingConnectionFailureStatus(error: unknown) {
   if (error instanceof OllamaLifecycleError) return "unreachable";
   const name = getErrorName(error);
   return name === "AIProviderResponseError" ? "error" : "unreachable";
 }
 
+/**
+ * Leitet aus einem Embedding-Fehler die konkrete Fehlerursache ab.
+ *
+ * @param error - Urspruenglicher Fehler.
+ * @returns Embedding-Verbindungsproblem fuer die UI.
+ */
 function getEmbeddingConnectionFailureIssue(error: unknown) {
   const lifecycleIssue = getOllamaLifecycleConnectionIssue(error);
   if (lifecycleIssue) return lifecycleIssue;
@@ -591,6 +676,12 @@ function getEmbeddingConnectionFailureIssue(error: unknown) {
     : "provider-unreachable";
 }
 
+/**
+ * Uebersetzt Ollama-Lifecycle-Fehler in Provider-Issues.
+ *
+ * @param error - Urspruenglicher Fehler.
+ * @returns Passendes Ollama-Issue oder null.
+ */
 function getOllamaLifecycleConnectionIssue(error: unknown) {
   if (!(error instanceof OllamaLifecycleError)) return null;
   if (error.issue === "not-installed") return "ollama-not-installed" as const;
@@ -602,14 +693,31 @@ function getOllamaLifecycleConnectionIssue(error: unknown) {
   return null;
 }
 
+/**
+ * Liest den Fehlernamen fehlerrobust.
+ *
+ * @param error - Beliebiger Fehlerwert.
+ * @returns Fehlername oder leerer String.
+ */
 function getErrorName(error: unknown) {
   return error instanceof Error ? error.name : "";
 }
 
+/**
+ * Liest die Fehlermeldung fehlerrobust.
+ *
+ * @param error - Beliebiger Fehlerwert.
+ * @returns Fehlermeldung als String.
+ */
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * Startet den plattformabhaengigen Ollama-Setup-Installer.
+ *
+ * @returns Ergebnis des ausgefuehrten Setup-Skripts.
+ */
 async function launchOllamaSetup(): Promise<OllamaSetupResult> {
   const platform = getOllamaSetupPlatform();
   const setupDir = await createOllamaSetupTempDirectory();
@@ -628,6 +736,12 @@ async function launchOllamaSetup(): Promise<OllamaSetupResult> {
   }
 }
 
+/**
+ * Startet Ollama oder wartet auf einen bereits laufenden Dienst.
+ *
+ * @param baseUrl - Ollama-Basis-URL.
+ * @returns Startstatus fuer die UI.
+ */
 async function startOllama(baseUrl: string) {
   const platform = getOllamaSetupPlatform();
   const ownedBefore = ollamaLifecycleManager.ownsRunningProcess();
@@ -641,17 +755,35 @@ async function startOllama(baseUrl: string) {
   };
 }
 
+/**
+ * Stoppt den vom Addon verwalteten Ollama-Prozess.
+ *
+ * @param _baseUrl - Nicht genutzte Basis-URL fuer API-Kompatibilitaet.
+ * @returns Stopstatus fuer die UI.
+ */
 async function stopOllama(_baseUrl: string) {
   const platform = getOllamaSetupPlatform();
   const stopped = await ollamaLifecycleManager.shutdown();
   return { platform, stopped, alreadyStopped: !stopped };
 }
 
+/**
+ * Entlaedt alle aktuell geladenen Ollama-Modelle.
+ *
+ * @param baseUrl - Ollama-Basis-URL.
+ * @returns Provider-Antwort des Unload-Vorgangs.
+ */
 async function unloadOllamaModels(baseUrl: string) {
   const provider = new OllamaProvider({ baseUrl });
   return provider.unloadAllModels();
 }
 
+/**
+ * Entlaedt Modelle und beendet alle vom Lifecycle-Manager bekannten Ollama-Prozesse.
+ *
+ * @param baseUrl - Ollama-Basis-URL.
+ * @returns Terminierungsstatus.
+ */
 async function terminateOllama(baseUrl: string) {
   try {
     await unloadOllamaModels(baseUrl);
@@ -663,6 +795,11 @@ async function terminateOllama(baseUrl: string) {
   return { terminated: true };
 }
 
+/**
+ * Ermittelt die unterstuetzte Setup-Plattform.
+ *
+ * @returns Aktuelle Plattform fuer das Ollama-Setup.
+ */
 function getOllamaSetupPlatform(): OllamaSetupPlatform {
   if (Zotero.isWin) return "windows";
   if (Zotero.isMac) return "macos";
@@ -670,6 +807,11 @@ function getOllamaSetupPlatform(): OllamaSetupPlatform {
   throw new Error("Ollama setup is only available for Windows and macOS.");
 }
 
+/**
+ * Erstellt ein temporaeres Verzeichnis fuer Setup-Dateien.
+ *
+ * @returns Pfad zum temporaeren Setup-Verzeichnis.
+ */
 async function createOllamaSetupTempDirectory() {
   return IOUtils.createUniqueDirectory(
     Zotero.getTempDirectory().path,
@@ -678,6 +820,12 @@ async function createOllamaSetupTempDirectory() {
   );
 }
 
+/**
+ * Kopiert die Windows-Setup-Dateien in das temporaere Verzeichnis.
+ *
+ * @param setupDir - Zielverzeichnis fuer Setup-Dateien.
+ * @returns Pfad zum Windows-Launcher.
+ */
 async function prepareWindowsOllamaSetup(setupDir: string) {
   for (const fileName of OLLAMA_WINDOWS_SETUP_FILES) {
     await copyBundledSetupFile(fileName, setupDir);
@@ -685,6 +833,12 @@ async function prepareWindowsOllamaSetup(setupDir: string) {
   return PathUtils.join(setupDir, OLLAMA_WINDOWS_SETUP_FILES[0]);
 }
 
+/**
+ * Kopiert und markiert das macOS-Setup-Skript als ausfuehrbar.
+ *
+ * @param setupDir - Zielverzeichnis fuer Setup-Dateien.
+ * @returns Pfad zum macOS-Launcher.
+ */
 async function prepareMacOllamaSetup(setupDir: string) {
   const launcherPath = await copyBundledSetupFile(
     OLLAMA_MACOS_SETUP_FILE,
@@ -694,6 +848,13 @@ async function prepareMacOllamaSetup(setupDir: string) {
   return launcherPath;
 }
 
+/**
+ * Kopiert eine gebuendelte Setup-Datei in ein Zielverzeichnis.
+ *
+ * @param fileName - Dateiname innerhalb des setup-Bundles.
+ * @param targetDir - Zielverzeichnis.
+ * @returns Pfad zur kopierten Datei.
+ */
 async function copyBundledSetupFile(fileName: string, targetDir: string) {
   const sourceUrl = rootURI + `setup/${fileName}`;
   const targetPath = PathUtils.join(targetDir, fileName);
@@ -702,6 +863,12 @@ async function copyBundledSetupFile(fileName: string, targetDir: string) {
   return targetPath;
 }
 
+/**
+ * Wartet, bis das Setup-Skript ein Ergebnis schreibt.
+ *
+ * @param resultPath - Pfad zur Ergebnisdatei.
+ * @returns Geparstes Setup-Ergebnis.
+ */
 async function waitForOllamaSetupResult(resultPath: string) {
   const timeoutAt = Date.now() + OLLAMA_SETUP_RESULT_TIMEOUT_MS;
   while (Date.now() < timeoutAt) {
@@ -720,6 +887,12 @@ async function waitForOllamaSetupResult(resultPath: string) {
   throw new Error("Ollama setup did not report a result before timing out.");
 }
 
+/**
+ * Parst und validiert die JSON-Ergebnisdatei des Ollama-Setups.
+ *
+ * @param contents - Inhalt der Ergebnisdatei.
+ * @returns Status und Ergebniscode des Setups.
+ */
 function parseOllamaSetupResult(
   contents: string,
 ): Pick<OllamaSetupResult, "status" | "code"> {
@@ -741,12 +914,24 @@ function parseOllamaSetupResult(
   };
 }
 
+/**
+ * Plant das spaetere Entfernen temporaerer Setup-Dateien.
+ *
+ * @param setupDir - Zu loeschendes Setup-Verzeichnis.
+ * @returns void.
+ */
 function scheduleOllamaSetupCleanup(setupDir: string) {
   setTimeout(() => {
     void IOUtils.remove(setupDir, { recursive: true }).catch(() => undefined);
   }, OLLAMA_SETUP_CLEANUP_DELAY_MS);
 }
 
+/**
+ * Schreibt die Chunks des ausgewaehlten Papers in die Zotero-Konsole.
+ *
+ * @param itemID - Optionale Zotero-Item-ID.
+ * @returns Vollstaendiger Chunk-Bericht.
+ */
 async function logSelectedPaperChunks(itemID?: number) {
   const paper = await PaperContextService.getSelectedPaperChunks(itemID);
   if (!paper) {
@@ -761,6 +946,12 @@ async function logSelectedPaperChunks(itemID?: number) {
   return report;
 }
 
+/**
+ * Kopiert den Chunk-Bericht in die Zwischenablage und meldet eine Kurzfassung.
+ *
+ * @param itemID - Optionale Zotero-Item-ID.
+ * @returns Nutzerlesbare Erfolgsmeldung.
+ */
 async function showSelectedPaperChunks(itemID?: number) {
   const report = await logSelectedPaperChunks(itemID);
   Zotero.Utilities.Internal.copyTextToClipboard(report);
@@ -775,6 +966,13 @@ async function showSelectedPaperChunks(itemID?: number) {
   return message;
 }
 
+/**
+ * Schreibt einen Embedding-Debugbericht fuer das ausgewaehlte Paper.
+ *
+ * @param input - Item-ID oder Berichtoptionen.
+ * @param options - Ueberschreibende Berichtoptionen.
+ * @returns Vollstaendiger Embedding-Bericht.
+ */
 async function logSelectedPaperEmbeddings(
   input?: PaperEmbeddingReportRequest,
   options?: PaperEmbeddingReportOptions,
@@ -804,6 +1002,13 @@ async function logSelectedPaperEmbeddings(
   return report;
 }
 
+/**
+ * Kopiert den Embedding-Bericht in die Zwischenablage und meldet eine Kurzfassung.
+ *
+ * @param input - Item-ID oder Berichtoptionen.
+ * @param options - Ueberschreibende Berichtoptionen.
+ * @returns Nutzerlesbare Erfolgsmeldung.
+ */
 async function showSelectedPaperEmbeddings(
   input?: PaperEmbeddingReportRequest,
   options?: PaperEmbeddingReportOptions,
@@ -821,6 +1026,12 @@ async function showSelectedPaperEmbeddings(
   return message;
 }
 
+/**
+ * Formatiert einen lesbaren Chunk-Bericht fuer ein Paper.
+ *
+ * @param paper - Extrahiertes Paper mit Chunks.
+ * @returns Formatierter Chunk-Bericht.
+ */
 function formatPaperChunks(paper: ChunkedPaper) {
   const header = [
     "[ZAIA Paper Chunks]",
@@ -851,6 +1062,14 @@ function formatPaperChunks(paper: ChunkedPaper) {
   return [header, searchStatus, ...chunks].join("\n\n");
 }
 
+/**
+ * Formatiert einen lesbaren Embedding-Bericht fuer ein Paper.
+ *
+ * @param paper - Extrahiertes Paper mit Chunks.
+ * @param debug - Embedding-Debugdaten.
+ * @param options - Ausgabeoptionen fuer Vektoren und Inputs.
+ * @returns Formatierter Embedding-Bericht.
+ */
 function formatPaperEmbeddings(
   paper: ChunkedPaper,
   debug: ChunkEmbeddingDebugResult,
@@ -935,6 +1154,13 @@ function formatPaperEmbeddings(
   return [header, querySection, ...chunks].filter(Boolean).join("\n\n");
 }
 
+/**
+ * Normalisiert Eingaben fuer den Embedding-Bericht.
+ *
+ * @param input - Item-ID oder Basisoptionen.
+ * @param overrides - Optionen, die Basiswerte ueberschreiben.
+ * @returns Zusammengefuehrte Berichtoptionen.
+ */
 function normalizeEmbeddingReportOptions(
   input?: PaperEmbeddingReportRequest,
   overrides: PaperEmbeddingReportOptions = {},
@@ -952,12 +1178,25 @@ function normalizeEmbeddingReportOptions(
   };
 }
 
+/**
+ * Normalisiert die maximale Anzahl auszugebender Vektorwerte.
+ *
+ * @param value - Gewuenschter Limitwert.
+ * @returns Positiver Integer oder Standardwert.
+ */
 function normalizeVectorLimit(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) && value > 0
     ? Math.floor(value)
     : 32;
 }
 
+/**
+ * Formatiert einen Embedding-Vektor mehrzeilig.
+ *
+ * @param vector - Numerischer Embedding-Vektor.
+ * @param options - Ausgabeoptionen fuer Vollstaendigkeit und Limit.
+ * @returns Formatierter Vektor.
+ */
 function formatEmbeddingVector(
   vector: number[],
   options: PaperEmbeddingReportOptions,
@@ -979,21 +1218,46 @@ function formatEmbeddingVector(
   return `[\n  ${lines.join(",\n  ")}${truncated}\n]`;
 }
 
+/**
+ * Formatiert eine einzelne Embedding-Zahl.
+ *
+ * @param value - Numerischer Wert.
+ * @returns Formatierter Wert.
+ */
 function formatEmbeddingNumber(value: number) {
   if (!Number.isFinite(value)) return String(value);
   return value.toFixed(6);
 }
 
+/**
+ * Zaehlt Woerter in einem Text.
+ *
+ * @param text - Eingabetext.
+ * @returns Anzahl gefundener Woerter.
+ */
 function countWords(text: string) {
   return text.trim().match(/\S+/g)?.length ?? 0;
 }
 
+/**
+ * Formatiert Seitenangaben fuer Chunks.
+ *
+ * @param pageStart - Erste Seite oder null.
+ * @param pageEnd - Letzte Seite oder null.
+ * @returns Lesbares Seitenlabel.
+ */
 function formatChunkPages(pageStart: number | null, pageEnd: number | null) {
   if (pageStart === null) return "Seite unbekannt";
   if (pageStart === pageEnd) return `Seite ${pageStart}`;
   return `Seiten ${pageStart}-${pageEnd}`;
 }
 
+/**
+ * Schreibt eine Nachricht in Zotero- und Browser-Konsolen.
+ *
+ * @param message - Zu loggende Nachricht.
+ * @returns void.
+ */
 function logToZoteroConsole(message: string) {
   Zotero.debug(message);
   (
