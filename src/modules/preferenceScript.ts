@@ -45,7 +45,7 @@ const DEFAULT_SETTINGS = {
   ollamaModel: OLLAMA_DEFAULT_MODEL,
   autoDeleteOldChats: true,
   initialIndexPromptShown: false,
-  chunkTargetTokens: 512,
+  chunkTargetTokens: 1024,
   chunkOverlapTokens: 100,
   chunkCount: 3,
 } satisfies PluginSettings;

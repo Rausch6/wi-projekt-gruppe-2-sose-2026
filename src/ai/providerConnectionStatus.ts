@@ -1,5 +1,8 @@
 import type { LLMProvider } from "../addon";
 
+/**
+ * Beschreibt den technischen Zustand einer Provider-Verbindung.
+ */
 export type ProviderConnectionStatus =
   | "unknown"
   | "checking"
@@ -9,6 +12,9 @@ export type ProviderConnectionStatus =
   | "missing-model"
   | "error";
 
+/**
+ * Beschreibt die konkrete Ursache eines Provider-Verbindungsproblems.
+ */
 export type ProviderConnectionIssue =
   | "api-key-missing"
   | "base-url-missing"
@@ -23,6 +29,9 @@ export type ProviderConnectionIssue =
   | "ollama-startup-timeout"
   | "unknown-error";
 
+/**
+ * Ergebnis einer Provider-Verbindungspruefung.
+ */
 export type ProviderConnectionResult = {
   provider: LLMProvider;
   status: ProviderConnectionStatus;
@@ -39,6 +48,14 @@ export type ProviderConnectionState = Partial<
   Record<LLMProvider, ProviderConnectionResult>
 >;
 
+/**
+ * Erstellt ein normalisiertes Ergebnis fuer eine Provider-Verbindungspruefung.
+ *
+ * @param provider - Provider, fuer den der Status gilt.
+ * @param status - Technischer Verbindungsstatus.
+ * @param details - Optionale Details wie Issue, Modell, Base-URL oder Fehlermeldung.
+ * @returns Normalisiertes Verbindungsergebnis mit Zeitstempel.
+ */
 export function createProviderConnectionResult(
   provider: LLMProvider,
   status: ProviderConnectionStatus,
@@ -56,6 +73,12 @@ export function createProviderConnectionResult(
   };
 }
 
+/**
+ * Erstellt einen Status fuer eine laufende Provider-Verbindungspruefung.
+ *
+ * @param provider - Provider, dessen Verbindung gerade geprueft wird.
+ * @returns Verbindungsergebnis mit Status "checking".
+ */
 export function createCheckingProviderConnectionResult(
   provider: LLMProvider,
 ): ProviderConnectionResult {

@@ -45,27 +45,57 @@ import {
 
 const OLD_CHAT_RETENTION_DAYS = 14;
 
-// Reads one setting from Zotero's preference storage for this plugin.
-// The prefix keeps our settings separate from Zotero's own settings.
+/**
+ * Liest eine Plugin-Preference aus Zotero.
+ *
+ * @param key - Preference-Schluessel ohne Addon-Prefix.
+ * @returns Gespeicherter Preference-Wert.
+ */
 function getPluginPref(key: string) {
   return Zotero.Prefs.get(`${addon.data.config.prefsPrefix}.${key}`, true);
 }
 
+/**
+ * Liest eine String-Preference.
+ *
+ * @param key - Preference-Schluessel.
+ * @param fallback - Rueckgabewert bei fehlendem String.
+ * @returns Getrimmter String oder Fallback.
+ */
 function getStringSetting(key: string, fallback = "") {
   const value = getPluginPref(key);
   return typeof value === "string" ? value.trim() : fallback;
 }
 
+/**
+ * Liest eine Number-Preference.
+ *
+ * @param key - Preference-Schluessel.
+ * @param fallback - Rueckgabewert bei fehlender Zahl.
+ * @returns Gespeicherte Zahl oder Fallback.
+ */
 function getNumberSetting(key: string, fallback: number) {
   const value = getPluginPref(key);
   return typeof value === "number" ? value : fallback;
 }
 
+/**
+ * Liest eine Boolean-Preference.
+ *
+ * @param key - Preference-Schluessel.
+ * @param fallback - Rueckgabewert bei fehlendem Boolean.
+ * @returns Gespeicherter Boolean oder Fallback.
+ */
 function getBooleanSetting(key: string, fallback: boolean) {
   const value = getPluginPref(key);
   return typeof value === "boolean" ? value : fallback;
 }
 
+/**
+ * Laedt alle Plugin-Einstellungen aus Zotero und konfiguriert Provider neu.
+ *
+ * @returns void.
+ */
 function loadSettings() {
   addon.data.settings = {
     provider: getProviderSetting(),
@@ -93,7 +123,7 @@ function loadSettings() {
       "initialIndexPromptShown",
       false,
     ),
-    chunkTargetTokens: getNumberSetting("chunkTargetTokens", 512),
+    chunkTargetTokens: getNumberSetting("chunkTargetTokens", 1024),
     chunkOverlapTokens: getNumberSetting("chunkOverlapTokens", 100),
     chunkCount: getNumberSetting("chunkCount", 3),
   };
@@ -101,6 +131,11 @@ function loadSettings() {
   addon.api.configureEmbeddings();
 }
 
+/**
+ * Initialisiert Addon-Dienste nach dem Zotero-Start.
+ *
+ * @returns Promise, das nach Abschluss der Startup-Routine aufloest.
+ */
 async function onStartup() {
   await new Promise((resolve) => setTimeout(resolve, 1000));
   Zotero.debug("[ZAIA-Startup] onStartup BEGIN");
@@ -145,6 +180,11 @@ async function onStartup() {
   );
 }
 
+/**
+ * Loescht alte, nicht favorisierte Chats beim Start.
+ *
+ * @returns Promise, das nach der Bereinigung aufloest.
+ */
 async function cleanupOldChatsOnStartup() {
   if (!addon.data.settings.autoDeleteOldChats) return;
 
@@ -162,16 +202,31 @@ async function cleanupOldChatsOnStartup() {
   }
 }
 
+/**
+ * Liest den aktiven Chat-Provider aus den Einstellungen.
+ *
+ * @returns Normalisierte Provider-ID.
+ */
 function getProviderSetting(): LLMProvider {
   const value = getStringSetting("provider", "kisski");
   return value === "ollama" ? "ollama" : "kisski";
 }
 
+/**
+ * Liest den Provider fuer die Router-KI aus den Einstellungen.
+ *
+ * @returns Normalisierte Router-Provider-ID.
+ */
 function getContextRouterProviderSetting(): LLMProvider {
   const value = getStringSetting("contextRouterProvider", "ollama");
   return value === "kisski" ? "kisski" : "ollama";
 }
 
+/**
+ * Prueft beim Start die Verbindung zum aktiven Chat-Provider.
+ *
+ * @returns Promise, das nach der Pruefung aufloest.
+ */
 async function checkActiveProviderConnectionOnStartup() {
   const provider = addon.data.settings.provider;
   addon.data.runtime.providerConnections[provider] =
@@ -184,6 +239,11 @@ async function checkActiveProviderConnectionOnStartup() {
   }
 }
 
+/**
+ * Prueft beim Start die Verbindung zum Embedding-Modell.
+ *
+ * @returns Promise, das nach der Pruefung aufloest.
+ */
 async function checkEmbeddingConnectionOnStartup() {
   addon.data.runtime.embeddingConnection =
     createCheckingEmbeddingConnectionResult();
@@ -195,6 +255,12 @@ async function checkEmbeddingConnectionOnStartup() {
   }
 }
 
+/**
+ * Initialisiert UI-Komponenten fuer ein Zotero-Hauptfenster.
+ *
+ * @param win - Zotero-Hauptfenster.
+ * @returns Promise, das nach der Fensterinitialisierung aufloest.
+ */
 async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   // Create ztoolkit for every window
   addon.data.ztoolkit = createZToolkit();
@@ -215,6 +281,12 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   Zotero.debug(`[ZAIA] ${getString("startup-finish")}`);
 }
 
+/**
+ * Raeumt UI-Komponenten eines Zotero-Hauptfensters auf.
+ *
+ * @param win - Zu entladendes Fenster.
+ * @returns Promise, das nach dem Aufraeumen aufloest.
+ */
 async function onMainWindowUnload(win: Window): Promise<void> {
   unregisterZAIAShortcuts(win);
   UIExampleFactory.unregisterAssistantToolbarButton(
@@ -225,6 +297,11 @@ async function onMainWindowUnload(win: Window): Promise<void> {
   addon.data.dialog?.window?.close();
 }
 
+/**
+ * Fuehrt globale Shutdown-Aufraeumarbeiten des Addons aus.
+ *
+ * @returns Promise, das nach dem Shutdown aufloest.
+ */
 async function onShutdown(): Promise<void> {
   addon.data.alive = false;
 
@@ -263,8 +340,13 @@ async function onShutdown(): Promise<void> {
 }
 
 /**
- * This function is just an example of dispatcher for Notify events.
- * Any operations should be placed in a function to keep this funcion clear.
+ * Verarbeitet Zotero-Notify-Events und aktualisiert bei Auswahlwechseln die Paper-Kontext-UI.
+ *
+ * @param event - Zotero-Notify-Eventname.
+ * @param type - Zotero-Objekttyp des Events.
+ * @param ids - Betroffene Zotero-IDs.
+ * @param extraData - Zusaetzliche Eventdaten.
+ * @returns Promise, das nach der Verarbeitung aufloest.
  */
 async function onNotify(
   event: string,
@@ -282,10 +364,11 @@ async function onNotify(
 }
 
 /**
- * This function is just an example of dispatcher for Preference UI events.
- * Any operations should be placed in a function to keep this funcion clear.
- * @param type event type
- * @param data event data
+ * Verarbeitet Events der Preference-UI.
+ *
+ * @param type - Eventtyp der Preferences.
+ * @param data - Eventdaten, z. B. das Preference-Fenster.
+ * @returns Promise, das nach der Verarbeitung aufloest.
  */
 async function onPrefsEvent(type: string, data: { [key: string]: any }) {
   switch (type) {
@@ -301,6 +384,12 @@ async function onPrefsEvent(type: string, data: { [key: string]: any }) {
   }
 }
 
+/**
+ * Initialisiert das ausgelagerte Assistant-Chatfenster.
+ *
+ * @param data - Fensterdaten mit Owner- und Zielwindow.
+ * @returns void.
+ */
 function onAssistantWindowLoad(data: { owner?: Window; window: Window }) {
   if (!data.owner) return;
 
@@ -310,6 +399,12 @@ function onAssistantWindowLoad(data: { owner?: Window; window: Window }) {
   );
 }
 
+/**
+ * Raeumt das ausgelagerte Assistant-Chatfenster auf.
+ *
+ * @param data - Fensterdaten mit Owner- und Zielwindow.
+ * @returns void.
+ */
 function onAssistantWindowUnload(data: { owner?: Window; window: Window }) {
   if (!data.owner) return;
 
@@ -319,6 +414,12 @@ function onAssistantWindowUnload(data: { owner?: Window; window: Window }) {
   );
 }
 
+/**
+ * Initialisiert das lokale Ollama-Modellfenster.
+ *
+ * @param data - Fensterdaten mit Owner- und Zielwindow.
+ * @returns void.
+ */
 function onLocalOllamaModelWindowLoad(data: {
   owner?: Window;
   window: Window;
@@ -331,6 +432,12 @@ function onLocalOllamaModelWindowLoad(data: {
   );
 }
 
+/**
+ * Raeumt das lokale Ollama-Modellfenster auf.
+ *
+ * @param data - Fensterdaten mit Owner- und Zielwindow.
+ * @returns void.
+ */
 function onLocalOllamaModelWindowUnload(data: {
   owner?: Window;
   window: Window;
@@ -344,6 +451,12 @@ function onLocalOllamaModelWindowUnload(data: {
 // Keep in mind hooks only do dispatch. Don't add code that does real jobs in hooks.
 // Otherwise the code would be hard to read and maintain.
 
+/**
+ * Initialisiert das Index-Manager-Fenster.
+ *
+ * @param data - Fensterdaten mit Owner- und Zielwindow.
+ * @returns void.
+ */
 function onIndexManagerWindowLoad(data: { owner?: Window; window: Window }) {
   if (!data.owner) return;
   void initializeIndexManagerWindow(
@@ -352,6 +465,12 @@ function onIndexManagerWindowLoad(data: { owner?: Window; window: Window }) {
   );
 }
 
+/**
+ * Raeumt das Index-Manager-Fenster auf.
+ *
+ * @param data - Fensterdaten mit Owner- und Zielwindow.
+ * @returns void.
+ */
 function onIndexManagerWindowUnload(data: { owner?: Window; window: Window }) {
   handleIndexManagerWindowUnload(data.window, data.owner as Window);
 }

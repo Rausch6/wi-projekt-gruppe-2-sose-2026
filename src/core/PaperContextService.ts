@@ -11,18 +11,27 @@ import {
   type MetadataFieldSelection,
 } from "./MetadataFieldSelection";
 
+/**
+ * Referenz auf ein Zotero-Paper ueber Bibliothek und Item-Key.
+ */
 export interface PaperReference {
   libraryID: number;
   itemKey: string;
   itemID?: number;
 }
 
+/**
+ * Fertiger Kontext fuer ein einzelnes Paper inklusive Systemnachricht.
+ */
 export interface PaperContext {
   systemMessage: string;
   attachmentID: number;
   chunks: TextChunk[];
 }
 
+/**
+ * Extrahiertes und in Chunks zerlegtes Paper.
+ */
 export interface ChunkedPaper {
   title: string;
   creators: string;
@@ -31,15 +40,24 @@ export interface ChunkedPaper {
   chunks: TextChunk[];
 }
 
+/**
+ * Optionen fuer routergesteuerten Vektor-Kontext.
+ */
 export interface VectorContextOptions {
   contentFocus?: "relevant_chunks" | "abstracts";
   metadataFields?: MetadataFieldSelection[];
 }
 
+/**
+ * Gecachtes Paper mit Cache-Key fuer Attachment-Aenderungen.
+ */
 type CachedPaper = ChunkedPaper & {
   cacheKey: string;
 };
 
+/**
+ * Strukturierte Zotero-Metadaten fuer LLM-Kontext.
+ */
 interface ContextPaperMetadata {
   itemID: number;
   itemKey: string;
@@ -63,7 +81,16 @@ interface ContextPaperMetadata {
 
 const paperCache = new Map<string, CachedPaper>();
 
+/**
+ * Erstellt Paper-Kontext aus Zotero-PDFs, Vektordatenbank und Metadaten.
+ */
 export class PaperContextService {
+  /**
+   * Laedt Chunks fuer ein referenziertes Paper.
+   *
+   * @param reference - Zotero-Referenz auf das Paper.
+   * @returns Extrahiertes Paper mit Chunks oder null, wenn kein Dokument gefunden wurde.
+   */
   static async getChunks(
     reference: PaperReference,
   ): Promise<ChunkedPaper | null> {
@@ -80,6 +107,12 @@ export class PaperContextService {
     };
   }
 
+  /**
+   * Laedt Chunks fuer das aktuell ausgewaehlte Paper oder ein konkretes Item.
+   *
+   * @param itemID - Optionale Zotero-Item-ID.
+   * @returns Extrahiertes Paper mit Chunks oder null, wenn kein Dokument gefunden wurde.
+   */
   static async getSelectedPaperChunks(
     itemID?: number,
   ): Promise<ChunkedPaper | null> {
@@ -104,6 +137,13 @@ export class PaperContextService {
     };
   }
 
+  /**
+   * Erstellt Kontext fuer eine Frage zu einem einzelnen Paper.
+   *
+   * @param reference - Zotero-Referenz auf das Paper.
+   * @param query - Nutzerfrage fuer die Suche nach relevanten Chunks.
+   * @returns Paper-Kontext mit Systemnachricht oder null, wenn keine Treffer gefunden wurden.
+   */
   static async buildContext(
     reference: PaperReference,
     query: string,
@@ -198,6 +238,9 @@ export class PaperContextService {
    * Sucht global über die gesamte Vektordatenbank (Bibliotheksübergreifend).
    * Wird genutzt, wenn der Nutzer KEIN spezifisches Paper im Zotero-Chat ausgewählt hat
    * oder eine bibliotheksweite Suchanfrage stellt.
+   *
+   * @param query - Nutzerfrage fuer die globale Suche.
+   * @returns Systemkontext mit relevanten Auszuegen oder null bei fehlenden Treffern.
    */
   static async buildGlobalContext(query: string): Promise<string | null> {
     let searchResults: Awaited<ReturnType<typeof vectorStore.searchSimilar>>;
@@ -297,6 +340,15 @@ export class PaperContextService {
     ].join("\n");
   }
 
+  /**
+   * Erstellt Vektor-Kontext fuer eine definierte Liste von Zotero-Items.
+   *
+   * @param query - Nutzerfrage fuer die semantische Suche.
+   * @param itemIDs - Zotero-Item-IDs, aus denen Kontext gebaut werden soll.
+   * @param title - Ueberschrift fuer den Kontextblock.
+   * @param options - Optionen fuer Inhaltsfokus und Metadatenfelder.
+   * @returns Systemkontext fuer die ausgewaehlten Items oder null.
+   */
   static async buildVectorContextForItems(
     query: string,
     itemIDs: number[],
@@ -428,61 +480,15 @@ export class PaperContextService {
       excerpts,
     ].join("\n");
   }
-
-  /**
-   * Stellt einen komprimierten Kontext mit Bibliotheks-Metadaten für das LLM bereit.
-   * Das Query-Rewriting-Modul kann 'requestedFields' nutzen, um unnötige Metadaten herauszufiltern.
-   */
-  static async buildLibraryMetadataContext(
-    requestedFields: Array<"title" | "firstCreator" | "year" | "itemType"> = [
-      "title",
-      "firstCreator",
-      "year",
-    ],
-  ): Promise<string> {
-    const items = await ItemManager.getAllLibraryItemsMetadata();
-
-    if (!items.length) {
-      return "Die Bibliothek des Nutzers enthält keine relevanten Items oder konnte nicht ausgelesen werden.";
-    }
-
-    const lines = items.map((item) => {
-      let line = `[Zotero-ID: ${item.id}]`;
-      if (requestedFields.includes("title")) {
-        line += ` "${item.title}"`;
-      }
-      if (requestedFields.includes("firstCreator")) {
-        line += ` | Autor: ${item.firstCreator}`;
-      }
-      if (requestedFields.includes("year") && item.year) {
-        line += ` | Jahr: ${item.year}`;
-      }
-      if (requestedFields.includes("itemType")) {
-        line += ` | Typ: ${item.itemType}`;
-      }
-      return line;
-    });
-
-    return [
-      "Hier sind die gewünschten Metadaten der Paper in der Bibliothek:",
-      lines.join("\n"),
-      "Nutze diese Liste für deine Antwort.",
-    ].join("\n");
-  }
-
-  static clearCache() {
-    paperCache.clear();
-    EmbeddingSearchService.clearCache();
-  }
 }
 
-function formatItemCitation(item: Zotero.Item) {
-  const itemData = ItemManager.extractItemData(item);
-  const authorLabel = itemData.firstCreator || "Unbekannt";
-  const yearLabel = itemData.year ? ` ${itemData.year}` : "";
-  return `${authorLabel}${yearLabel}`;
-}
-
+/**
+ * Erweitert die Suchanfrage, wenn gezielt Abstract-nahe Inhalte gesucht werden.
+ *
+ * @param query - Urspruengliche Nutzerfrage.
+ * @param options - Kontextoptionen mit Inhaltsfokus.
+ * @returns Suchtext fuer Embedding- und Keyword-Suche.
+ */
 function buildVectorSearchQuery(query: string, options: VectorContextOptions) {
   if (options.contentFocus !== "abstracts") return query;
 
@@ -493,6 +499,14 @@ function buildVectorSearchQuery(query: string, options: VectorContextOptions) {
   ].join("\n");
 }
 
+/**
+ * Wiederholt die Vektorsuche ohne Keyword-Term, wenn Abstract-Suchen keine Treffer liefern.
+ *
+ * @param queryVector - Bereits berechneter Query-Vektor.
+ * @param query - Urspruengliche Nutzerfrage als Keyword-Fallback.
+ * @param itemIDs - Zotero-Item-IDs fuer die Suche.
+ * @returns Suchtreffer pro Item.
+ */
 async function searchVectorContextWithoutKeywordTerm(
   queryVector: number[] | null,
   query: string,
@@ -517,6 +531,13 @@ async function searchVectorContextWithoutKeywordTerm(
   );
 }
 
+/**
+ * Ermittelt finale Optionen fuer den Vektor-Kontext.
+ *
+ * @param query - Nutzerfrage fuer heuristische Fokus-Erkennung.
+ * @param options - Explizit gesetzte Kontextoptionen.
+ * @returns Aufgeloeste Kontextoptionen.
+ */
 function resolveVectorContextOptions(
   query: string,
   options: VectorContextOptions,
@@ -530,6 +551,12 @@ function resolveVectorContextOptions(
   };
 }
 
+/**
+ * Ermittelt die Metadatenfelder fuer den Kontext.
+ *
+ * @param options - Kontextoptionen mit optionalen Metadatenfeldern.
+ * @returns Liste der zu sendenden Metadatenfelder.
+ */
 function resolveMetadataFields(options: VectorContextOptions = {}) {
   if (options.metadataFields?.length) return options.metadataFields;
 
@@ -546,6 +573,12 @@ function resolveMetadataFields(options: VectorContextOptions = {}) {
   return getMetadataFieldsForSelection(preset);
 }
 
+/**
+ * Erkennt, ob eine Anfrage eher Abstracts statt normaler Textstellen benoetigt.
+ *
+ * @param query - Nutzerfrage.
+ * @returns True, wenn Abstract-Fokus sinnvoll ist.
+ */
 function shouldUseAbstractFocus(query: string) {
   const prompt = query
     .toLowerCase()
@@ -569,6 +602,12 @@ function shouldUseAbstractFocus(query: string) {
   return asksForSummary || asksForExistingPapers;
 }
 
+/**
+ * Erstellt zusaetzliche Antwortregeln fuer Abstract-orientierte Suchen.
+ *
+ * @param options - Kontextoptionen mit Inhaltsfokus.
+ * @returns Liste von Systemhinweisen fuer die Antwort.
+ */
 function formatVectorAnswerGuidance(options: VectorContextOptions) {
   if (options.contentFocus !== "abstracts") return [];
 
@@ -579,6 +618,12 @@ function formatVectorAnswerGuidance(options: VectorContextOptions) {
   ];
 }
 
+/**
+ * Laedt Metadaten fuer die Zotero-Items hinter gefundenen Chunks.
+ *
+ * @param docs - Treffer aus der Vektordatenbank.
+ * @returns Strukturierte Metadaten der zugehoerigen Items.
+ */
 async function getContextMetadataForDocuments(docs: ChunkDocument[]) {
   const itemIDs = docs
     .map((doc) => Number.parseInt(doc.zoteroItemId, 10))
@@ -586,6 +631,12 @@ async function getContextMetadataForDocuments(docs: ChunkDocument[]) {
   return getContextMetadataForItemIDs(itemIDs);
 }
 
+/**
+ * Laedt Metadaten fuer eine Liste von Zotero-Item-IDs.
+ *
+ * @param itemIDs - Zotero-Item-IDs.
+ * @returns Strukturierte Metadaten fuer vorhandene regulaere Items.
+ */
 async function getContextMetadataForItemIDs(itemIDs: number[]) {
   const uniqueItemIDs = [...new Set(itemIDs.filter(Number.isFinite))];
   const metadata = await Promise.all(
@@ -596,6 +647,12 @@ async function getContextMetadataForItemIDs(itemIDs: number[]) {
   );
 }
 
+/**
+ * Laedt und normalisiert Metadaten fuer ein einzelnes Zotero-Item.
+ *
+ * @param itemID - Zotero-Item-ID.
+ * @returns Strukturierte Metadaten oder null bei nicht nutzbarem Item.
+ */
 async function getContextMetadataForItemID(
   itemID: number,
 ): Promise<ContextPaperMetadata | null> {
@@ -636,6 +693,13 @@ async function getContextMetadataForItemID(
   };
 }
 
+/**
+ * Formatiert strukturierte Paper-Metadaten als Prompt-Block.
+ *
+ * @param metadata - Metadaten der relevanten Paper.
+ * @param fields - Auszugebende Metadatenfelder.
+ * @returns Formatierter Metadatenblock.
+ */
 function formatContextMetadataBlock(
   metadata: ContextPaperMetadata[],
   fields = resolveMetadataFields(),
@@ -652,6 +716,12 @@ function formatContextMetadataBlock(
   ].join("\n");
 }
 
+/**
+ * Formatiert vorhandene Zotero-Abstracts als eigenen Prompt-Block.
+ *
+ * @param metadata - Metadaten der relevanten Paper.
+ * @returns Formatierter Abstract-Block oder Hinweis auf fehlende Abstracts.
+ */
 function formatAbstractNotesBlock(metadata: ContextPaperMetadata[]) {
   const abstracts = metadata.filter((entry) =>
     normalizeMetadataValue(entry.abstractNote),
@@ -669,6 +739,12 @@ function formatAbstractNotesBlock(metadata: ContextPaperMetadata[]) {
   ].join("\n");
 }
 
+/**
+ * Formatiert einen einzelnen Zotero-Abstract.
+ *
+ * @param metadata - Metadaten des Papers.
+ * @returns Formatierter Abstract-Eintrag.
+ */
 function formatSingleAbstractNote(metadata: ContextPaperMetadata) {
   return [
     `[ABSTRACT Zotero-ID=${metadata.itemID}]`,
@@ -679,6 +755,13 @@ function formatSingleAbstractNote(metadata: ContextPaperMetadata) {
   ].join("\n");
 }
 
+/**
+ * Formatiert einen einzelnen Metadaten-Eintrag.
+ *
+ * @param metadata - Metadaten des Papers.
+ * @param fields - Auszugebende Metadatenfelder.
+ * @returns Formatierter Paper-Eintrag.
+ */
 function formatSingleContextMetadata(
   metadata: ContextPaperMetadata,
   fields: MetadataFieldSelection[],
@@ -708,29 +791,13 @@ function formatSingleContextMetadata(
   return lines.join("\n");
 }
 
-function formatSingleContextMetadataFull(metadata: ContextPaperMetadata) {
-  return [
-    `[PAPER Zotero-ID=${metadata.itemID}]`,
-    `Item-Key: ${normalizeMetadataValue(metadata.itemKey, "unbekannt")}`,
-    `Bibliothek: ${normalizeMetadataValue(metadata.libraryName, "Unbekannte Bibliothek")} (Library-ID: ${metadata.libraryID})`,
-    `Titel: ${normalizeMetadataValue(metadata.title, "Ohne Titel")}`,
-    `Autorenschaft: ${normalizeMetadataValue(metadata.creators, "Unbekannte Autorenschaft")}`,
-    `Veröffentlichungsdatum: ${normalizeMetadataValue(metadata.publicationDate, "Unbekannt")}`,
-    `Jahr: ${normalizeMetadataValue(metadata.year, "Unbekannt")}`,
-    `Publikation/Journal: ${normalizeMetadataValue(metadata.publicationTitle, "Unbekannt")}`,
-    `Verlag: ${normalizeMetadataValue(metadata.publisher, "Unbekannt")}`,
-    `DOI: ${normalizeMetadataValue(metadata.doi, "Nicht vorhanden")}`,
-    `ISBN: ${normalizeMetadataValue(metadata.isbn, "Nicht vorhanden")}`,
-    `URL: ${normalizeMetadataValue(metadata.url, "Nicht vorhanden")}`,
-    `Abstract vorhanden: ${normalizeMetadataValue(metadata.abstractNote) ? "Ja" : "Nein"}`,
-    `Typ: ${normalizeMetadataValue(metadata.itemType, "unknown")}`,
-    `Tags: ${metadata.tags.length ? metadata.tags.map((tag) => normalizeMetadataValue(tag)).join(", ") : "Keine Tags"}`,
-    `Zotero hinzugefügt: ${normalizeMetadataValue(metadata.dateAdded, "Unbekannt")}`,
-    `Zotero geändert: ${normalizeMetadataValue(metadata.dateModified, "Unbekannt")}`,
-    "[/PAPER]",
-  ].join("\n");
-}
-
+/**
+ * Erstellt eine kurze Quellenangabe aus Metadaten.
+ *
+ * @param metadata - Optionale Paper-Metadaten.
+ * @param fallback - Fallback-Text bei fehlenden Metadaten.
+ * @returns Quellenlabel fuer Kontext-Auszuege.
+ */
 function formatMetadataCitation(
   metadata: ContextPaperMetadata | undefined,
   fallback: string,
@@ -744,6 +811,13 @@ function formatMetadataCitation(
   return `${authorLabel}${yearLabel}`;
 }
 
+/**
+ * Normalisiert einen Metadatenwert fuer Prompt-Ausgaben.
+ *
+ * @param value - Eingehender Wert.
+ * @param fallback - Rueckgabewert bei leerem Inhalt.
+ * @returns Getrimmter String oder Fallback.
+ */
 function normalizeMetadataValue(value: unknown, fallback = "") {
   const normalized = String(value ?? "")
     .replace(/\s+/g, " ")
@@ -751,12 +825,25 @@ function normalizeMetadataValue(value: unknown, fallback = "") {
   return normalized || fallback;
 }
 
+/**
+ * Kuerzt lange Metadatenwerte.
+ *
+ * @param value - Eingehender Wert.
+ * @param maxLength - Maximale Zeichenlaenge.
+ * @returns Gekuerzter Metadatenwert.
+ */
 function truncateMetadataValue(value: unknown, maxLength: number) {
   const normalized = normalizeMetadataValue(value);
   if (normalized.length <= maxLength) return normalized;
   return `${normalized.slice(0, maxLength - 1).trim()}…`;
 }
 
+/**
+ * Liest den Namen einer Zotero-Bibliothek fehlerrobust.
+ *
+ * @param libraryID - Zotero-Library-ID.
+ * @returns Bibliotheksname oder Fallback.
+ */
 function getSafeLibraryName(libraryID: number) {
   try {
     return Zotero.Libraries.getName(libraryID);
@@ -768,6 +855,14 @@ function getSafeLibraryName(libraryID: number) {
   }
 }
 
+/**
+ * Liest ein Zotero-Metadatenfeld fehlerrobust.
+ *
+ * @param item - Zotero-Item.
+ * @param field - Zotero-Feldname.
+ * @param fallback - Rueckgabewert bei fehlendem Feld.
+ * @returns Feldwert oder Fallback.
+ */
 function getSafeMetadataField(
   item: Zotero.Item,
   field: string,
@@ -783,6 +878,13 @@ function getSafeMetadataField(
   }
 }
 
+/**
+ * Ermittelt den besten verfuegbaren Titel fuer ein Zotero-Item.
+ *
+ * @param item - Zotero-Item oder Attachment.
+ * @param fallbackTitle - Fallback-Titel aus ItemManager-Daten.
+ * @returns Normalisierter Paper-Titel.
+ */
 async function getSafeMetadataTitle(item: Zotero.Item, fallbackTitle: string) {
   item = await loadItemCompletely(item);
   const parentTitle = await getParentItemTitle(item);
@@ -806,6 +908,12 @@ async function getSafeMetadataTitle(item: Zotero.Item, fallbackTitle: string) {
   return normalizeMetadataValue(fallbackTitle, "Ohne Titel");
 }
 
+/**
+ * Sucht einen brauchbaren Titel in den Attachments eines Items.
+ *
+ * @param item - Zotero-Parent-Item.
+ * @returns Normalisierter Attachment-Titel oder leerer String.
+ */
 async function getBestAttachmentTitle(item: Zotero.Item) {
   try {
     for (const attachmentID of item.getAttachments()) {
@@ -833,6 +941,12 @@ async function getBestAttachmentTitle(item: Zotero.Item) {
   return "";
 }
 
+/**
+ * Liest den Titel des Parent-Items fuer ein Attachment.
+ *
+ * @param item - Zotero-Item, moeglicherweise ein Attachment.
+ * @returns Parent-Titel oder leerer String.
+ */
 async function getParentItemTitle(item: Zotero.Item) {
   if (!item.isAttachment() || !item.parentID) return "";
 
@@ -852,6 +966,12 @@ async function getParentItemTitle(item: Zotero.Item) {
   return "";
 }
 
+/**
+ * Erzwingt das Nachladen aller Zotero-Item-Daten.
+ *
+ * @param item - Zotero-Item.
+ * @returns Das geladene Item.
+ */
 async function loadItemCompletely(item: Zotero.Item) {
   try {
     await item.loadAllData(true);
@@ -864,6 +984,12 @@ async function loadItemCompletely(item: Zotero.Item) {
   return item;
 }
 
+/**
+ * Normalisiert Attachment-Titel und Dateinamen.
+ *
+ * @param title - Attachment-Titel oder Dateiname.
+ * @returns Bereinigter Titel ohne PDF-Endung.
+ */
 function normalizeAttachmentTitle(title: string) {
   return title
     .replace(/\.pdf$/i, "")
@@ -872,6 +998,12 @@ function normalizeAttachmentTitle(title: string) {
     .trim();
 }
 
+/**
+ * Erkennt generische Attachment-Titel ohne bibliographischen Wert.
+ *
+ * @param title - Zu pruefender Titel.
+ * @returns True, wenn der Titel generisch ist.
+ */
 function isGenericAttachmentTitle(title: string) {
   const normalized = title
     .toLowerCase()
@@ -893,6 +1025,12 @@ function isGenericAttachmentTitle(title: string) {
   ].includes(normalized);
 }
 
+/**
+ * Liest und formatiert Creator-Daten eines Zotero-Items.
+ *
+ * @param item - Zotero-Item.
+ * @returns Autorenschaft oder Fallback.
+ */
 function getSafeMetadataCreators(item: Zotero.Item) {
   try {
     const creators = item
@@ -917,6 +1055,12 @@ function getSafeMetadataCreators(item: Zotero.Item) {
   return itemData.firstCreator || "Unbekannte Autorenschaft";
 }
 
+/**
+ * Liest Tags eines Zotero-Items fehlerrobust.
+ *
+ * @param item - Zotero-Item.
+ * @returns Liste der Tag-Namen.
+ */
 function getSafeTags(item: Zotero.Item) {
   try {
     return item
@@ -931,6 +1075,12 @@ function getSafeTags(item: Zotero.Item) {
   }
 }
 
+/**
+ * Loest eine Paper-Referenz in ein Zotero-Item auf.
+ *
+ * @param reference - Bibliotheks- und Item-Key-Referenz.
+ * @returns Gefundenes Zotero-Item.
+ */
 async function resolveReferencedItem(reference: PaperReference) {
   const item = await ItemManager.getItemByLibraryAndKey(
     reference.libraryID,
@@ -943,6 +1093,12 @@ async function resolveReferencedItem(reference: PaperReference) {
   return item;
 }
 
+/**
+ * Laedt ein Paper aus Cache oder extrahiert es aus dem PDF.
+ *
+ * @param item - Zotero-Item, fuer das ein PDF extrahiert werden soll.
+ * @returns Gecachtes Paper oder null, wenn kein Dokument extrahiert werden konnte.
+ */
 async function getCachedPaper(item: Zotero.Item) {
   const document = await PdfExtractor.extractDocument(item);
   if (!document) return null;
@@ -977,6 +1133,13 @@ async function getCachedPaper(item: Zotero.Item) {
   return paper;
 }
 
+/**
+ * Formatiert den Systemkontext fuer ein einzelnes Paper.
+ *
+ * @param paper - Gecachtes Paper mit Basis-Metadaten.
+ * @param chunks - Relevante Textchunks fuer die Nutzerfrage.
+ * @returns Systemnachricht mit Metadaten und Textauszuegen.
+ */
 function formatPaperContext(paper: CachedPaper, chunks: TextChunk[]) {
   const metadata = [
     "Paper-Metadaten:",
@@ -1012,6 +1175,12 @@ function formatPaperContext(paper: CachedPaper, chunks: TextChunk[]) {
   ].join("\n");
 }
 
+/**
+ * Formatiert die Seitenangabe eines Textchunks.
+ *
+ * @param chunk - Textchunk mit optionalen Seitenangaben.
+ * @returns Seitenlabel fuer Quellenangaben.
+ */
 function formatPageLabel(chunk: TextChunk) {
   if (chunk.pageStart === null) return "";
   if (chunk.pageStart === chunk.pageEnd) return `, Seite ${chunk.pageStart}`;
@@ -1019,9 +1188,9 @@ function formatPageLabel(chunk: TextChunk) {
 }
 
 /**
- * Liest die vom Nutzer konfigurierte Anzahl an Chunks, die pro KI-Anfrage
- * aus der Vektordatenbank abgerufen werden sollen.
- * Entspricht dem Pattern aus TextChunker.ts für chunkTargetTokens.
+ * Liest die konfigurierte maximale Chunk-Anzahl.
+ *
+ * @returns Konfigurierte Chunk-Anzahl oder Standardwert.
  */
 function getChunkCountSetting(): number {
   try {

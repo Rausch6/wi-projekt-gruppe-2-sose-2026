@@ -1,6 +1,9 @@
 import type { LLMProvider } from "../addon";
 import type { MetadataFieldSelection } from "./MetadataFieldSelection";
 
+/**
+ * Beschreibt, welcher Kontext fuer die finale KI-Antwort benoetigt wird.
+ */
 export type PromptContextRoute =
   | "none"
   | "metadata"
@@ -8,6 +11,9 @@ export type PromptContextRoute =
   | "filtered_papers"
   | "all_papers";
 
+/**
+ * Strukturierte Entscheidung der Router-KI inklusive optionaler Filter.
+ */
 export type PromptContextRouteDecision = {
   route: PromptContextRoute;
   reason: string;
@@ -27,6 +33,9 @@ type MetadataField = NonNullable<
   PromptContextRouteDecision["requestedFields"]
 >[number];
 
+/**
+ * Fallback-Felder fuer alte Router-Entscheidungen mit requestedFields.
+ */
 const DEFAULT_REQUESTED_FIELDS: MetadataField[] = [
   "title",
   "firstCreator",
@@ -35,6 +44,9 @@ const DEFAULT_REQUESTED_FIELDS: MetadataField[] = [
   "tags",
 ];
 
+/**
+ * Kompakte Paper-Metadaten, die der Router-KI als Kandidatenliste dienen.
+ */
 export type PromptContextRouterCandidate = {
   itemID: number;
   title: string;
@@ -54,6 +66,9 @@ export type PromptContextRouterCandidate = {
   libraryName: string;
 };
 
+/**
+ * Eingaben und Chat-Adapter fuer eine Router-Entscheidung.
+ */
 export type PromptContextRouterOptions = {
   provider: LLMProvider;
   model: string;
@@ -71,11 +86,17 @@ export type PromptContextRouterOptions = {
   ) => Promise<{ content?: unknown }>;
 };
 
+/**
+ * Minimalformat fuer Nachrichten an das Router-Modell.
+ */
 type RouterMessage = {
   role: "system" | "user" | "assistant";
   content: string;
 };
 
+/**
+ * Systemprompt, der die Router-KI auf reine Kontextentscheidung begrenzt.
+ */
 const ROUTER_SYSTEM_PROMPT = [
   "Du bist ein Routing-Modul fuer einen Zotero-Wissenschaftsassistenten.",
   "Du beantwortest NICHT die Nutzerfrage.",
@@ -117,6 +138,17 @@ const ROUTER_SYSTEM_PROMPT = [
   '{"route":"none|metadata|single_paper|filtered_papers|all_papers","reason":"kurz","confidence":0.0,"contentFocus":"relevant_chunks|abstracts","itemID":123,"itemIDs":[123],"tag":"...","property":"title|firstCreator|year|itemType|tag","value":"...","requestedFields":["title","firstCreator","year","itemType","tags"]}',
 ].join("\n");
 
+/**
+ * Erzeugt per Router-KI und Heuristiken die finale Kontext-Route.
+ *
+ * @param options.provider Provider, der die Router-Entscheidung ausfuehrt.
+ * @param options.model Modellname fuer die Router-KI.
+ * @param options.prompt Aktueller Nutzerprompt ohne Chatverlauf.
+ * @param options.candidates Verfuegbare Paper-Kandidaten aus Zotero.
+ * @param options.metadataFields Metadatenfelder, die an den Router gehen.
+ * @param options.chat Chat-Adapter fuer den konkreten KI-Provider.
+ * @returns Normalisierte und heuristisch abgesicherte Router-Entscheidung.
+ */
 export async function decidePromptContextRoute({
   provider,
   model,
@@ -161,6 +193,13 @@ export async function decidePromptContextRoute({
   return applyPromptHeuristics(decision, prompt);
 }
 
+/**
+ * Formatiert verfuegbare Paper-Kandidaten fuer den Router-Prompt.
+ *
+ * @param candidates Paper-Kandidaten, die der Router sehen darf.
+ * @param fields Metadatenfelder, die pro Kandidat ausgegeben werden.
+ * @returns Kompakter Textblock fuer den Router-Prompt.
+ */
 function formatCandidates(
   candidates: PromptContextRouterCandidate[],
   fields: MetadataFieldSelection[] = ["title", "creators", "publicationDate"],
@@ -187,12 +226,25 @@ function formatCandidates(
     .join("\n");
 }
 
+/**
+ * Extrahiert und parsed die JSON-Entscheidung aus der Router-Antwort.
+ *
+ * @param content Rohe Textantwort der Router-KI.
+ * @returns Geparste Router-Entscheidung.
+ * @throws Error, wenn kein JSON gefunden wird oder JSON.parse fehlschlaegt.
+ */
 function parseDecision(content: string) {
   const json = extractJson(content);
   if (!json) throw new Error("Router returned no JSON decision.");
   return JSON.parse(json) as PromptContextRouteDecision;
 }
 
+/**
+ * Findet JSON in rohem Text oder Markdown-Codebloecken.
+ *
+ * @param content Rohe Textantwort der Router-KI.
+ * @returns JSON-String oder leerer String, wenn nichts gefunden wurde.
+ */
 function extractJson(content: string) {
   const trimmed = content.trim();
   if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed;
@@ -209,6 +261,12 @@ function extractJson(content: string) {
   return "";
 }
 
+/**
+ * Normalisiert unsichere Router-Ausgaben auf erlaubte Werte.
+ *
+ * @param decision Ungepruefte Entscheidung der Router-KI.
+ * @returns Entscheidung mit erlaubter Route, Fokus und requestedFields.
+ */
 function normalizeDecision(
   decision: PromptContextRouteDecision,
 ): PromptContextRouteDecision {
@@ -225,6 +283,12 @@ function normalizeDecision(
   };
 }
 
+/**
+ * Beschraenkt unbekannte Routen auf einen sicheren Metadata-Fallback.
+ *
+ * @param value Beliebiger Route-Wert aus der Router-Antwort.
+ * @returns Erlaubte Route oder metadata als Fallback.
+ */
 function normalizeRoute(value: unknown): PromptContextRoute {
   if (
     value === "none" ||
@@ -238,12 +302,25 @@ function normalizeRoute(value: unknown): PromptContextRoute {
   return "metadata";
 }
 
+/**
+ * Normalisiert den Fokus der spaeteren Vektorsuche.
+ *
+ * @param value Fokuswert aus der Router-Antwort.
+ * @returns abstracts oder relevant_chunks.
+ */
 function normalizeContentFocus(
   value: PromptContextRouteDecision["contentFocus"],
 ) {
   return value === "abstracts" ? "abstracts" : "relevant_chunks";
 }
 
+/**
+ * Ueberschreibt schwache Router-Entscheidungen mit deterministischen Regeln.
+ *
+ * @param decision Normalisierte Router-Entscheidung.
+ * @param prompt Aktueller Nutzerprompt.
+ * @returns Endgueltige Entscheidung nach Heuristikpruefung.
+ */
 function applyPromptHeuristics(
   decision: PromptContextRouteDecision,
   prompt: string,
@@ -317,6 +394,13 @@ function applyPromptHeuristics(
   return decision;
 }
 
+/**
+ * Baut eine Entscheidung, wenn das Router-Modell kein valides JSON liefert.
+ *
+ * @param prompt Aktueller Nutzerprompt.
+ * @param error Fehler beim Parsen oder Auswerten der Router-Antwort.
+ * @returns Heuristische Ersatzentscheidung.
+ */
 function buildHeuristicDecision(
   prompt: string,
   error: unknown,
@@ -354,6 +438,12 @@ function buildHeuristicDecision(
   });
 }
 
+/**
+ * Vereinheitlicht Prompt-Text fuer Regex-basierte Heuristiken.
+ *
+ * @param prompt Urspruenglicher Nutzerprompt.
+ * @returns Normalisierter, klein geschriebener Prompt.
+ */
 function normalizePromptText(prompt: string) {
   return prompt
     .toLowerCase()
@@ -363,6 +453,12 @@ function normalizePromptText(prompt: string) {
     .trim();
 }
 
+/**
+ * Erkennt Fragen, die allein mit Metadaten beantwortet werden koennen.
+ *
+ * @param prompt Normalisierter Nutzerprompt.
+ * @returns true, wenn keine PDF-/Chunk-Inhalte noetig sind.
+ */
 function isMetadataOnlyPrompt(prompt: string) {
   if (isSummaryPrompt(prompt) || isLibrarySearchPrompt(prompt)) return false;
   return /\b(wie viele|anzahl|count|titel|title|autor|author|jahr|year|tag|tags|alteste|aelteste|oldest|neueste|newest|liste|list)\b/.test(
@@ -370,12 +466,24 @@ function isMetadataOnlyPrompt(prompt: string) {
   );
 }
 
+/**
+ * Erkennt Zusammenfassungs- und Ueberblicksanfragen.
+ *
+ * @param prompt Normalisierter Nutzerprompt.
+ * @returns true, wenn Abstract-/Zusammenfassungskontext sinnvoll ist.
+ */
 function isSummaryPrompt(prompt: string) {
   return /\b(zusammenfassung|zusammenfassen|fasse zusammen|fass zusammen|summary|summarize|abstract|ueberblick|uberblick)\b/.test(
     prompt,
   );
 }
 
+/**
+ * Erkennt bibliotheksweite Suchen nach vorhandenen passenden Papern.
+ *
+ * @param prompt Normalisierter Nutzerprompt.
+ * @returns true, wenn die Bibliothek nach passenden Papern durchsucht werden soll.
+ */
 function isLibrarySearchPrompt(prompt: string) {
   const asksForExistingPapers =
     /\b(suche|finde|welche paper|welche artikel|paper.*zu|artikel.*zu|welches paper|welcher artikel|am ehesten passen|passen wurde|passen wuerde|passend|geeignet|papers.*about|find papers|search papers)\b/.test(
@@ -394,6 +502,12 @@ function isLibrarySearchPrompt(prompt: string) {
   );
 }
 
+/**
+ * Erkennt, ob der Prompt eindeutig ein einzelnes konkretes Paper meint.
+ *
+ * @param prompt Normalisierter Nutzerprompt.
+ * @returns true, wenn single_paper fachlich gerechtfertigt ist.
+ */
 function isSpecificSinglePaperPrompt(prompt: string) {
   return (
     /\b(dieses|diese|diesem|diesen)\s+(paper|artikel|dokument|quelle|publikation)\b/.test(
@@ -413,12 +527,24 @@ function isSpecificSinglePaperPrompt(prompt: string) {
   );
 }
 
+/**
+ * Erkennt allgemeinen Bezug auf Paper, Zotero oder die Bibliothek.
+ *
+ * @param prompt Normalisierter Nutzerprompt.
+ * @returns true, wenn irgendein Bibliothekskontext erwaehnt wird.
+ */
 function mentionsPaperContext(prompt: string) {
   return /\b(paper|artikel|dokument|quelle|bibliothek|library|zotero|publication|publikation)\b/.test(
     prompt,
   );
 }
 
+/**
+ * Leitet Legacy-requestedFields aus einfachen Metadatenfragen ab.
+ *
+ * @param prompt Normalisierter Nutzerprompt.
+ * @returns Abgeleitete Legacy-Metadatenfelder.
+ */
 function inferMetadataFields(prompt: string): MetadataField[] {
   const fields = new Set<MetadataField>();
   if (/\b(titel|title|liste|list|anzahl|count|wie viele)\b/.test(prompt)) {
@@ -434,10 +560,23 @@ function inferMetadataFields(prompt: string): MetadataField[] {
   return fields.size ? [...fields] : DEFAULT_REQUESTED_FIELDS;
 }
 
+/**
+ * Ergaenzt eine Begruendung, ohne vorhandene Router-Gruende zu ersetzen.
+ *
+ * @param reason Bestehende Begruendung.
+ * @param addition Zusaetzliche Heuristik-Begruendung.
+ * @returns Kombinierte Begruendung.
+ */
 function appendReason(reason: string, addition: string) {
   return reason ? `${reason} ${addition}` : addition;
 }
 
+/**
+ * Filtert requestedFields auf bekannte Legacy-Metadatenfelder.
+ *
+ * @param fields Ungepruefte requestedFields aus der Router-Antwort.
+ * @returns Gueltige Legacy-Felder oder Default-Felder.
+ */
 function normalizeRequestedFields(
   fields: PromptContextRouteDecision["requestedFields"],
 ) {
