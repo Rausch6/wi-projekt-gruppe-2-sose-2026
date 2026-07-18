@@ -719,6 +719,8 @@ function getErrorMessage(error: unknown) {
  * @returns Ergebnis des ausgefuehrten Setup-Skripts.
  */
 async function launchOllamaSetup(): Promise<OllamaSetupResult> {
+  // Die Skripte werden nicht direkt aus dem Add-on-Bundle ausgeführt, sondern
+  // zunächst in ein beschreibbares temporäres Verzeichnis kopiert.
   const platform = getOllamaSetupPlatform();
   const setupDir = await createOllamaSetupTempDirectory();
   const resultPath = PathUtils.join(setupDir, OLLAMA_SETUP_RESULT_FILE);
@@ -728,6 +730,8 @@ async function launchOllamaSetup(): Promise<OllamaSetupResult> {
       : await prepareMacOllamaSetup(setupDir);
 
   try {
+    // Das Betriebssystem öffnet den plattformspezifischen Launcher in einem
+    // externen Fenster, während Zotero auf dessen JSON-Ergebnis wartet.
     Zotero.File.pathToFile(launcherPath).launch();
     const result = await waitForOllamaSetupResult(resultPath);
     return { ...result, platform, path: launcherPath };
@@ -743,6 +747,8 @@ async function launchOllamaSetup(): Promise<OllamaSetupResult> {
  * @returns Startstatus fuer die UI.
  */
 async function startOllama(baseUrl: string) {
+  // Der Vergleich vor und nach ensureReady unterscheidet einen von ZAIA neu
+  // gestarteten Prozess von einem bereits extern laufenden Ollama-Dienst.
   const platform = getOllamaSetupPlatform();
   const ownedBefore = ollamaLifecycleManager.ownsRunningProcess();
   await ollamaLifecycleManager.ensureReady(baseUrl);
@@ -827,6 +833,7 @@ async function createOllamaSetupTempDirectory() {
  * @returns Pfad zum Windows-Launcher.
  */
 async function prepareWindowsOllamaSetup(setupDir: string) {
+  // Die CMD-Datei benötigt die PowerShell-Datei im gleichen Verzeichnis.
   for (const fileName of OLLAMA_WINDOWS_SETUP_FILES) {
     await copyBundledSetupFile(fileName, setupDir);
   }
@@ -870,6 +877,7 @@ async function copyBundledSetupFile(fileName: string, targetDir: string) {
  * @returns Geparstes Setup-Ergebnis.
  */
 async function waitForOllamaSetupResult(resultPath: string) {
+  // Das externe Skript meldet seinen Abschluss asynchron über setup-result.json.
   const timeoutAt = Date.now() + OLLAMA_SETUP_RESULT_TIMEOUT_MS;
   while (Date.now() < timeoutAt) {
     if (await IOUtils.exists(resultPath)) {

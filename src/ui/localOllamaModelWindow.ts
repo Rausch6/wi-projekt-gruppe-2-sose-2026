@@ -392,6 +392,15 @@ async function refreshInstalledModels(
   }
 }
 
+/**
+ * Startet das externe Ollama-Setup aus dem lokalen Modellfenster, übernimmt
+ * dessen Ergebnis und lädt nach erfolgreichem Start die Modellliste neu.
+ * Währenddessen bleiben Setup- und Aktualisieren-Button gesperrt.
+ *
+ * @param context - Kontext des geöffneten lokalen Modellfensters.
+ * @param state - Veränderlicher Zustand des Modellfensters.
+ * @param elements - Für Setup und Aktualisierung benötigte UI-Elemente.
+ */
 async function launchSetupAndRefresh(
   context: LocalModelWindowContext,
   state: LocalModelWindowState,

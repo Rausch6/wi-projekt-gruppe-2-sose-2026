@@ -1,5 +1,8 @@
+# Behandelt alle PowerShell-Fehler als abbrechende Fehler, damit der zentrale
+# Trap den Fehlschlag zuverlässig an ZAIA melden kann.
 $ErrorActionPreference = "Stop"
 
+# Zentrale Pfade und Statusvariablen für Download und Rückmeldung an ZAIA.
 $DownloadUrl = "https://ollama.com/download/OllamaSetup.exe"
 $ResultFile = Join-Path $PSScriptRoot "setup-result.json"
 $ResultTempFile = Join-Path $PSScriptRoot "setup-result.json.tmp"
@@ -7,6 +10,8 @@ $InstallerPath = Join-Path $PSScriptRoot "OllamaSetup.exe"
 $script:ResultWritten = $false
 
 function Write-Result {
+  # Schreibt das Ergebnis ohne UTF-8-BOM zunächst temporär und verschiebt es
+  # anschließend atomar an den von ZAIA erwarteten Ort.
   param(
     [ValidateSet("success", "cancelled", "error")]
     [string]$Status,
@@ -21,6 +26,7 @@ function Write-Result {
 }
 
 function Complete-Setup {
+  # Speichert den Abschlussstatus und beendet das Setup mit dem gewünschten Code.
   param(
     [string]$Status,
     [string]$Code,
@@ -32,6 +38,7 @@ function Complete-Setup {
 }
 
 trap {
+  # Fängt unerwartete Fehler ab und stellt eine auswertbare Ergebnisdatei sicher.
   if (-not $script:ResultWritten) {
     Write-Result -Status "error" -Code "installation-failed"
   }
@@ -40,11 +47,13 @@ trap {
 }
 
 function Write-Step($Message) {
+  # Gibt einen gut sichtbaren Abschnitt im Terminal aus.
   Write-Host ""
   Write-Host "==> $Message" -ForegroundColor Cyan
 }
 
 function Confirm-Step($Question) {
+  # Akzeptiert neben englischem Y/N auch das deutsche J für Ja.
   while ($true) {
     $answer = Read-Host "$Question [Y/N]"
     if ($answer -match "^[YyJj]") { return $true }
@@ -53,6 +62,7 @@ function Confirm-Step($Question) {
 }
 
 function Find-Ollama {
+  # Prüft zuerst den PATH und danach die üblichen Installationsorte.
   $command = Get-Command "ollama" -ErrorAction SilentlyContinue
   if ($command) { return $command.Source }
 
@@ -71,11 +81,13 @@ function Find-Ollama {
 }
 
 Write-Host "ZAIA Ollama-App-Setup - Windows" -ForegroundColor Green
+# Informiert den Benutzer über den Umfang dieses Setups.
 Write-Host ""
 Write-Host "Dieses Setup installiert nur die Ollama-App."
 Write-Host "Modelle werden anschließend direkt in ZAIA ausgewählt und heruntergeladen."
 
 $ollamaPath = Find-Ollama
+# Eine vorhandene Installation muss nicht erneut heruntergeladen werden.
 if ($ollamaPath) {
   Write-Step "Ollama ist bereits installiert"
   Write-Host $ollamaPath
@@ -91,6 +103,7 @@ if (-not (Confirm-Step "Offizielle Ollama-App jetzt herunterladen und installier
 }
 
 Write-Step "Offizieller Ollama-Installer wird heruntergeladen"
+# Lädt ausschließlich den offiziellen Installer in das Setup-Verzeichnis.
 try {
   Invoke-WebRequest -Uri $DownloadUrl -OutFile $InstallerPath -UseBasicParsing
 } catch {
@@ -99,6 +112,8 @@ try {
 }
 
 Write-Step "Download wird geprüft"
+# Prüft sowohl die Gültigkeit der Authenticode-Signatur als auch den erwarteten
+# Herausgeber, bevor der Installer ausgeführt wird.
 $signature = Get-AuthenticodeSignature -FilePath $InstallerPath
 if ($signature.Status -ne "Valid" -or -not $signature.SignerCertificate) {
   Write-Result -Status "error" -Code "invalid-signature"
@@ -110,15 +125,19 @@ if ($signature.SignerCertificate.Subject -notmatch "Ollama") {
 }
 
 Write-Step "Ollama wird installiert"
+# Wartet auf den Installer und übernimmt einen von null abweichenden Exit-Code
+# als Setup-Fehler.
 $installer = Start-Process -FilePath $InstallerPath -Wait -PassThru
 if ($installer.ExitCode -ne 0) {
   Write-Result -Status "error" -Code "installer-exit-$($installer.ExitCode)"
   throw "Der Ollama-Installer wurde mit Code $($installer.ExitCode) beendet."
 }
 
+# Aktualisiert den PATH der laufenden PowerShell-Sitzung nach der Installation.
 $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
   [System.Environment]::GetEnvironmentVariable("Path", "User")
 
+# Wartet bis zu 30 Sekunden darauf, dass die Ollama-CLI auffindbar wird.
 for ($attempt = 0; $attempt -lt 30; $attempt++) {
   $ollamaPath = Find-Ollama
   if ($ollamaPath) { break }

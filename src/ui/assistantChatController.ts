@@ -1074,6 +1074,12 @@ function isChatReady() {
   return getCurrentSetupReadiness().ready;
 }
 
+/**
+ * Ermittelt den aktuellen Einrichtungsstand aus Provider-, Ollama- und
+ * Embedding-Status für die Setup-Anzeige der Sidebar.
+ *
+ * @returns Zusammengefasster Setup-Status mit den erforderlichen Meilensteinen.
+ */
 function getCurrentSetupReadiness(): SetupReadiness {
   const provider = getActiveProvider();
   return deriveSetupReadiness(
@@ -2152,6 +2158,13 @@ function renderAllHosts() {
  * like a provider switch) this forces the setup view open so the user
  * isn't left staring at a dead end.
  */
+/**
+ * Erkennt, ob eine laufende Setup-Prüfung festhängt, und aktualisiert den dafür
+ * verwendeten Zeitstempel.
+ *
+ * @param readiness - Aktuell berechneter Einrichtungsstand.
+ * @returns Ob die Prüfung länger als zulässig unverändert läuft.
+ */
 function updateSetupStallState(
   chatReady: boolean,
   hasActionableMilestone: boolean,
@@ -2322,6 +2335,14 @@ function renderHost(host: HTMLElement) {
   main.scrollTop = showWelcome || showAbout ? 0 : main.scrollHeight;
 }
 
+/**
+ * Synchronisiert Sichtbarkeit, Meilensteine und Live-Status der Setup-Timeline
+ * mit dem aktuellen Einrichtungsstand.
+ *
+ * @param host - Sidebar-Element, dessen Setup-Anzeige aktualisiert wird.
+ * @param showSetup - Legt fest, ob die Setup-Timeline sichtbar ist.
+ * @param readiness - Aktueller Einrichtungsstand.
+ */
 function syncSetupTimeline(
   host: HTMLElement,
   showSetup: boolean,
@@ -2360,6 +2381,16 @@ function syncSetupTimeline(
   }
 }
 
+/**
+ * Erstellt die vollständige UI-Karte für einen Setup-Meilenstein einschließlich
+ * Status, Fortschritt und verfügbarer Aktionen.
+ *
+ * @param doc - Dokument, in dem das Element erzeugt wird.
+ * @param milestone - Darzustellender Setup-Meilenstein.
+ * @param needsAttention - Markiert den Meilenstein als handlungsbedürftig.
+ * @param readiness - Aktueller Einrichtungsstand.
+ * @returns Fertiges Listenelement für die Setup-Timeline.
+ */
 function createSetupMilestoneElement(
   doc: Document,
   milestone: SetupMilestone,
@@ -2463,12 +2494,25 @@ function createSetupMilestoneElement(
   return item;
 }
 
+/**
+ * Liefert den laufenden Modelldownload für einen downloadfähigen Meilenstein.
+ *
+ * @param milestoneId - Kennung des Setup-Meilensteins.
+ * @returns Downloadstatus oder `undefined`, wenn kein Download zugeordnet ist.
+ */
 function getSetupMilestoneDownload(milestoneId: SetupMilestone["id"]) {
   return milestoneId === "local-model" || milestoneId === "embedding"
     ? setupModelDownloads.get(milestoneId)
     : undefined;
 }
 
+/**
+ * Ermittelt Titel, Beschreibung und Statustext eines Setup-Meilensteins.
+ *
+ * @param milestone - Darzustellender Setup-Meilenstein.
+ * @param readiness - Aktueller Einrichtungsstand.
+ * @returns Lokalisierte Texte für die Setup-Karte.
+ */
 function getSetupMilestoneCopy(
   milestone: SetupMilestone,
   readiness: SetupReadiness,
@@ -2539,6 +2583,13 @@ function getSetupMilestoneCopy(
   }
 }
 
+/**
+ * Übersetzt den technischen Zustand eines Setup-Meilensteins in eine
+ * lokalisierte UI-Beschriftung.
+ *
+ * @param state - Technischer Zustand des Meilensteins.
+ * @returns Lokalisierte Zustandsbezeichnung.
+ */
 function getMilestoneStateLabel(state: SetupMilestone["state"]) {
   switch (state) {
     case "complete":
@@ -2554,6 +2605,15 @@ function getMilestoneStateLabel(state: SetupMilestone["state"]) {
   }
 }
 
+/**
+ * Erzeugt die zum jeweiligen Setup-Meilenstein passenden Aktionsbuttons und
+ * sperrt sie während laufender Installations- oder Startvorgänge.
+ *
+ * @param doc - Dokument, in dem die Buttons erzeugt werden.
+ * @param milestone - Meilenstein, für den Aktionen angeboten werden.
+ * @param readiness - Aktueller Einrichtungsstand.
+ * @returns Container mit den verfügbaren Setup-Aktionen.
+ */
 function createSetupMilestoneActions(
   doc: Document,
   milestone: SetupMilestone,
@@ -2680,6 +2740,14 @@ function createSetupMilestoneActions(
   return actions;
 }
 
+/**
+ * Leitet aus Provider- und Embedding-Verbindung den Statustext der
+ * Ollama-Installation ab.
+ *
+ * @param providerConnection - Aktueller Status des lokalen Chat-Providers.
+ * @param embeddingConnection - Aktueller Status der Embedding-Verbindung.
+ * @returns Lokalisierter Installationstext.
+ */
 function getOllamaInstallationStatusText(
   providerConnection: ProviderConnectionResult | undefined,
   embeddingConnection: EmbeddingConnectionResult,
@@ -2710,6 +2778,13 @@ function getOllamaInstallationStatusText(
   return getString("sidebar-milestone-ollama-installation-ready");
 }
 
+/**
+ * Leitet aus den Verbindungsdaten den Statustext des Ollama-Dienstes ab.
+ *
+ * @param providerConnection - Aktueller Status des lokalen Chat-Providers.
+ * @param embeddingConnection - Aktueller Status der Embedding-Verbindung.
+ * @returns Lokalisierter Dienststatus.
+ */
 function getOllamaServiceStatusText(
   providerConnection: ProviderConnectionResult | undefined,
   embeddingConnection: EmbeddingConnectionResult,
@@ -2816,6 +2891,13 @@ function syncSendButton(button: HTMLButtonElement, providerReady: boolean) {
   );
 }
 
+/**
+ * Formatiert den Embedding-Verbindungsstatus für die Setup-Anzeige und
+ * berücksichtigt dabei laufende Ollama-Installations- und Startvorgänge.
+ *
+ * @param connection - Aktueller Embedding-Verbindungsstatus.
+ * @returns Lokalisierter Statustext oder ein leerer String bei Bereitschaft.
+ */
 function getEmbeddingConnectionStatusText(
   connection: EmbeddingConnectionResult,
 ) {
@@ -2870,6 +2952,14 @@ function getEmbeddingConnectionStatusText(
   return getString("sidebar-embedding-check-failed");
 }
 
+/**
+ * Formatiert den Provider-Verbindungsstatus für die Setup-Anzeige und blendet
+ * für Ollama laufende Installations- oder Startvorgänge ein.
+ *
+ * @param provider - Provider, dessen Status dargestellt wird.
+ * @param connection - Aktueller Verbindungsstatus des Providers.
+ * @returns Lokalisierter Statustext oder ein leerer String bei Bereitschaft.
+ */
 function getProviderConnectionStatusText(
   provider: LLMProvider,
   connection: ProviderConnectionResult | undefined,
@@ -4138,6 +4228,11 @@ async function checkEmbeddingConnection(force: boolean) {
   }
 }
 
+/**
+ * Startet über die öffentliche Addon-API das externe Ollama-Setup, verarbeitet
+ * dessen Ergebnis und startet Ollama nach erfolgreicher Installation.
+ * Mehrfachstarts werden verhindert und alle Sidebar-Ansichten aktualisiert.
+ */
 async function launchOllamaSetup() {
   if (ollamaSetupLaunchRunning) return;
 
@@ -4174,6 +4269,13 @@ async function launchOllamaSetup() {
   }
 }
 
+/**
+ * Ordnet die technischen Ergebnis-Codes der Setup-Skripte verständlichen,
+ * lokalisierten Fehlermeldungen zu.
+ *
+ * @param code - Von `setup-result.json` gelieferter Ergebnis-Code.
+ * @returns Lokalisierte Fehlermeldung für die Sidebar.
+ */
 function getOllamaSetupErrorText(code: string) {
   if (code === "download-failed") {
     return getString("sidebar-ollama-setup-download-failed");
@@ -4188,6 +4290,13 @@ function getOllamaSetupErrorText(code: string) {
   return getString("sidebar-ollama-setup-install-failed");
 }
 
+/**
+ * Überträgt einen Fehler des externen Setups in den Ollama-Verbindungsstatus,
+ * damit die Setup-Timeline ihn unmittelbar darstellen kann.
+ *
+ * @param message - Benutzerfreundliche Fehlermeldung.
+ * @param error - Optionaler technischer Fehlertext für Diagnosezwecke.
+ */
 function setOllamaSetupConnectionError(message: string, error = message) {
   const currentConnection = addon.data.runtime.providerConnections.ollama;
   addon.data.runtime.providerConnections.ollama = {
@@ -4200,6 +4309,10 @@ function setOllamaSetupConnectionError(message: string, error = message) {
   };
 }
 
+/**
+ * Startet den Ollama-Dienst nach der Installation oder über die Setup-Aktion
+ * und prüft anschließend alle davon abhängigen Verbindungen erneut.
+ */
 async function startOllama() {
   if (ollamaStartRunning) return;
 
@@ -4227,15 +4340,23 @@ async function startOllama() {
   }
 }
 
+/**
+ * Wartet auf die Ollama-Verbindung und aktualisiert danach zusätzlich den
+ * Embedding-Status der Setup-Timeline.
+ */
 async function refreshOllamaDependentConnections() {
   await waitForOllamaConnection();
   await checkEmbeddingConnection(true);
 }
 
 /**
- * Pulls a model straight from the sidebar's setup card, the same way the
- * local model window does it (direct `pullModel` call with streamed
- * progress) instead of shelling out to the external setup script.
+ * Lädt ein Modell direkt aus der Setup-Karte der Sidebar herunter. Der Download
+ * verwendet `pullModel` mit Fortschrittsmeldungen und nicht das externe
+ * Installationsskript.
+ *
+ * @param target - Setup-Bereich, dem der Download zugeordnet wird.
+ * @param model - Name des herunterzuladenden Ollama-Modells.
+ * @param win - Fenster für Fortschritts- und Installationsereignisse.
  */
 async function pullSetupModel(
   target: SetupModelDownloadTarget,
@@ -4334,6 +4455,11 @@ async function pullSetupModel(
   }
 }
 
+/**
+ * Bricht einen aus der Setup-Timeline gestarteten Modelldownload ab.
+ *
+ * @param target - Setup-Bereich des abzubrechenden Downloads.
+ */
 function cancelSetupModelDownload(target: SetupModelDownloadTarget) {
   const state = setupModelDownloads.get(target);
   if (state?.status !== "downloading") return;
