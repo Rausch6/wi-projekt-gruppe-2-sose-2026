@@ -15,6 +15,8 @@ export class AIProviderManager {
    * @param {string} [options.activeProvider] - ID des initial aktiven Providers.
    */
   constructor(options = {}) {
+    // Beide Provider werden dauerhaft registriert; activeProviderId entscheidet
+    // lediglich, an welchen Provider Anfragen ohne explizite ID weitergehen.
     this.providers = new Map();
     this.register(new KisskiProvider(options.kisski));
     this.register(new OllamaProvider(options.ollama));
@@ -141,6 +143,8 @@ export class AIProviderManager {
    * @returns {Promise<object>} Antwort des Providers.
    */
   chat(messages, options = {}) {
+    // providerId dient nur der Auswahl im Manager und wird nicht an die
+    // eigentliche Provider-API weitergereicht.
     const { providerId, ...providerOptions } = options;
     return this.getProvider(providerId).chat(messages, providerOptions);
   }
@@ -182,6 +186,7 @@ export class AIProviderManager {
   }
 }
 
+// Gemeinsame Manager-Instanz für Addon-API, Sidebar und Einstellungsdialog.
 export const aiProviderManager = new AIProviderManager();
 
 export default AIProviderManager;

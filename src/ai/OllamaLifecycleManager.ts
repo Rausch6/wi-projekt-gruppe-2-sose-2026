@@ -1,5 +1,7 @@
+/** Vom automatischen lokalen Ollama-Lifecycle unterstützte Plattformen. */
 export type OllamaPlatform = "windows" | "macos";
 
+/** Maschinenlesbare Gründe für fehlende lokale Ollama-Bereitschaft. */
 export type OllamaLifecycleIssue =
   | "unsupported-platform"
   | "remote-endpoint-unreachable"
@@ -8,11 +10,13 @@ export type OllamaLifecycleIssue =
   | "start-failed"
   | "startup-timeout";
 
+/** Minimale Prozessschnittstelle, die der Lifecycle-Manager benötigt. */
 export type ManagedOllamaProcess = {
   isRunning: () => boolean;
   kill: () => void;
 };
 
+/** Austauschbare Systemabhängigkeiten für Laufzeit und Tests. */
 export type OllamaLifecycleDependencies = {
   getPlatform: () => OllamaPlatform;
   isReachable: (baseUrl: string) => Promise<boolean>;
@@ -41,6 +45,10 @@ export type EnsureReadyOptions = {
 export class OllamaLifecycleError extends Error {
   readonly issue: OllamaLifecycleIssue;
 
+  /**
+   * @param issue - Maschinenlesbarer Fehlergrund für Provider und UI.
+   * @param message - Technische Fehlermeldung für Protokollierung und Diagnose.
+   */
   constructor(issue: OllamaLifecycleIssue, message: string) {
     super(message);
     this.name = "OllamaLifecycleError";
@@ -58,6 +66,11 @@ export class OllamaLifecycleManager {
   private managedProcess: ManagedOllamaProcess | null = null;
   private startupPromise: Promise<void> | null = null;
 
+  /**
+   * @param dependencies - Plattform- und Prozessfunktionen des Managers.
+   * @param startupTimeoutMs - Maximale Wartezeit auf die lokale Ollama-API.
+   * @param pollIntervalMs - Abstand zwischen zwei Erreichbarkeitsprüfungen.
+   */
   constructor(
     private readonly dependencies: OllamaLifecycleDependencies,
     private readonly startupTimeoutMs = 20_000,
@@ -229,6 +242,7 @@ function isLocalOllamaUrl(baseUrl: string) {
   }
 }
 
+/** Wandelt beliebige Fehlerwerte in einen protokollierbaren Text um. */
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
@@ -267,6 +281,8 @@ function createDefaultDependencies(): OllamaLifecycleDependencies {
       );
     },
     async isReachable(baseUrl) {
+      // Zotero.HTTP ist der bevorzugte Prüfpfad; fetch dient als Fallback für
+      // Laufzeitumgebungen, in denen der Zotero-Request fehlschlägt.
       if (typeof Zotero === "undefined") return true;
       const url = `${baseUrl}/api/tags`;
       try {
@@ -291,6 +307,7 @@ function createDefaultDependencies(): OllamaLifecycleDependencies {
       }
     },
     async findExecutable(platform) {
+      // Der erste vorhandene bekannte Pfad wird als Ollama-CLI verwendet.
       if (typeof IOUtils === "undefined" || typeof PathUtils === "undefined") {
         return null;
       }
@@ -327,6 +344,8 @@ function createDefaultDependencies(): OllamaLifecycleDependencies {
     wait: (milliseconds) =>
       new Promise((resolve) => setTimeout(resolve, milliseconds)),
     async terminateAll(platform) {
+      // Das vollständige Beenden ist bewusst plattformspezifisch und umfasst
+      // auch Ollama-Prozesse, die nicht von ZAIA gestartet wurden.
       if (platform === "macos") {
         await runSystemProcess(
           "/usr/bin/osascript",

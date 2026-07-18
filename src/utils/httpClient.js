@@ -1,28 +1,35 @@
-// HTTP transport shared by local and cloud AI providers.
+// Gemeinsamer HTTP-Transport für lokale und cloudbasierte KI-Provider.
 
 /**
+ * Transportmodus für automatische, lokale oder cloudbasierte Anfragen.
+ *
  * @typedef {"auto" | "local" | "cloud"} TransportMode
  */
 
 /**
+ * Gemeinsame Optionen für normale und gestreamte HTTP-Anfragen.
+ *
  * @typedef {Object} RequestOptions
- * @property {Record<string, string>} [headers]
- * @property {unknown} [body]
- * @property {number} [timeout]
- * @property {AbortSignal} [signal]
- * @property {TransportMode} [mode]
+ * @property {Record<string, string>} [headers] Zusätzliche HTTP-Header.
+ * @property {unknown} [body] Zu serialisierender Anfrageinhalt.
+ * @property {number} [timeout] Timeout in Millisekunden.
+ * @property {AbortSignal} [signal] Optionales Signal zum Abbrechen.
+ * @property {TransportMode} [mode] Auswahl des Transportwegs.
  */
 
 /**
+ * Einheitliche Antwortschnittstelle für Fetch und Zotero.HTTP.
+ *
  * @typedef {Object} HttpResponse
- * @property {number} status
- * @property {boolean} ok
- * @property {Record<string, string>} headers
- * @property {() => Promise<unknown>} json
- * @property {() => Promise<string>} text
- * @property {() => AsyncGenerator<string>} [streamText]
+ * @property {number} status HTTP-Statuscode.
+ * @property {boolean} ok Ob der Statuscode zwischen 200 und 299 liegt.
+ * @property {Record<string, string>} headers Normalisierte Antwort-Header.
+ * @property {() => Promise<unknown>} json Liest die Antwort als JSON.
+ * @property {() => Promise<string>} text Liest die Antwort als Text.
+ * @property {() => AsyncGenerator<string>} [streamText] Optionaler Textstream.
  */
 
+/** Prüft, ob eine URL zu einem lokalen Dienst wie Ollama gehört. */
 function isLocalUrl(url) {
   try {
     const hostname = new URL(url).hostname;
@@ -37,6 +44,7 @@ function isLocalUrl(url) {
   }
 }
 
+/** Wandelt die rohe Zotero-Headerdarstellung in ein normalisiertes Objekt um. */
 function parseHeaders(rawHeaders) {
   const headers = {};
 
@@ -52,6 +60,7 @@ function parseHeaders(rawHeaders) {
   return headers;
 }
 
+/** Erstellt die gemeinsame gepufferte Antwortschnittstelle. */
 function createResponse(status, headers, bodyText) {
   return {
     status,
@@ -70,6 +79,9 @@ function createResponse(status, headers, bodyText) {
   };
 }
 
+/**
+ * Sendet eine gepufferte Anfrage über Fetch und vereinheitlicht Transportfehler.
+ */
 async function sendWithFetch(method, url, options) {
   try {
     const { response, bodyText } = await fetchTextWithTimeout(
@@ -94,6 +106,10 @@ async function sendWithFetch(method, url, options) {
   }
 }
 
+/**
+ * Liest eine Fetch-Antwort vollständig ein und verbindet Benutzerabbruch mit
+ * einem eigenen Timeout-Controller.
+ */
 async function fetchTextWithTimeout(method, url, options) {
   const controller = createAbortController();
   const userSignal = options.signal;
@@ -151,6 +167,10 @@ async function fetchTextWithTimeout(method, url, options) {
   }
 }
 
+/**
+ * Öffnet eine Fetch-Anfrage mit lesbarem Textstream. Der Timeout wird nach jedem
+ * empfangenen Chunk neu gestartet und misst dadurch echte Inaktivität.
+ */
 async function sendStreamWithFetch(method, url, options) {
   if (typeof fetch !== "function") {
     throw new HttpStreamingUnsupportedError(url, "fetch is not available");
@@ -209,6 +229,8 @@ async function sendStreamWithFetch(method, url, options) {
     });
     resetInactivityTimer();
     let cachedBodyText;
+    // Fehlerantworten können weiterhin einmal vollständig als Text oder JSON
+    // gelesen werden, bevor ein Stream-Reader angelegt wurde.
     const readBodyText = async () => {
       if (cachedBodyText === undefined) {
         cachedBodyText = await response.text();
@@ -233,6 +255,7 @@ async function sendStreamWithFetch(method, url, options) {
       },
       text: readBodyText,
       streamText: async function* () {
+        // TextDecoder bewahrt mehrbyteige UTF-8-Zeichen über Chunk-Grenzen hinweg.
         if (!response.body || typeof response.body.getReader !== "function") {
           if (timer) clearTimeout(timer);
           throw new HttpStreamingUnsupportedError(
@@ -305,6 +328,10 @@ async function sendStreamWithFetch(method, url, options) {
   }
 }
 
+/**
+ * Sendet eine gepufferte Anfrage über Zotero.HTTP. Außerhalb von Zotero wird
+ * automatisch auf Fetch zurückgefallen.
+ */
 async function sendWithZotero(method, url, options) {
   if (
     typeof Zotero === "undefined" ||
@@ -343,6 +370,7 @@ async function sendWithZotero(method, url, options) {
   }
 }
 
+/** Serialisiert Objektinhalte als JSON und lässt Strings unverändert. */
 function serializeBody(body) {
   if (body === undefined || body === null) return undefined;
   if (typeof body === "string") return body;
@@ -350,12 +378,14 @@ function serializeBody(body) {
 }
 
 /**
- * Send an HTTP request through Zotero's network stack for cloud URLs.
+ * Sendet eine HTTP-Anfrage über Fetch für lokale URLs und über Zotero.HTTP für
+ * Cloud-URLs. Der explizite Transportmodus kann diese automatische Wahl
+ * überschreiben.
  *
- * @param {string} method
- * @param {string} url
- * @param {RequestOptions} [options]
- * @returns {Promise<HttpResponse>}
+ * @param {string} method - HTTP-Methode.
+ * @param {string} url - Ziel-URL.
+ * @param {RequestOptions} [options] - Header, Body, Timeout und Transportmodus.
+ * @returns {Promise<HttpResponse>} Vereinheitlichte HTTP-Antwort.
  */
 async function request(method, url, options = {}) {
   const timeout = options.timeout ?? 30_000;
@@ -377,15 +407,14 @@ async function request(method, url, options = {}) {
 }
 
 /**
- * Send an HTTP request and expose the response body as a text stream.
+ * Sendet eine HTTP-Anfrage und stellt den Antwortinhalt als Textstream bereit.
+ * Da Zotero.HTTP Antworten vollständig puffert, verwendet echtes Streaming
+ * eine Fetch-Implementierung mit ReadableStream-Unterstützung.
  *
- * Zotero.HTTP.request buffers the whole response, so real streaming uses
- * fetch when the runtime exposes a ReadableStream-capable implementation.
- *
- * @param {string} method
- * @param {string} url
- * @param {RequestOptions} [options]
- * @returns {Promise<HttpResponse>}
+ * @param {string} method - HTTP-Methode.
+ * @param {string} url - Ziel-URL.
+ * @param {RequestOptions} [options] - Header, Body, Timeout und Abbruchsignal.
+ * @returns {Promise<HttpResponse>} HTTP-Antwort mit optionalem Textstream.
  */
 async function streamRequest(method, url, options = {}) {
   const timeout = options.timeout ?? 30_000;
@@ -404,11 +433,13 @@ async function streamRequest(method, url, options = {}) {
   });
 }
 
+/** Erstellt einen AbortController, sofern die Laufzeit ihn unterstützt. */
 function createAbortController() {
   if (typeof AbortController !== "function") return null;
   return new AbortController();
 }
 
+/** Erstellt einen plattformübergreifend erkennbaren AbortError. */
 function createAbortError() {
   if (typeof DOMException === "function") {
     return new DOMException("Aborted", "AbortError");
@@ -419,6 +450,7 @@ function createAbortError() {
   return error;
 }
 
+/** Begrenzt ein Promise in Laufzeiten ohne AbortController zeitlich. */
 function raceWithTimeout(promise, url, timeout) {
   return new Promise((resolve, reject) => {
     if (timeout <= 0) {
@@ -443,6 +475,7 @@ function raceWithTimeout(promise, url, timeout) {
   });
 }
 
+/** Gemeinsame Basisklasse aller Transport- und Antwortfehler. */
 export class HttpError extends Error {
   constructor(message, options = {}) {
     super(message);
@@ -453,6 +486,7 @@ export class HttpError extends Error {
   }
 }
 
+/** Fehler für eine Anfrage oder Stream-Inaktivität nach Ablauf des Timeouts. */
 export class HttpTimeoutError extends HttpError {
   constructor(url, timeoutMs) {
     super(`HTTP request timed out after ${timeoutMs} ms: ${url}`, { url });
@@ -461,6 +495,7 @@ export class HttpTimeoutError extends HttpError {
   }
 }
 
+/** Fehler für Netzwerk- oder Laufzeitprobleme ohne gültige HTTP-Antwort. */
 export class HttpNetworkError extends HttpError {
   constructor(url, cause) {
     super(`HTTP network error for ${url}: ${cause?.message ?? cause}`, {
@@ -471,6 +506,7 @@ export class HttpNetworkError extends HttpError {
   }
 }
 
+/** Fehler, wenn die Laufzeit keinen lesbaren Fetch-Stream bereitstellt. */
 export class HttpStreamingUnsupportedError extends HttpError {
   constructor(url, reason) {
     super(`HTTP streaming is not supported for ${url}: ${reason}`, { url });
@@ -479,6 +515,7 @@ export class HttpStreamingUnsupportedError extends HttpError {
   }
 }
 
+/** Fehler beim Parsen einer erwarteten JSON-Antwort. */
 export class HttpParseError extends HttpError {
   constructor(status, bodyText, cause) {
     super(`Could not parse HTTP ${status} response as JSON`, {
@@ -490,6 +527,7 @@ export class HttpParseError extends HttpError {
   }
 }
 
+/** Fehler für eine vorhandene HTTP-Antwort mit nicht erfolgreichem Status. */
 export class HttpResponseError extends HttpError {
   constructor(url, response, message, details) {
     super(message || `HTTP ${response.status} for ${url}`, {
@@ -503,10 +541,12 @@ export class HttpResponseError extends HttpError {
 }
 
 /**
- * Throw a response error while preserving a JSON API error message.
+ * Prüft den HTTP-Status und bewahrt eine von der API gelieferte JSON- oder
+ * Textfehlermeldung im resultierenden Fehlerobjekt auf.
  *
- * @param {string} url
- * @param {HttpResponse} response
+ * @param {string} url - Angefragte URL.
+ * @param {HttpResponse} response - Zu prüfende Antwort.
+ * @returns {Promise<HttpResponse>} Unveränderte erfolgreiche Antwort.
  */
 export async function assertHttpOk(url, response) {
   if (response.ok) return response;
@@ -533,6 +573,9 @@ export async function assertHttpOk(url, response) {
   );
 }
 
+/**
+ * Öffentliche Komfortschnittstelle für normale und gestreamte HTTP-Methoden.
+ */
 export const httpClient = {
   request,
   streamRequest,

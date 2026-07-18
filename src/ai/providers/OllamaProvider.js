@@ -12,7 +12,20 @@ import { ollamaLifecycleManager } from "../OllamaLifecycleManager";
 export const OLLAMA_DEFAULT_BASE_URL = "http://localhost:11434";
 export const OLLAMA_DEFAULT_MODEL = "qwen2.5:3b";
 
+/**
+ * Lokaler LLM-Provider für die Ollama-HTTP-API. Die Klasse übernimmt
+ * Erreichbarkeitsprüfungen, Modellverwaltung und nicht gestreamte Chat-Anfragen.
+ * Der gemeinsame Ollama-Lifecycle-Manager startet den lokalen Dienst bei Bedarf.
+ */
 export class OllamaProvider extends AIProvider {
+  /**
+   * Erstellt einen lokalen Ollama-Provider.
+   *
+   * @param {object} [options={}] - Optionale Provider-Konfiguration.
+   * @param {string} [options.baseUrl] - Basis-URL der lokalen Ollama-API.
+   * @param {string} [options.model] - Standardmodell für Chat-Anfragen.
+   * @param {number} [options.timeout] - Standard-Timeout in Millisekunden.
+   */
   constructor(options = {}) {
     super({
       id: "ollama",
@@ -24,6 +37,11 @@ export class OllamaProvider extends AIProvider {
     this.timeout = options.timeout ?? 120_000;
   }
 
+  /**
+   * Prüft, ob Ollama erreichbar ist und eine gültige Modellliste liefert.
+   *
+   * @returns {Promise<boolean>} `true`, wenn der lokale Provider verfügbar ist.
+   */
   async isAvailable() {
     try {
       await this.listModels();
@@ -33,6 +51,13 @@ export class OllamaProvider extends AIProvider {
     }
   }
 
+  /**
+   * Ruft alle lokal installierten Ollama-Modelle ab.
+   *
+   * @param {object} [options={}] - Optionen für die Verfügbarkeitsprüfung.
+   * @param {boolean} [options.autoStart=true] - Startet Ollama bei Bedarf automatisch.
+   * @returns {Promise<Array<{id: string, name: string, ownedBy: string}>>} Normalisierte Modellliste.
+   */
   async listModels(options = {}) {
     await ollamaLifecycleManager.ensureReady(this.baseUrl, {
       autoStart: options.autoStart !== false,
@@ -44,6 +69,8 @@ export class OllamaProvider extends AIProvider {
     });
     await assertHttpOk(url, response);
 
+    // Ollama liefert die Modelle unter `models`; ungültige Antworten werden als
+    // Providerfehler weitergegeben, damit die UI sie eindeutig behandeln kann.
     const payload = await response.json();
     if (!Array.isArray(payload?.models)) {
       throw new AIProviderResponseError(
@@ -63,6 +90,17 @@ export class OllamaProvider extends AIProvider {
       }));
   }
 
+  /**
+   * Lädt ein Modell über Ollamas gestreamte Pull-API herunter.
+   *
+   * @param {string} [model=this.model] - Name des herunterzuladenden Modells.
+   * @param {object} [options={}] - Downloadoptionen.
+   * @param {number} [options.timeout] - Alternativer Inaktivitäts-Timeout.
+   * @param {number} [options.inactivityTimeout] - Timeout ohne neue Fortschrittsdaten.
+   * @param {AbortSignal} [options.signal] - Signal zum Abbrechen des Downloads.
+   * @param {Function} [options.onProgress] - Callback für normalisierte Fortschrittswerte.
+   * @returns {Promise<object>} Letzte Ollama-Fortschrittsmeldung des Downloads.
+   */
   async pullModel(model = this.model, options = {}) {
     await ollamaLifecycleManager.ensureReady(this.baseUrl);
     const url = `${this.baseUrl}/api/pull`;
@@ -86,6 +124,8 @@ export class OllamaProvider extends AIProvider {
         );
       }
 
+      // Jede JSON-Zeile beschreibt einen Fortschrittsschritt. Die letzte Meldung
+      // bestätigt den erfolgreichen Abschluss des Downloads.
       let finalPayload = null;
       for await (const payload of parseOllamaJsonLineStream(
         response.streamText(),
@@ -121,6 +161,8 @@ export class OllamaProvider extends AIProvider {
 
       return finalPayload;
     } catch (cause) {
+      // Transportfehler werden in ein einheitliches Providerfehler-Format
+      // übersetzt; Abbrüche bleiben als AbortError erkennbar.
       if (cause instanceof AIProviderResponseError) throw cause;
       if (cause?.name === "AbortError") throw cause;
       if (cause instanceof HttpResponseError) {
@@ -154,6 +196,15 @@ export class OllamaProvider extends AIProvider {
     }
   }
 
+  /**
+   * Löscht ein lokal installiertes Ollama-Modell.
+   *
+   * @param {string} [model=this.model] - Name des zu löschenden Modells.
+   * @param {object} [options={}] - Optionen für die Anfrage.
+   * @param {AbortSignal} [options.signal] - Signal zum Abbrechen der Anfrage.
+   * @param {number} [options.timeout] - Anfrage-Timeout in Millisekunden.
+   * @returns {Promise<{model: string}>} Name des erfolgreich gelöschten Modells.
+   */
   async deleteModel(model = this.model, options = {}) {
     await ollamaLifecycleManager.ensureReady(this.baseUrl);
     const url = `${this.baseUrl}/api/delete`;
@@ -202,8 +253,12 @@ export class OllamaProvider extends AIProvider {
   }
 
   /**
-   * Releases every model currently kept in Ollama's RAM/VRAM without
-   * starting Ollama when it is not already running.
+   * Entlädt alle aktuell von Ollama im RAM beziehungsweise VRAM gehaltenen
+   * Modelle, ohne einen nicht laufenden Ollama-Dienst eigens zu starten.
+   *
+   * @param {object} [options={}] - Optionen für Status- und Entladeanfragen.
+   * @param {number} [options.timeout] - Anfrage-Timeout in Millisekunden.
+   * @returns {Promise<{models: string[]}>} Namen der erfolgreich entladenen Modelle.
    */
   async unloadAllModels(options = {}) {
     const psUrl = `${this.baseUrl}/api/ps`;
@@ -214,6 +269,8 @@ export class OllamaProvider extends AIProvider {
     await assertHttpOk(psUrl, psResponse);
 
     const payload = await psResponse.json();
+    // `/api/ps` kann Modellnamen in unterschiedlichen Feldern liefern. Das Set
+    // verhindert, dass dasselbe Modell mehrfach entladen wird.
     const models = [
       ...new Set(
         (Array.isArray(payload?.models) ? payload.models : [])
@@ -224,6 +281,7 @@ export class OllamaProvider extends AIProvider {
     const unloaded = [];
     let firstError = null;
 
+    // `keep_alive: 0` weist Ollama an, das jeweilige Modell sofort zu entladen.
     for (const model of models) {
       const generateUrl = `${this.baseUrl}/api/generate`;
       try {
@@ -246,6 +304,15 @@ export class OllamaProvider extends AIProvider {
     return { models: unloaded };
   }
 
+  /**
+   * Sendet eine nicht gestreamte Chat-Anfrage an das ausgewählte Ollama-Modell.
+   *
+   * @param {Array<object>} messages - Zu sendende Chat-Nachrichten.
+   * @param {object} [options={}] - Modell- und Generierungsoptionen.
+   * @param {string} [options.model] - Modell für diese einzelne Anfrage.
+   * @param {number} [options.timeout] - Anfrage-Timeout in Millisekunden.
+   * @returns {Promise<object>} Normalisierte Providerantwort mit Inhalt und Nutzung.
+   */
   async chat(messages, options = {}) {
     await ollamaLifecycleManager.ensureReady(this.baseUrl);
     const url = `${this.baseUrl}/api/chat`;
@@ -291,6 +358,13 @@ export class OllamaProvider extends AIProvider {
     }
   }
 
+  /**
+   * Erstellt den von Ollamas `/api/chat` erwarteten Request-Body.
+   *
+   * @param {Array<object>} messages - Zu normalisierende Chat-Nachrichten.
+   * @param {object} options - Modell- und Generierungsoptionen.
+   * @returns {object} Bereinigter Ollama-Request ohne undefinierte Werte.
+   */
   createChatBody(messages, options) {
     return removeUndefined({
       model: options.model ?? this.model,
@@ -306,6 +380,13 @@ export class OllamaProvider extends AIProvider {
   }
 }
 
+/**
+ * Entfernt Eigenschaften mit dem Wert `undefined` aus einem Request-Objekt.
+ * Leere Objekte werden ebenfalls als `undefined` zurückgegeben.
+ *
+ * @param {object} object - Zu bereinigendes Objekt.
+ * @returns {object|undefined} Bereinigtes Objekt oder `undefined`.
+ */
 function removeUndefined(object) {
   const cleaned = Object.fromEntries(
     Object.entries(object).filter(([, value]) => value !== undefined),
@@ -313,6 +394,14 @@ function removeUndefined(object) {
   return Object.keys(cleaned).length ? cleaned : undefined;
 }
 
+/**
+ * Zerlegt den Textstream der Pull-API in einzelne JSON-Meldungen. Unvollständige
+ * Zeilen werden bis zum nächsten Chunk im Puffer behalten.
+ *
+ * @param {AsyncIterable<string>} chunks - Eingehende Textabschnitte.
+ * @param {string} providerId - Provider-ID für mögliche Parse-Fehler.
+ * @yields {object} Geparste Ollama-Fortschrittsmeldung.
+ */
 async function* parseOllamaJsonLineStream(chunks, providerId) {
   let buffer = "";
 
@@ -331,6 +420,13 @@ async function* parseOllamaJsonLineStream(chunks, providerId) {
   if (payload) yield payload;
 }
 
+/**
+ * Parst eine einzelne JSON-Zeile des Ollama-Fortschrittsstreams.
+ *
+ * @param {string} line - Zu parsende Zeile.
+ * @param {string} providerId - Provider-ID für die Fehlermeldung.
+ * @returns {object|null} Fortschrittsmeldung oder `null` bei einer Leerzeile.
+ */
 function parseOllamaJsonLine(line, providerId) {
   const text = line.trim();
   if (!text) return null;
@@ -349,6 +445,12 @@ function parseOllamaJsonLine(line, providerId) {
   }
 }
 
+/**
+ * Vereinheitlicht Ollamas Fortschrittsmeldung für die Setup-Oberfläche.
+ *
+ * @param {object} payload - Originale Fortschrittsmeldung von Ollama.
+ * @returns {object} Status, Bytewerte, Prozentwert und Abschlusszustand.
+ */
 function normalizePullProgress(payload) {
   const completed =
     typeof payload?.completed === "number" ? payload.completed : null;
@@ -369,6 +471,11 @@ function normalizePullProgress(payload) {
   };
 }
 
+/**
+ * Erzeugt einen plattformübergreifend erkennbaren Abbruchfehler.
+ *
+ * @returns {DOMException|Error} Fehler mit dem Namen `AbortError`.
+ */
 function createAbortError() {
   if (typeof DOMException === "function") {
     return new DOMException("Aborted", "AbortError");
@@ -379,6 +486,12 @@ function createAbortError() {
   return error;
 }
 
+/**
+ * Überführt Ollamas Tokenzähler in das gemeinsame Provider-Antwortformat.
+ *
+ * @param {object} payload - Ollama-Chat-Antwort.
+ * @returns {object} Prompt-, Antwort- und Gesamtzahl der Tokens.
+ */
 function normalizeUsage(payload) {
   return {
     promptTokens: payload.prompt_eval_count ?? null,
