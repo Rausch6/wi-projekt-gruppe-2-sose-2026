@@ -1,20 +1,22 @@
 /**
- * Zentraler Event-Bus für Indizierungsstatus.
- * Erlaubt es der UI auf Indexierungsereignisse zu reagieren,
- * ohne direkte Abhängigkeit zum BackgroundIndexer.
+ * Mögliche Modi einer Indexierungsoperation.
  */
-
 export type IndexingMode = "full" | "single";
 
+/**
+ * Ereignisdaten für Fortschrittsmeldungen während der Indexierung.
+ */
 export interface IndexingProgressEvent {
   mode: IndexingMode;
   indexed: number;
   total: number;
   estimatedRemainingMs?: number;
-
   paperTitle?: string;
 }
 
+/**
+ * Ereignisdaten für Statusmeldungen rund um die Indexierung (Start, Ende, Fehler).
+ */
 export interface IndexingStatusEvent {
   mode: IndexingMode;
   indexed?: number;
@@ -41,9 +43,21 @@ type IndexingEventMap = {
 
 type Listener<T> = (event: T) => void;
 
+/**
+ * Zentraler Event-Bus für Indexierungsstatus.
+ * Entkoppelt die UI vom BackgroundIndexer, indem Indexierungsereignisse
+ * über typisierte Callbacks kommuniziert werden.
+ */
 class IndexingEventBus {
   private listeners = new Map<string, Set<Listener<any>>>();
 
+  /**
+   * Registriert einen Listener für ein bestimmtes Indexierungsereignis.
+   *
+   * @param event - Name des Ereignisses.
+   * @param listener - Callback-Funktion, die beim Eintreten des Ereignisses aufgerufen wird.
+   * @returns Eine Funktion, die den Listener wieder entfernt.
+   */
   on<K extends keyof IndexingEventMap>(
     event: K,
     listener: Listener<IndexingEventMap[K]>,
@@ -55,6 +69,12 @@ class IndexingEventBus {
     return () => this.off(event, listener);
   }
 
+  /**
+   * Entfernt einen zuvor registrierten Listener.
+   *
+   * @param event - Name des Ereignisses.
+   * @param listener - Der zu entfernende Callback.
+   */
   off<K extends keyof IndexingEventMap>(
     event: K,
     listener: Listener<IndexingEventMap[K]>,
@@ -62,6 +82,13 @@ class IndexingEventBus {
     this.listeners.get(event)?.delete(listener);
   }
 
+  /**
+   * Löst ein Ereignis aus und benachrichtigt alle registrierten Listener.
+   * Fehler einzelner Listener werden still unterdrückt.
+   *
+   * @param event - Name des Ereignisses.
+   * @param data - Ereignisdaten passend zum Ereignistyp.
+   */
   emit<K extends keyof IndexingEventMap>(event: K, data: IndexingEventMap[K]) {
     this.listeners.get(event)?.forEach((listener) => {
       try {

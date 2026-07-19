@@ -24,13 +24,22 @@ const mySchema = {
   embedding: `vector[${VECTOR_SIZE}]`,
 } as const;
 
+/**
+ * Typ der indizierten Quellen in der Vektordatenbank.
+ */
 export type IndexedSourceType = "abstract" | "fulltext";
 
+/**
+ * Indexierungseintrag für ein Zotero-Item mit Hash und Verarbeitungsstatus.
+ */
 export interface IndexRecord {
   hash: string;
   status: "INDEXING" | "DONE";
 }
 
+/**
+ * Einzelner Chunk-Datensatz in der Vektordatenbank.
+ */
 export type ChunkDocument = {
   id: string;
   zoteroItemId: string;
@@ -42,6 +51,11 @@ export type ChunkDocument = {
 
 type VectorDB = Orama<typeof mySchema>;
 
+/**
+ * Kapselt alle Datenbankoperationen der Orama-Vektordatenbank.
+ * Verwaltet das Speichern und Laden des Index sowie die Index-Records
+ * mit Hashwerten zur Änderungserkennung.
+ */
 export class OramaService {
   private db!: VectorDB;
   private isInitialized = false;
@@ -64,11 +78,13 @@ export class OramaService {
     this.isInitialized = true;
     await this.loadIndex();
 
-    Zotero.debug("[OramaService]: Database initialized.");
+    Zotero.debug("[OramaService]: Datenbank initialisiert.");
   }
 
   /**
    * Fügt eine Liste von Text-Chunks inklusive Embeddings in Orama ein.
+   *
+   * @param chunks - Die einzufügenden Chunk-Dokumente.
    */
   async addChunks(chunks: ChunkDocument[]) {
     this.checkInit();
@@ -80,6 +96,12 @@ export class OramaService {
 
   /**
    * Führt eine kombinierte Vektor- und/oder Keyword-Suche in Orama durch.
+   *
+   * @param queryVector - Embedding-Vektor der Suchanfrage oder null für reine Keyword-Suche.
+   * @param limit - Maximale Anzahl zurückgegebener Treffer.
+   * @param whereFilter - Optionaler Orama-Filter (z. B. nach Zotero-Item-ID).
+   * @param term - Optionaler Keyword-Suchbegriff für Fulltext- oder Hybrid-Suche.
+   * @returns Liste der Suchtreffer.
    */
   async searchSimilar(
     queryVector: number[] | null,
@@ -103,7 +125,7 @@ export class OramaService {
         value: queryVector,
         property: "embedding",
       };
-      searchParams.similarity = 0.1; // Ensure we get the closest hits even if absolute similarity is low
+      searchParams.similarity = 0.1;
     }
 
     if (term) {
@@ -125,8 +147,10 @@ export class OramaService {
   }
 
   /**
-   * Löscht alle Chunks, die zu einer bestimmten Zotero-ID gehören.
-   * Wichtig, wenn der Nutzer ein PDF aus Zotero löscht.
+   * Löscht alle Chunks, die zu einer bestimmten Zotero-Item-ID gehören.
+   * Wird aufgerufen, wenn der Nutzer ein PDF aus Zotero entfernt.
+   *
+   * @param zoteroItemId - Die Zotero-Item-ID als String.
    */
   async deleteByZoteroItemId(zoteroItemId: string) {
     this.checkInit();
@@ -146,10 +170,9 @@ export class OramaService {
 
       this.scheduleSave();
       Zotero.debug(
-        `[OramaService]: Deleted ${idsToRemove.length} chunks for item ${zoteroItemId}`,
+        `[OramaService]: ${idsToRemove.length} Chunks für Item ${zoteroItemId} gelöscht.`,
       );
 
-      // Versuche den Titel für die UI-Benachrichtigung zu laden
       let paperTitle;
       try {
         const item = await Zotero.Items.getAsync(parseInt(zoteroItemId, 10));
@@ -160,7 +183,6 @@ export class OramaService {
         }
       } catch (e) {}
 
-      // Emit deleted event to update UI stats dynamically
       import("./IndexingEventBus")
         .then(({ indexingEvents }) => {
           indexingEvents.emit("deleted", { mode: "single", paperTitle });
@@ -169,6 +191,11 @@ export class OramaService {
     }
   }
 
+  /**
+   * Löscht alle Chunks für eine Menge von Zotero-Item-IDs.
+   *
+   * @param zoteroItemIds - Menge von Zotero-Item-IDs (als Strings oder Zahlen).
+   */
   async deleteByZoteroItemIds(zoteroItemIds: Iterable<string | number>) {
     const normalizedIds = [...new Set([...zoteroItemIds].map(String))];
     for (const zoteroItemId of normalizedIds) {
@@ -177,35 +204,26 @@ export class OramaService {
   }
 
   /**
-   * Schnelle Prüfung ob ein Item in den Index-Records existiert (ohne DB-Suche).
+   * Schnelle Prüfung, ob ein Index-Record für eine Zotero-Item-ID existiert (ohne DB-Suche).
+   *
+   * @param zoteroItemId - Die zu prüfende Zotero-Item-ID.
+   * @returns True, wenn ein Record vorhanden ist.
    */
   public hasIndexRecord(zoteroItemId: string): boolean {
     return this.indexRecords.has(zoteroItemId);
   }
 
   /**
-   * Prüft ob ein Item im Index-Record vorhanden ist (schnelle Prüfung ohne DB-Suche).
-   * überspringt bei der Erst-Indexierung bereits vorhandene Items.
+   * Prüft, ob ein Item vollständig indexiert ist (Status DONE).
+   * Nutzt die In-Memory-Index-Records für eine schnelle Prüfung ohne DB-Zugriff.
+   *
+   * @param zoteroItemId - Die zu prüfende Zotero-Item-ID.
+   * @returns True, wenn das Item mit Status DONE indexiert ist.
    */
   async isItemIndexed(zoteroItemId: string): Promise<boolean> {
     this.checkInit();
-
-    // Debug: Log the number of total documents in DB
-    const allDocs = await search(this.db, { term: "", limit: 0 });
-    Zotero.debug(
-      `[OramaService] isItemIndexed called for ${zoteroItemId}. Total DB size: ${allDocs.count}`,
-    );
-
-    const results = await search(this.db, {
-      term: "",
-      where: { zoteroItemId },
-      limit: 1,
-    });
-
-    Zotero.debug(
-      `[OramaService] isItemIndexed(${zoteroItemId}) -> ${results.hits.length > 0}`,
-    );
-    return results.hits.length > 0;
+    const record = this.indexRecords.get(zoteroItemId);
+    return record?.status === "DONE";
   }
 
   /**
@@ -233,6 +251,8 @@ export class OramaService {
 
   /**
    * Gibt eine Zusammenfassung der Datenbank-Statistiken zurück.
+   *
+   * @returns Gesamtanzahl der Chunks und der vollständig indizierten Paper.
    */
   async getDatabaseStats(): Promise<{ chunks: number; papers: number }> {
     this.checkInit();
@@ -245,7 +265,9 @@ export class OramaService {
   }
 
   /**
-   * Gibt die Menge aller Zotero-Item-IDs zurück, die aktuell indexiert sind.
+   * Gibt die Menge aller Zotero-Item-IDs zurück, die aktuell vollständig indexiert sind.
+   *
+   * @returns Set mit den indexierten Zotero-Item-IDs.
    */
   getIndexedItemIds(): Set<string> {
     const ids = new Set<string>();
@@ -257,6 +279,9 @@ export class OramaService {
     return ids;
   }
 
+  /**
+   * Wirft einen Fehler, wenn die Datenbank noch nicht initialisiert wurde.
+   */
   private checkInit() {
     if (!this.isInitialized)
       throw new Error(
@@ -264,15 +289,32 @@ export class OramaService {
       );
   }
 
+  /**
+   * Gibt den gespeicherten Texthash eines indizierten Items zurück.
+   *
+   * @param zoteroItemId - Die Zotero-Item-ID.
+   * @returns Der gespeicherte Hash oder undefined, wenn kein Record vorhanden ist.
+   */
   public getTextHash(zoteroItemId: string): string | undefined {
     return this.indexRecords.get(zoteroItemId)?.hash;
   }
 
+  /**
+   * Markiert ein Item als "wird gerade indexiert" mit dem aktuellen Texthash.
+   *
+   * @param zoteroItemId - Die Zotero-Item-ID.
+   * @param hash - Texthash des zu indexierenden Inhalts.
+   */
   public markAsIndexing(zoteroItemId: string, hash: string) {
     this.indexRecords.set(zoteroItemId, { hash, status: "INDEXING" });
     this.scheduleSave();
   }
 
+  /**
+   * Markiert ein Item als vollständig indexiert (Status DONE).
+   *
+   * @param zoteroItemId - Die Zotero-Item-ID.
+   */
   public markAsIndexed(zoteroItemId: string) {
     const record = this.indexRecords.get(zoteroItemId);
     if (record) {
@@ -281,6 +323,11 @@ export class OramaService {
     }
   }
 
+  /**
+   * Entfernt den Index-Record eines Items.
+   *
+   * @param zoteroItemId - Die Zotero-Item-ID.
+   */
   public deleteIndexRecord(zoteroItemId: string) {
     if (this.indexRecords.has(zoteroItemId)) {
       this.indexRecords.delete(zoteroItemId);
@@ -288,6 +335,9 @@ export class OramaService {
     }
   }
 
+  /**
+   * Absoluter Pfad zur Vektordatenbank-Datei auf der Festplatte.
+   */
   private get dbFilePath() {
     return PathUtils.join(
       Zotero.DataDirectory.dir,
@@ -295,6 +345,9 @@ export class OramaService {
     );
   }
 
+  /**
+   * Absoluter Pfad zur Hash-Datei auf der Festplatte.
+   */
   private get hashFilePath() {
     return PathUtils.join(
       Zotero.DataDirectory.dir,
@@ -323,6 +376,10 @@ export class OramaService {
     }
   }
 
+  /**
+   * Plant das Speichern des Index mit Debounce-Verzögerung.
+   * Bei suspendiertem Speichern wird der Aufruf nur vermerkt.
+   */
   private scheduleSave() {
     if (this.saveSuspended) {
       this.savePendingWhileSuspended = true;
@@ -349,6 +406,9 @@ export class OramaService {
     }, this.SAVE_DELAY_MS);
   }
 
+  /**
+   * Erzwingt sofortiges Speichern des Index (bricht laufenden Debounce-Timer ab).
+   */
   public async forceSave() {
     if (this.saveTimeout) {
       clearTimeout(this.saveTimeout);
@@ -359,16 +419,14 @@ export class OramaService {
 
   /**
    * Löscht den gesamten In-Memory-Index und die gespeicherten Dateien auf der Festplatte.
-   * Nützlich wenn der Nutzer einen Neuaufbau des Index erzwingen möchte.
+   * Nützlich, wenn der Nutzer einen Neuaufbau des Index erzwingen möchte.
    */
   public async clearIndex() {
     this.checkInit();
 
-    // Neues leeres DB-Objekt erstellen
     this.db = (await create({ schema: mySchema })) as VectorDB;
     this.indexRecords = new Map<string, IndexRecord>();
 
-    // Debounce-Timer abbrechen
     if (this.saveTimeout) {
       clearTimeout(this.saveTimeout);
       this.saveTimeout = null;
@@ -384,6 +442,9 @@ export class OramaService {
     Zotero.debug("[OramaService] In-Memory-Index geleert.");
   }
 
+  /**
+   * Schreibt den aktuellen Index und die Index-Records auf die Festplatte.
+   */
   private async saveIndex() {
     try {
       const indexData = await save(this.db);
@@ -403,6 +464,10 @@ export class OramaService {
     }
   }
 
+  /**
+   * Lädt den gespeicherten Index und die Index-Records von der Festplatte.
+   * Migriert dabei ggf. veraltete Hash-Strings in das aktuelle IndexRecord-Format.
+   */
   private async loadIndex() {
     try {
       const contents = await Zotero.File.getContentsAsync(
@@ -432,7 +497,6 @@ export class OramaService {
         this.indexRecords = new Map();
         for (const [key, value] of Object.entries(parsedHashes)) {
           if (typeof value === "string") {
-            // Legacy Migration: alte Hash-Strings
             this.indexRecords.set(key, { hash: value, status: "DONE" });
           } else if (value && typeof value === "object") {
             this.indexRecords.set(key, value as IndexRecord);
@@ -449,10 +513,13 @@ export class OramaService {
     await this.reconcileIndexedItemIds();
   }
 
+  /**
+   * Bereinigt Items, bei denen die Indexierung abgestürzt ist (Status INDEXING).
+   * Entfernt unvollständige Einträge aus dem Index.
+   */
   private async reconcileIndexedItemIds() {
     const crashedItemIds: string[] = [];
 
-    // Finde alle Items, bei denen die Indexierung abgebrochen/abgestürzt ist
     for (const [id, record] of this.indexRecords.entries()) {
       if (record.status === "INDEXING") {
         crashedItemIds.push(id);

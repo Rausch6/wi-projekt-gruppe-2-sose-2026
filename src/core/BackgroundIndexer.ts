@@ -13,6 +13,9 @@ import { EmbeddingSearchService } from "./EmbeddingSearchService";
 
 declare const Zotero: any;
 
+/**
+ * Zustandsdarstellung des Indexierungsprozesses.
+ */
 export type IndexingState =
   | { status: "idle" }
   | {
@@ -24,6 +27,9 @@ export type IndexingState =
   | { status: "done"; indexed: number; total: number; newlyIndexed: number }
   | { status: "aborted"; indexed: number; total: number; newlyIndexed: number };
 
+/**
+ * Ergebnis der Indexierung eines einzelnen Items.
+ */
 type IndexItemResult = {
   indexed: boolean;
   skipped?: boolean;
@@ -31,11 +37,20 @@ type IndexItemResult = {
   unchanged?: boolean;
 };
 
+/**
+ * Optionen für die Bibliotheks-Indexierung.
+ */
 export type IndexAllLibraryItemsOptions = {
   libraryIDs?: number[];
   rebuild?: boolean;
 };
 
+/**
+ * Koordiniert die Hintergrundindexierung von Zotero-Items.
+ * Verarbeitet Items über eine Warteschlange, reagiert auf Zotero-Events
+ * (Hinzufügen, Ändern, Löschen) und unterstützt sowohl Einzel- als auch
+ * Vollbibliotheks-Indexierung.
+ */
 export class BackgroundIndexer {
   private static instance: BackgroundIndexer;
   private observerId: string | null = null;
@@ -44,14 +59,19 @@ export class BackgroundIndexer {
   private pendingModifications = new Set<number>();
   private isProcessing = false;
   private currentlyIndexing = new Set<number>();
-  private isSingleMode = true;
   private abortController: AbortController | null = null;
   private activeRunMode: "single" | "full" | null = null;
 
+  /** Aktueller Zustand der laufenden oder abgeschlossenen Indexierung. */
   public indexingState: IndexingState = { status: "idle" };
 
   private constructor() {}
 
+  /**
+   * Gibt die Singleton-Instanz des BackgroundIndexers zurück.
+   *
+   * @returns Die einzige Instanz des BackgroundIndexers.
+   */
   static getInstance(): BackgroundIndexer {
     if (!BackgroundIndexer.instance) {
       BackgroundIndexer.instance = new BackgroundIndexer();
@@ -69,11 +89,16 @@ export class BackgroundIndexer {
       ["item"],
       "ZAIA_BackgroundIndexer",
     );
-    Zotero.debug("[BackgroundIndexer]: Initialized and listening for events.");
+    Zotero.debug("[BackgroundIndexer]: Initialisiert und wartet auf Ereignisse.");
   }
 
   /**
    * Wird von Zotero aufgerufen, wenn sich Items ändern.
+   *
+   * @param action - Art der Änderung (add, modify, delete, trash).
+   * @param type - Typ des betroffenen Objekts (nur "item" wird verarbeitet).
+   * @param ids - IDs der betroffenen Items.
+   * @param extraData - Zusatzdaten des Notifiers (z. B. Parent-IDs gelöschter Items).
    */
   notify(
     action: string,
@@ -110,6 +135,8 @@ export class BackgroundIndexer {
    * Indexiert bereits indexierte Paper automatisch neu, wenn ihr PDF-Anhang
    * geändert wurde (z. B. Datei ersetzt). Reine Metadaten-Edits am Eltern-Item
    * (Tags, Collections, ...) lösen bewusst keine Extraktion aus.
+   *
+   * @param itemIds - IDs der geänderten Items.
    */
   private async handleModifyEvent(itemIds: number[]) {
     const targetIds = new Set<number>();
@@ -143,6 +170,13 @@ export class BackgroundIndexer {
     }
   }
 
+  /**
+   * Ermittelt die Zotero-Item-ID, die bei einer Änderung neu indexiert werden soll.
+   * Bei PDF-Attachments wird auf das Parent-Item umgeleitet.
+   *
+   * @param itemId - ID des geänderten Items.
+   * @returns Ziel-Item-ID für die Re-Indexierung oder null, wenn keine Indexierung nötig ist.
+   */
   private async resolveReindexTargetId(itemId: number): Promise<number | null> {
     try {
       const item = await Zotero.Items.getAsync(itemId);
@@ -158,6 +192,12 @@ export class BackgroundIndexer {
     }
   }
 
+  /**
+   * Löscht Zotero-Items aus dem Vektorindex, wenn sie in Zotero gelöscht oder in den Papierkorb verschoben wurden.
+   *
+   * @param itemIds - IDs der zu löschenden Items.
+   * @param extraData - Notifier-Metadaten zur Ermittlung von Parent-IDs gelöschter Attachments.
+   */
   private async deleteItemsFromIndex(
     itemIds: number[],
     extraData: Record<string, any>,
@@ -176,11 +216,19 @@ export class BackgroundIndexer {
       await vectorStore.deleteByZoteroItemIds(targetIds);
     } catch (err) {
       Zotero.debug(
-        `[BackgroundIndexer] Error deleting items from index: ${err}`,
+        `[BackgroundIndexer] Fehler beim Löschen von Items aus dem Index: ${err}`,
       );
     }
   }
 
+  /**
+   * Ermittelt die Ziel-Item-ID für das Löschen aus dem Index.
+   * Nutzt Notifier-Metadaten als Fallback, wenn das gelöschte Item nicht mehr ladbar ist.
+   *
+   * @param itemId - ID des zu löschenden Items.
+   * @param extraData - Notifier-Metadaten mit Parent-ID-Information.
+   * @returns Ziel-ID für die Löschoperation.
+   */
   private async resolveIndexTargetIdForRemoval(
     itemId: number,
     extraData: Record<string, any>,
@@ -190,7 +238,7 @@ export class BackgroundIndexer {
       if (item?.isAttachment?.() && item.parentID) return Number(item.parentID);
       if (item?.id) return Number(item.id);
     } catch {
-      // Deleted items may no longer be loadable; fall back to notifier metadata.
+      // Gelöschte Items sind ggf. nicht mehr ladbar; Fallback auf Notifier-Metadaten.
     }
 
     const parentID = getNotifierParentID(itemId, extraData);
@@ -199,7 +247,10 @@ export class BackgroundIndexer {
 
   /**
    * Fügt Items in die Warteschlange ein und startet die Verarbeitung, falls sie nicht bereits läuft.
-   * So wird sichergestellt, dass die items nacheinander verarbeitet werden.
+   * Stellt sicher, dass Items nacheinander und ohne Duplikate verarbeitet werden.
+   *
+   * @param itemIds - IDs der zu indexierenden Items.
+   * @throws Fehler, wenn eine Vollbibliotheks-Indexierung bereits läuft.
    */
   public enqueue(itemIds: number[]) {
     if (this.activeRunMode === "full") {
@@ -224,6 +275,8 @@ export class BackgroundIndexer {
   /**
    * Gibt an, ob gerade eine vollständige Bibliotheks-Indexierung läuft.
    * Wird von der UI genutzt, um konkurrierende Aktionen zu sperren.
+   *
+   * @returns True, wenn gerade eine Vollindexierung aktiv ist.
    */
   public isFullIndexRunning(): boolean {
     return this.activeRunMode === "full";
@@ -231,9 +284,10 @@ export class BackgroundIndexer {
 
   /**
    * Erzeugt einen AbortController, dessen Signal aus demselben Fenster-Global
-   * stammt wie das später aufgerufene fetch() - Gecko lehnt ein AbortSignal
-   * aus einem anderen Global ab ("'signal' member of RequestInit does not
-   * implement interface AbortSignal").
+   * stammt wie das später aufgerufene fetch(). Gecko lehnt ein AbortSignal
+   * aus einem anderen Global ab.
+   *
+   * @returns AbortController aus dem Hauptfenster oder generischer Fallback.
    */
   private createIndexingAbortController(): AbortController {
     try {
@@ -247,6 +301,7 @@ export class BackgroundIndexer {
 
   /**
    * Arbeitet die Warteschlange asynchron ab.
+   * Emittiert Fortschritts- und Abschlussereignisse über den IndexingEventBus.
    */
   private async processQueue() {
     if (this.isProcessing || this.queue.length === 0) return;
@@ -254,7 +309,6 @@ export class BackgroundIndexer {
 
     this.isProcessing = true;
     this.activeRunMode = "single";
-    this.isSingleMode = true;
     this.abortController = this.createIndexingAbortController();
     indexingEvents.emit("started", { mode: "single" });
 
@@ -316,12 +370,8 @@ export class BackgroundIndexer {
             wasAborted = true;
             break;
           }
-          let paperTitle: string | undefined;
-          try {
-            const zItem = await Zotero.Items.getAsync(itemId);
-            paperTitle = zItem?._loaded === false ? undefined : zItem?.getField("title") || undefined;
-          } catch {}
-          const errorMsg = `[BackgroundIndexer] Error indexing item ${itemId} ("${paperTitle || "Unbekannt"}"): ${error}`;
+          const paperTitle = await this.getPaperTitle(itemId);
+          const errorMsg = `[BackgroundIndexer] Fehler beim Indexieren von Item ${itemId} ("${paperTitle || "Unbekannt"}"): ${error}`;
           Zotero.debug(errorMsg);
           if (error instanceof Error) {
             Zotero.logError(new Error(`${errorMsg}\nOriginal: ${error.message}`));
@@ -331,7 +381,7 @@ export class BackgroundIndexer {
           indexingEvents.emit("error", {
             message: String(error),
             itemID: itemId,
-            paperTitle
+            paperTitle,
           });
         }
       }
@@ -342,7 +392,7 @@ export class BackgroundIndexer {
         newlyIndexed,
         total: itemsProcessed,
       };
-      
+
       if (wasAborted) {
         indexingEvents.emit("aborted", {
           mode: "single",
@@ -357,9 +407,15 @@ export class BackgroundIndexer {
       this.abortController = null;
     }
   }
+
   /**
-   * Text extrahieren, chunken, einbetten und speichern.
-   * Child-Attachments werden auf den Parent umgeleitet, um Duplikate zu vermeiden.
+   * Extrahiert Text, erstellt Chunks, berechnet Embeddings und speichert das Ergebnis
+   * in der Vektordatenbank. Child-Attachments werden auf den Parent umgeleitet,
+   * um Duplikate zu vermeiden.
+   *
+   * @param itemId - ID des zu indexierenden Zotero-Items.
+   * @param options - Optionales AbortSignal für vorzeitigen Abbruch.
+   * @returns Ergebnis der Indexierung mit Indexierungsstatus und Ziel-Item-ID.
    */
   private async indexItem(
     itemId: number,
@@ -402,16 +458,11 @@ export class BackgroundIndexer {
       const targetId = item.id;
 
       Zotero.debug(
-        `[BackgroundIndexer] Starting extraction for item ${targetId}...`,
+        `[BackgroundIndexer] Starte Extraktion für Item ${targetId}...`,
       );
 
-      if (this.isSingleMode) {
-        let paperTitle: string | undefined;
-        try {
-          paperTitle = item._loaded === false ? undefined : item.getField("title") || undefined;
-        } catch (_e) {
-          /* ignore */
-        }
+      if (this.activeRunMode !== "full") {
+        const paperTitle = this.getSafeTitle(item);
         indexingEvents.emit("singleStarted", {
           mode: "single",
           itemID: targetId,
@@ -439,7 +490,7 @@ export class BackgroundIndexer {
           await vectorStore.deleteByZoteroItemId(targetId.toString());
         }
         Zotero.debug(
-          `[BackgroundIndexer] No PDF text found for item ${targetId}. Existing vector entries were removed.`,
+          `[BackgroundIndexer] Kein PDF-Text für Item ${targetId} gefunden. Vorhandene Vektoreinträge wurden entfernt.`,
         );
         this.emitSingleDone(targetId, { skipped: true });
         return { indexed: false, skipped: true, targetId };
@@ -493,9 +544,9 @@ export class BackgroundIndexer {
               if (retryCount >= maxRetries) throw err;
               retryCount++;
               Zotero.debug(
-                `[BackgroundIndexer] Retry ${retryCount} for chunk batch ${
+                `[BackgroundIndexer] Wiederholung ${retryCount} für Chunk-Batch ${
                   Math.floor(i / MAX_BATCH_SIZE) + 1
-                } of item ${targetId}`,
+                } von Item ${targetId}`,
               );
             }
           }
@@ -503,7 +554,7 @@ export class BackgroundIndexer {
           Zotero.debug(
             `[BackgroundIndexer] Batch ${
               Math.floor(i / MAX_BATCH_SIZE) + 1
-            } for item ${targetId} embedded successfully!`,
+            } für Item ${targetId} erfolgreich eingebettet.`,
           );
         }
       } else {
@@ -527,7 +578,7 @@ export class BackgroundIndexer {
         await vectorStore.addChunks(oramaChunks);
         vectorStore.markAsIndexed(targetId.toString());
 
-        if (this.isSingleMode) {
+        if (this.activeRunMode !== "full") {
           this.emitSingleDone(targetId);
         }
         return { indexed: true, targetId };
@@ -539,16 +590,28 @@ export class BackgroundIndexer {
     }
   }
 
+  /**
+   * Lädt den Titel eines Zotero-Items asynchron.
+   *
+   * @param itemID - Die Zotero-Item-ID.
+   * @returns Titel des Items oder undefined bei Fehler oder nicht geladenem Item.
+   */
   private async getPaperTitle(itemID: number): Promise<string | undefined> {
     try {
       const zItem = await Zotero.Items.getAsync(itemID);
-      // getSafeTitle() already includes the _loaded guard, unlike a direct getField() call.
       return this.getSafeTitle(zItem) || undefined;
     } catch (_e) {
       return undefined;
     }
   }
 
+  /**
+   * Liest den Titel eines Zotero-Items ohne Fehlerrisiko.
+   * Gibt undefined zurück, wenn das Item nicht geladen ist oder kein Titel vorhanden ist.
+   *
+   * @param item - Das Zotero-Item.
+   * @returns Titel des Items oder undefined.
+   */
   private getSafeTitle(item: any): string | undefined {
     if (item._loaded === false) return undefined;
     try {
@@ -558,11 +621,18 @@ export class BackgroundIndexer {
     }
   }
 
+  /**
+   * Emittiert das `singleDone`-Ereignis nach der Indexierung eines einzelnen Items.
+   * Wird bei einer Vollbibliotheks-Indexierung bewusst nicht aufgerufen.
+   *
+   * @param itemID - Die Zotero-Item-ID des indexierten Items.
+   * @param options - Optionale Flags für übersprungene oder unveränderte Items.
+   */
   private emitSingleDone(
     itemID: number,
     options: { skipped?: boolean; unchanged?: boolean } = {},
   ) {
-    if (!this.isSingleMode) return;
+    if (this.activeRunMode === "full") return;
 
     this.getPaperTitle(itemID)
       .then((paperTitle) => {
@@ -584,6 +654,14 @@ export class BackgroundIndexer {
       });
   }
 
+  /**
+   * Erstellt die Eingabe für den Texthash, der zur Änderungserkennung genutzt wird.
+   * Berücksichtigt den Suchmodus (Embedding vs. Keyword), damit ein Wechsel des Modus
+   * eine Re-Indexierung auslöst.
+   *
+   * @param chunks - Die Text-Chunks des Papers.
+   * @returns Zusammengefasster String als Hash-Eingabe.
+   */
   private createIndexHashSource(chunks: TextChunk[]) {
     const fulltextSource = chunks
       .map(
@@ -595,6 +673,14 @@ export class BackgroundIndexer {
     return `${EmbeddingSearchService.isEnabled() ? "embedding" : "keyword"}\n${fulltextSource}`;
   }
 
+  /**
+   * Berechnet einen 53-Bit-Hash (cyrb53) für einen gegebenen String.
+   * Wird zur Inhaltsänderungserkennung bei der Indexierung verwendet.
+   *
+   * @param str - Der zu hashende String.
+   * @param seed - Optionaler Startwert für den Hash (Standard: 0).
+   * @returns 53-Bit-Hash als Zahl.
+   */
   private cyrb53(str: string, seed = 0): number {
     let h1 = 0xdeadbeef ^ seed,
       h2 = 0x41c6ce57 ^ seed;
@@ -611,6 +697,15 @@ export class BackgroundIndexer {
       Math.imul(h1 ^ (h1 >>> 13), 3266489909);
     return 4294967296 * (2097151 & h2) + (h1 >>> 0);
   }
+
+  /**
+   * Indexiert alle unterstützten Items der angegebenen Bibliotheken.
+   * Unterstützt optionalen Neuaufbau (rebuild) aller vorhandenen Einträge.
+   *
+   * @param options - Optionale Bibliotheks-IDs und Rebuild-Flag.
+   * @returns Statistik der Indexierung (neu indexiert, bereits vorhanden, gesamt).
+   * @throws Fehler, wenn bereits eine Indexierung läuft.
+   */
   async indexAllLibraryItems(
     options: IndexAllLibraryItemsOptions = {},
   ): Promise<{ newlyIndexed: number; alreadyIndexed: number; total: number }> {
@@ -620,7 +715,6 @@ export class BackgroundIndexer {
 
     Zotero.debug("[BackgroundIndexer] Starte Bibliotheks-Indexierung...");
     this.activeRunMode = "full";
-    this.isSingleMode = false;
     this.abortController = this.createIndexingAbortController();
     this.indexingState = { status: "running", indexed: 0, total: 0 };
     indexingEvents.emit("started", { mode: "full" });
@@ -730,7 +824,7 @@ export class BackgroundIndexer {
             break;
           }
           const paperTitle = this.getSafeTitle(item);
-          const errorMsg = `[BackgroundIndexer] Error in batch processing for item ${item.id} ("${paperTitle || "Unbekannt"}"): ${err}`;
+          const errorMsg = `[BackgroundIndexer] Fehler bei der Batch-Verarbeitung von Item ${item.id} ("${paperTitle || "Unbekannt"}"): ${err}`;
           Zotero.debug(errorMsg);
           if (err instanceof Error) {
             Zotero.logError(new Error(`${errorMsg}\nOriginal: ${err.message}`));
@@ -740,7 +834,7 @@ export class BackgroundIndexer {
           indexingEvents.emit("error", {
             message: String(err),
             itemID: item.id,
-            paperTitle
+            paperTitle,
           });
         }
         await new Promise<void>((resolve) => setTimeout(resolve, 10));
@@ -757,7 +851,7 @@ export class BackgroundIndexer {
         newlyIndexed: indexedNew,
         total: targetItems.length,
       };
-      
+
       if (wasAborted) {
         indexingEvents.emit("aborted", {
           mode: "full",
@@ -785,7 +879,6 @@ export class BackgroundIndexer {
       await vectorStore.resumeSave();
       await vectorStore.forceSave();
 
-      this.isSingleMode = true;
       this.activeRunMode = null;
       this.abortController = null;
 
@@ -806,12 +899,25 @@ export class BackgroundIndexer {
     }
   }
 
+  /**
+   * Zählt die bereits indizierten Items aus einer Liste von Ziel-Items.
+   *
+   * @param items - Liste der Ziel-Items.
+   * @returns Anzahl der bereits indizierten Items.
+   */
   private countIndexedTargetItems(items: Zotero.Item[]): number {
     const indexedItemIds = vectorStore.getIndexedItemIds();
     return items.filter((item) => indexedItemIds.has(item.id.toString()))
       .length;
   }
 
+  /**
+   * Ermittelt die zu verwendenden Bibliotheks-IDs.
+   * Filtert ungültige IDs und beschränkt auf tatsächlich verfügbare Bibliotheken.
+   *
+   * @param libraryIDs - Optionale Liste gewünschter Bibliotheks-IDs.
+   * @returns Gefilterte und validierte Liste der Bibliotheks-IDs.
+   */
   private resolveLibraryIDs(libraryIDs?: number[]) {
     const availableLibraryIDs = LibraryScopeManager.listLibraryScopes().map(
       (scope) => scope.libraryID,
@@ -824,6 +930,12 @@ export class BackgroundIndexer {
     );
   }
 
+  /**
+   * Sammelt alle indizierbaren Items aus den angegebenen Bibliotheken.
+   *
+   * @param libraryIDs - IDs der zu durchsuchenden Bibliotheken.
+   * @returns Flache Liste aller indizierbaren Items.
+   */
   private async collectTargetItems(libraryIDs: number[]) {
     const targetItems: Zotero.Item[] = [];
 
@@ -849,6 +961,13 @@ export class BackgroundIndexer {
 
 export const backgroundIndexer = BackgroundIndexer.getInstance();
 
+/**
+ * Prüft, ob ein Zotero-Item für die Indexierung geeignet ist.
+ * Schließt Notizen, Kind-Attachments und gelöschte Items aus.
+ *
+ * @param item - Das zu prüfende Zotero-Item.
+ * @returns True, wenn das Item indexiert werden soll.
+ */
 function isIndexableTargetItem(item: Zotero.Item) {
   if (!item || isDeleted(item)) return false;
   if (item.isNote?.()) return false;
@@ -861,6 +980,12 @@ function isIndexableTargetItem(item: Zotero.Item) {
   );
 }
 
+/**
+ * Prüft, ob ein Zotero-Item als gelöscht markiert ist.
+ *
+ * @param item - Das zu prüfende Zotero-Item.
+ * @returns True, wenn das Item gelöscht ist.
+ */
 function isDeleted(item: Zotero.Item) {
   try {
     const isUnloaded = (item as any)._loaded === false;
@@ -873,6 +998,13 @@ function isDeleted(item: Zotero.Item) {
   }
 }
 
+/**
+ * Liest die Parent-Item-ID eines gelöschten Items aus den Notifier-Metadaten.
+ *
+ * @param itemId - Die ID des gelöschten Items.
+ * @param extraData - Notifier-Metadaten.
+ * @returns Parent-ID oder null, wenn keine gefunden wurde.
+ */
 function getNotifierParentID(
   itemId: number,
   extraData: Record<string, any>,
@@ -891,6 +1023,12 @@ function getNotifierParentID(
   return null;
 }
 
+/**
+ * Liest eine Parent-Item-ID aus einem beliebigen Notifier-Metadaten-Objekt.
+ *
+ * @param value - Das zu durchsuchende Metadaten-Objekt.
+ * @returns Parent-ID als Zahl oder null, wenn keine valide ID gefunden wurde.
+ */
 function readParentID(value: any): number | null {
   if (!value || typeof value !== "object") return null;
 
