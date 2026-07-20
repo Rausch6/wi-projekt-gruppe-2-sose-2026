@@ -15,6 +15,13 @@ export const REQUIRED_EMBEDDING_MODEL = "bge-m3:latest";
 export const EMBEDDING_DEFAULT_MODEL = REQUIRED_EMBEDDING_MODEL;
 export const EMBEDDING_DEFAULT_TIMEOUT = 120_000;
 
+/**
+ * Unified interface for local embedding services.
+ *
+ * The provider encapsulates the different HTTP formats used by Ollama,
+ * OpenAI-compatible servers, and native `/embed` endpoints. Regardless of the
+ * service used, callers always receive numeric vectors in input order.
+ */
 export class EmbeddingProvider {
   constructor(options = {}) {
     this.id = EMBEDDING_PROVIDER_ID;
@@ -62,6 +69,11 @@ export class EmbeddingProvider {
     }
   }
 
+  /**
+   * Converts one or more texts into embedding vectors.
+   * `inputType` distinguishes queries from document passages because some
+   * model families expect different prefixes for them.
+   */
   async embedTexts(texts, options = {}) {
     const baseUrl = options.baseUrl ?? this.baseUrl;
     const model = options.model ?? this.model;
@@ -70,6 +82,8 @@ export class EmbeddingProvider {
       applyEmbeddingPrefix(text, options.inputType, model),
     );
 
+    // Local default models use Ollama's batch endpoint directly; other servers
+    // are initially addressed through the OpenAI-compatible protocol.
     if (shouldUseOllamaEndpoint(baseUrl, model)) {
       try {
         return await requestOllamaEmbeddings(baseUrl, inputTexts, {
@@ -89,6 +103,9 @@ export class EmbeddingProvider {
         signal: options.signal,
       });
     } catch (cause) {
+      // Some local servers expose `/embed` instead of `/embeddings`. Only
+      // protocol-related client errors trigger this fallback; network and
+      // server errors are passed to the caller unchanged.
       if (shouldTryNativeEmbed(cause)) {
         try {
           return await requestNativeEmbeddings(baseUrl, inputTexts, {
@@ -197,6 +214,8 @@ function normalizeTexts(texts) {
 }
 
 function applyEmbeddingPrefix(text, inputType, model) {
+  // E5 models were trained with explicit role prefixes. Already prefixed text
+  // remains unchanged to prevent duplicate prefixes.
   if (!usesE5PromptFormat(model)) return text;
   if (/^(query|passage):\s/i.test(text)) return text;
   if (inputType === "passage") return `passage: ${text}`;
@@ -208,6 +227,8 @@ function usesE5PromptFormat(model) {
 }
 
 function parseEmbeddings(payload, expectedCount) {
+  // Supported servers wrap the same vectors in different response structures.
+  // Subsequent validation ensures the correct count and numeric format.
   const vectors =
     parseOpenAIEmbeddings(payload) ??
     parseEmbeddingProperty(payload, expectedCount) ??
@@ -229,6 +250,8 @@ function parseEmbeddings(payload, expectedCount) {
 function parseOpenAIEmbeddings(payload) {
   if (!Array.isArray(payload?.data)) return null;
 
+  // OpenAI-compatible responses may contain entries in any order. The index
+  // field restores the original input order.
   return payload.data
     .slice()
     .sort((a, b) => {
@@ -307,6 +330,8 @@ function createOllamaEmbedUrl(baseUrl) {
 }
 
 function shouldUseOllamaEndpoint(baseUrl, model) {
+  // Port 11434 is Ollama's default. Known model names also detect Ollama when
+  // it is exposed through a different local URL.
   return (
     /(^|\/)(?:bge-m3|nomic-embed-text|embeddinggemma)(?::|$)/i.test(model) ||
     /:11434(?:\/|$)/.test(baseUrl)

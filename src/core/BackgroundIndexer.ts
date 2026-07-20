@@ -467,6 +467,8 @@ export class BackgroundIndexer {
       let allEmbeddings: number[][] = [];
 
       if (EmbeddingSearchService.isEnabled() && chunks.length > 0) {
+        // Small batches limit memory usage and request duration. Each vector's
+        // position preserves its association with the original chunk.
         for (let i = 0; i < chunks.length; i += MAX_BATCH_SIZE) {
           if (options?.signal?.aborted)
             throw new DOMException("Aborted", "AbortError");
@@ -480,6 +482,9 @@ export class BackgroundIndexer {
           let retryCount = 0;
           const maxRetries = 2;
 
+          // Transient local model failures are retried twice. Abort signals are
+          // propagated immediately so Zotero does not wait for an obsolete
+          // indexing run.
           while (retryCount <= maxRetries) {
             try {
               batchEmbeddings = await embeddingProvider.embedTexts(texts, {
@@ -507,6 +512,9 @@ export class BackgroundIndexer {
           );
         }
       } else {
+        // Orama's vector field requires a fixed dimension even in keyword mode.
+        // Zero vectors are schema placeholders and are not used for similarity
+        // scoring during keyword search.
         allEmbeddings = chunks.map(() => Array(VECTOR_SIZE).fill(0));
       }
 
