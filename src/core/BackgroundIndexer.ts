@@ -1,5 +1,5 @@
 import { VECTOR_SIZE, vectorStore, type ChunkDocument } from "./OramaService";
-import { PdfExtractor } from "./PdfExtractor";
+import { DocumentExtractor } from "./DocumentExtractor";
 import { chunkPaperText, type TextChunk } from "./TextChunker";
 import { embeddingProvider } from "../ai/EmbeddingProvider.js";
 import { indexingEvents } from "./IndexingEventBus";
@@ -178,11 +178,12 @@ export class BackgroundIndexer {
    * @returns Ziel-Item-ID für die Re-Indexierung oder null, wenn keine Indexierung nötig ist.
    */
   private async resolveReindexTargetId(itemId: number): Promise<number | null> {
+    const INDEXABLE_ATTACHMENT_TYPES = ["application/pdf", "text/html", "text/plain"];
     try {
       const item = await Zotero.Items.getAsync(itemId);
       if (
         !item?.isAttachment?.() ||
-        item.attachmentContentType !== "application/pdf"
+        !INDEXABLE_ATTACHMENT_TYPES.includes(item.attachmentContentType)
       ) {
         return null;
       }
@@ -238,7 +239,7 @@ export class BackgroundIndexer {
       if (item?.isAttachment?.() && item.parentID) return Number(item.parentID);
       if (item?.id) return Number(item.id);
     } catch {
-      // Gelöschte Items sind ggf. nicht mehr ladbar; Fallback auf Notifier-Metadaten.
+
     }
 
     const parentID = getNotifierParentID(itemId, extraData);
@@ -294,7 +295,7 @@ export class BackgroundIndexer {
       const win = Zotero.getMainWindow();
       if (win) return createWindowAbortController(win);
     } catch {
-      // Kein Hauptfenster verfügbar; auf den generischen Controller zurückfallen.
+      
     }
     return createAbortController();
   }
@@ -451,7 +452,7 @@ export class BackgroundIndexer {
       if (options?.signal?.aborted)
         throw new DOMException("Aborted", "AbortError");
 
-      const extractedDoc = await PdfExtractor.extractDocument(item);
+      const extractedDoc = await DocumentExtractor.extractDocument(item);
       const addon =
         (globalThis as any).Zotero?.[config.addonInstance] ||
         (globalThis as any).addon;

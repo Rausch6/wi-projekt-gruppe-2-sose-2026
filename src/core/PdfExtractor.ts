@@ -10,10 +10,11 @@ export interface PageTextChunk {
 
 /**
  * Vollständig aufbereitetes Paper-Dokument mit Metadaten und Seitentext.
+ * `attachment` ist null beim Metadaten-only-Fallback (kein PDF, kein Snapshot).
  */
 export interface ExtractedPaperDocument {
   item: Zotero.Item;
-  attachment: Zotero.Item;
+  attachment: Zotero.Item | null;
   title: string;
   creators: string;
   year: string;

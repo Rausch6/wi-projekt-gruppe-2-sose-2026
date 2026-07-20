@@ -1,6 +1,6 @@
 import { ItemManager } from "./ItemManager";
 import { EmbeddingSearchService } from "./EmbeddingSearchService";
-import { PdfExtractor } from "./PdfExtractor";
+import { DocumentExtractor } from "./DocumentExtractor";
 import { chunkPaperText, estimateTokens, type TextChunk } from "./TextChunker";
 import { vectorStore, type ChunkDocument } from "./OramaService";
 import { embeddingProvider } from "../ai/EmbeddingProvider.js";
@@ -1100,14 +1100,14 @@ async function resolveReferencedItem(reference: PaperReference) {
  * @returns Gecachtes Paper oder null, wenn kein Dokument extrahiert werden konnte.
  */
 async function getCachedPaper(item: Zotero.Item) {
-  const document = await PdfExtractor.extractDocument(item);
+  const document = await DocumentExtractor.extractDocument(item);
   if (!document) return null;
 
   const cacheID = `${item.libraryID}:${item.key}`;
   const cacheKey = [
-    document.attachment.id,
-    document.attachment.version,
-    document.attachment.getField("dateModified"),
+    document.attachment?.id ?? "meta",
+    document.attachment?.version ?? "0",
+    document.attachment?.getField("dateModified") ?? item.getField("dateModified"),
   ].join(":");
   const cached = paperCache.get(cacheID);
   if (cached?.cacheKey === cacheKey) return cached;
@@ -1127,7 +1127,7 @@ async function getCachedPaper(item: Zotero.Item) {
     title: document.title,
     creators: document.creators,
     year: document.year,
-    attachmentID: document.attachment.id,
+    attachmentID: document.attachment?.id ?? 0,
   } satisfies CachedPaper;
   paperCache.set(cacheID, paper);
   return paper;
