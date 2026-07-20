@@ -44,7 +44,11 @@ export async function loadItemCompletely(
   item: Zotero.Item,
 ): Promise<Zotero.Item> {
   try {
-    await item.loadAllData?.(true);
+    // WICHTIG: Wir rufen hier absichtlich NICHT `item.loadAllData(true)` auf.
+    // Ein massenhafter Aufruf von loadAllData() für alle Items der Bibliothek 
+    // zwingt Zotero dazu, für jedes einzelne Paper ein "modify"-Event abzufeuern.
+    // Dies würde den BackgroundIndexer fluten und Zotero sowie die GPU komplett blockieren,
+    // da fälschlicherweise eine komplette Re-Indexierung der Bibliothek getriggert wird.
     return item;
   } catch (error) {
     try {

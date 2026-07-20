@@ -409,9 +409,9 @@ export class BackgroundIndexer {
   }
 
   /**
-   * Extrahiert Text, erstellt Chunks, berechnet Embeddings und speichert das Ergebnis
-   * in der Vektordatenbank. Child-Attachments werden auf den Parent umgeleitet,
-   * um Duplikate zu vermeiden.
+   * Koordiniert die Indexierung eines einzelnen Zotero-Items.
+   * Delegiert Validierung, Embedding-Berechnung und Chunk-Aufbau an dedizierte Hilfsmethoden.
+   * Schützt gegen Parallelverarbeitung desselben Items über ein Deduplizierungs-Set.
    *
    * @param itemId - ID des zu indexierenden Zotero-Items.
    * @param options - Optionales AbortSignal für vorzeitigen Abbruch.
@@ -433,40 +433,18 @@ export class BackgroundIndexer {
       if (options?.signal?.aborted)
         throw new DOMException("Aborted", "AbortError");
 
-      let item = await Zotero.Items.getAsync(itemId);
+      const item = await this.resolveTargetItem(itemId);
       if (!item) return { indexed: false, skipped: true };
-
-      if (item.isNote()) return { indexed: false, skipped: true };
-
-      if (item.isAttachment() && item.parentID) {
-        const parentItem = await Zotero.Items.getAsync(item.parentID);
-        if (parentItem) {
-          item = parentItem;
-          Zotero.debug(
-            `[BackgroundIndexer] Event für Attachment ${itemId} auf Parent ${item.id} umgeleitet.`,
-          );
-        }
-      }
-
-      if (
-        !item.isAttachment() ||
-        item.attachmentContentType !== "application/pdf"
-      ) {
-        if (!item.isRegularItem()) return { indexed: false, skipped: true };
-      }
 
       const targetId = item.id;
 
-      Zotero.debug(
-        `[BackgroundIndexer] Starte Extraktion für Item ${targetId}...`,
-      );
+      Zotero.debug(`[BackgroundIndexer] Starte Extraktion für Item ${targetId}...`);
 
       if (this.activeRunMode !== "full") {
-        const paperTitle = this.getSafeTitle(item);
         indexingEvents.emit("singleStarted", {
           mode: "single",
           itemID: targetId,
-          paperTitle,
+          paperTitle: this.getSafeTitle(item),
         });
       }
 
@@ -496,9 +474,7 @@ export class BackgroundIndexer {
         return { indexed: false, skipped: true, targetId };
       }
 
-      const textHash = this.cyrb53(
-        this.createIndexHashSource(chunks),
-      ).toString();
+      const textHash = this.cyrb53(this.createIndexHashSource(chunks)).toString();
       const existingHash = vectorStore.getTextHash(targetId.toString());
 
       if (existingHash === textHash) {
@@ -513,65 +489,8 @@ export class BackgroundIndexer {
         await vectorStore.deleteByZoteroItemId(targetId.toString());
       }
 
-      const oramaChunks: ChunkDocument[] = [];
-      const MAX_BATCH_SIZE = 20;
-      let allEmbeddings: number[][] = [];
-
-      if (EmbeddingSearchService.isEnabled() && chunks.length > 0) {
-        for (let i = 0; i < chunks.length; i += MAX_BATCH_SIZE) {
-          if (options?.signal?.aborted)
-            throw new DOMException("Aborted", "AbortError");
-
-          const batchChunks = chunks.slice(i, i + MAX_BATCH_SIZE);
-          const texts = batchChunks.map((c) => c.text);
-          let batchEmbeddings: number[][] = batchChunks.map(() =>
-            Array(VECTOR_SIZE).fill(0),
-          );
-
-          let retryCount = 0;
-          const maxRetries = 2;
-
-          while (retryCount <= maxRetries) {
-            try {
-              batchEmbeddings = await embeddingProvider.embedTexts(texts, {
-                inputType: "passage",
-                timeout: 120_000,
-                signal: options?.signal,
-              });
-              break;
-            } catch (err: any) {
-              if (options?.signal?.aborted) throw err;
-              if (retryCount >= maxRetries) throw err;
-              retryCount++;
-              Zotero.debug(
-                `[BackgroundIndexer] Wiederholung ${retryCount} für Chunk-Batch ${
-                  Math.floor(i / MAX_BATCH_SIZE) + 1
-                } von Item ${targetId}`,
-              );
-            }
-          }
-          allEmbeddings.push(...batchEmbeddings);
-          Zotero.debug(
-            `[BackgroundIndexer] Batch ${
-              Math.floor(i / MAX_BATCH_SIZE) + 1
-            } für Item ${targetId} erfolgreich eingebettet.`,
-          );
-        }
-      } else {
-        allEmbeddings = chunks.map(() => Array(VECTOR_SIZE).fill(0));
-      }
-
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i];
-        oramaChunks.push({
-          id: `doc_${targetId}_${chunk.id}`,
-          zoteroItemId: targetId.toString(),
-          sourceType: "fulltext",
-          content: chunk.text,
-          pageNumber: chunk.pageStart || 0,
-          embedding: allEmbeddings[i],
-        });
-      }
+      const allEmbeddings = await this.computeEmbeddings(targetId, chunks, options?.signal);
+      const oramaChunks = this.buildChunkDocuments(targetId, chunks, allEmbeddings);
 
       if (oramaChunks.length > 0) {
         vectorStore.markAsIndexing(targetId.toString(), textHash);
@@ -588,6 +507,122 @@ export class BackgroundIndexer {
     } finally {
       this.currentlyIndexing.delete(itemId);
     }
+  }
+
+  /**
+   * Lädt und validiert ein Zotero-Item für die Indexierung.
+   * Leitet Attachment-Events auf das übergeordnete Parent-Item um.
+   * Gibt null zurück, wenn das Item übersprungen werden soll (Notiz, ungültiger Typ).
+   *
+   * @param itemId - ID des zu ladenden Zotero-Items.
+   * @returns Validiertes Zotero-Item oder null, wenn das Item nicht indexiert werden soll.
+   */
+  private async resolveTargetItem(itemId: number): Promise<any | null> {
+    let item = await Zotero.Items.getAsync(itemId);
+    if (!item) return null;
+    if (item.isNote()) return null;
+
+    if (item.isAttachment() && item.parentID) {
+      const parentItem = await Zotero.Items.getAsync(item.parentID);
+      if (parentItem) {
+        Zotero.debug(
+          `[BackgroundIndexer] Event für Attachment ${itemId} auf Parent ${parentItem.id} umgeleitet.`,
+        );
+        item = parentItem;
+      }
+    }
+
+    if (!item.isAttachment() || item.attachmentContentType !== "application/pdf") {
+      if (!item.isRegularItem()) return null;
+    }
+
+    return item;
+  }
+
+  /**
+   * Berechnet Embedding-Vektoren für alle Chunks eines Items in Batches.
+   * Wiederholt fehlgeschlagene Batches bis zu zweimal, bevor ein Fehler weitergeleitet wird.
+   * Gibt Nullvektoren zurück, wenn der Embedding-Dienst deaktiviert ist.
+   *
+   * @param targetId - ID des zu indexierenden Zotero-Items (für Logging).
+   * @param chunks - Die zu embeddenden Text-Chunks.
+   * @param signal - Optionales AbortSignal für vorzeitigen Abbruch.
+   * @returns Matrix der Embedding-Vektoren in Chunk-Reihenfolge.
+   */
+  private async computeEmbeddings(
+    targetId: number,
+    chunks: TextChunk[],
+    signal?: AbortSignal,
+  ): Promise<number[][]> {
+    if (!EmbeddingSearchService.isEnabled() || chunks.length === 0) {
+      return chunks.map(() => Array(VECTOR_SIZE).fill(0));
+    }
+
+    const MAX_BATCH_SIZE = 20;
+    const allEmbeddings: number[][] = [];
+
+    for (let i = 0; i < chunks.length; i += MAX_BATCH_SIZE) {
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+      const batchChunks = chunks.slice(i, i + MAX_BATCH_SIZE);
+      const texts = batchChunks.map((c) => c.text);
+      let batchEmbeddings: number[][] = batchChunks.map(() => Array(VECTOR_SIZE).fill(0));
+
+      const maxRetries = 2;
+      let retryCount = 0;
+
+      while (retryCount <= maxRetries) {
+        try {
+          batchEmbeddings = await embeddingProvider.embedTexts(texts, {
+            inputType: "passage",
+            timeout: 120_000,
+            signal,
+          });
+          break;
+        } catch (err: any) {
+          if (signal?.aborted) throw err;
+          if (retryCount >= maxRetries) throw err;
+          retryCount++;
+          Zotero.debug(
+            `[BackgroundIndexer] Wiederholung ${retryCount} für Chunk-Batch ${
+              Math.floor(i / MAX_BATCH_SIZE) + 1
+            } von Item ${targetId}`,
+          );
+        }
+      }
+
+      allEmbeddings.push(...batchEmbeddings);
+      Zotero.debug(
+        `[BackgroundIndexer] Batch ${
+          Math.floor(i / MAX_BATCH_SIZE) + 1
+        } für Item ${targetId} erfolgreich eingebettet.`,
+      );
+    }
+
+    return allEmbeddings;
+  }
+
+  /**
+   * Erzeugt die Chunk-Dokumente für die Vektordatenbank aus Chunks und ihren Embeddings.
+   *
+   * @param targetId - ID des Zotero-Items, dem die Chunks zugeordnet werden.
+   * @param chunks - Die Text-Chunks des Papers.
+   * @param embeddings - Embedding-Vektoren in gleicher Reihenfolge wie die Chunks.
+   * @returns Liste von Chunk-Dokumenten, die in Orama gespeichert werden können.
+   */
+  private buildChunkDocuments(
+    targetId: number,
+    chunks: TextChunk[],
+    embeddings: number[][],
+  ): ChunkDocument[] {
+    return chunks.map((chunk, i) => ({
+      id: `doc_${targetId}_${chunk.id}`,
+      zoteroItemId: targetId.toString(),
+      sourceType: "fulltext" as const,
+      content: chunk.text,
+      pageNumber: chunk.pageStart || 0,
+      embedding: embeddings[i],
+    }));
   }
 
   /**
