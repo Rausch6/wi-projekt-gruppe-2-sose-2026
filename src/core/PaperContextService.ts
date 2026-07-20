@@ -114,13 +114,16 @@ export class PaperContextService {
 
     let queryVector: number[] | null = null;
     try {
+      // Embed the query once, then pass the vector to Orama so it can combine
+      // semantic and full-text matches.
       if (EmbeddingSearchService.isEnabled()) {
         [queryVector] = await embeddingProvider.embedTexts([query], {
           inputType: "query",
         });
       }
 
-      // --- DEBUG VECTOR ---
+      // The preview confirms successful embedding without logging the entire,
+      // potentially large vector in Zotero.
       if (queryVector) {
         const vecLength = queryVector.length;
         const vecPreview = queryVector
@@ -134,8 +137,8 @@ export class PaperContextService {
           `[PaperContextService] Vektor-Vorschau (erste 5 Werte): [${vecPreview}, ...]`,
         );
       }
-      // --------------------
     } catch (error) {
+      // `null` tells the vector store to use keyword/full-text search only.
       Zotero.debug(
         `[PaperContextService] Embedding-Suche fehlgeschlagen, Orama Keyword-Fallback aktiv: ${error}`,
       );

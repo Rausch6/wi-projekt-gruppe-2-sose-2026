@@ -56,6 +56,9 @@ type CachedChunkEmbeddings = {
   embeddings: number[][];
 };
 
+// The cache avoids embedding unchanged paper chunks again. The stored signature
+// prevents stale hits when an explicit cacheKey is reused for a changed list of
+// chunks.
 const chunkEmbeddingCache = new Map<string, CachedChunkEmbeddings>();
 
 let enabled = true;
@@ -66,6 +69,7 @@ let lastStatus: EmbeddingSearchStatus = {
 };
 
 export class EmbeddingSearchService {
+  /** Configures semantic search and invalidates incompatible vectors. */
   static configure(config: EmbeddingSearchConfig = {}) {
     enabled = config.enabled !== false;
 
@@ -77,6 +81,9 @@ export class EmbeddingSearchService {
     });
     const after = createProviderSignature(embeddingProvider);
 
+    // Embeddings from different models or endpoints must not be compared. The
+    // provider signature also tracks the timeout so any configuration change
+    // creates a clearly fresh cache state.
     if (before !== after || providerSignature !== after) {
       chunkEmbeddingCache.clear();
       providerSignature = after;
@@ -113,6 +120,7 @@ export class EmbeddingSearchService {
     query: string,
     options: EmbeddingSearchOptions = {},
   ) {
+    // When disabled, the existing keyword-based selection remains available.
     if (!enabled) {
       lastStatus = {
         mode: "disabled",
@@ -130,6 +138,8 @@ export class EmbeddingSearchService {
     }
 
     try {
+      // Queries and passages are labeled separately. This matters for
+      // asymmetrically trained embedding models such as E5.
       const [queryEmbedding] = await embeddingProvider.embedTexts([query], {
         inputType: "query",
       });
@@ -147,6 +157,8 @@ export class EmbeddingSearchService {
       };
       return selected;
     } catch (error) {
+      // An unavailable embedding service must not block paper search; keyword
+      // selection provides a robust runtime fallback.
       const message = error instanceof Error ? error.message : String(error);
       lastStatus = {
         mode: "keyword",
@@ -285,6 +297,8 @@ function selectByEmbeddingSimilarity(
     chunkEmbeddings,
   );
 
+  // First select the strongest semantic matches within the chunk and token
+  // budgets.
   const selected: Array<{ chunk: TextChunk; index: number }> = [];
   let usedTokens = 0;
 
@@ -301,6 +315,7 @@ function selectByEmbeddingSimilarity(
     usedTokens += candidate.chunk.estimatedTokens;
   }
 
+  // Restore the original document order before adding matches to LLM context.
   return selected.sort((a, b) => a.index - b.index).map(({ chunk }) => chunk);
 }
 
@@ -319,6 +334,8 @@ function rankByEmbeddingSimilarity(
 }
 
 function normalize(vector: number[]) {
+  // After L2 normalization, the dot product equals cosine similarity and can be
+  // used for each comparison without recalculating vector magnitudes.
   const magnitude = Math.sqrt(
     vector.reduce((sum, value) => sum + value ** 2, 0),
   );
@@ -327,11 +344,14 @@ function normalize(vector: number[]) {
 }
 
 function cosineSimilarity(a: number[], b: number[] | undefined) {
+  // Missing or incompatible vectors safely rank last.
   if (!b || a.length !== b.length) return Number.NEGATIVE_INFINITY;
   return a.reduce((sum, value, index) => sum + value * b[index], 0);
 }
 
 function createPassageEmbeddingText(text: string) {
+  // This limit keeps requests small and prevents very long chunks from
+  // exceeding the embedding model's context window.
   return trimToApproximateWords(text, 360);
 }
 
