@@ -268,31 +268,25 @@ describe("indexing controls", () => {
     expect(filterPapersByLibrary(papers, new Set())).toEqual([]);
   });
 
-  it("loads Zotero item data before creating index manager paper rows", async () => {
-    let loaded = false;
-    const initiallyUnloadedItem = {
+  it("does not call loadAllData on items to avoid modify event loops", async () => {
+    const item = {
       ...item101,
-      loadAllData: vi.fn(async () => {
-        loaded = true;
-      }),
+      loadAllData: vi.fn(async () => {}),
       getField: vi.fn((field: string) => {
-        if (!loaded) throw new Error("Item data not loaded");
-        if (field === "title") return "Nachgeladener Titel";
+        if (field === "title") return "Test Titel";
         if (field === "year") return "2026";
         return "";
       }),
     };
-    vi.mocked(globalThis.Zotero.Items.getAll).mockResolvedValueOnce([
-      initiallyUnloadedItem,
-    ]);
+    vi.mocked(globalThis.Zotero.Items.getAll).mockResolvedValueOnce([item]);
 
     const result = await collectPapers(vectorStore);
 
-    expect(initiallyUnloadedItem.loadAllData).toHaveBeenCalledWith(true);
+    expect(item.loadAllData).not.toHaveBeenCalled();
     expect(result.papers).toEqual([
       expect.objectContaining({
         itemID: 101,
-        title: "Nachgeladener Titel",
+        title: "Test Titel",
       }),
     ]);
   });
