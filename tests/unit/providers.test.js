@@ -4,6 +4,13 @@ import { KisskiProvider } from "../../src/ai/providers/KisskiProvider.js";
 import { OllamaProvider } from "../../src/ai/providers/OllamaProvider.js";
 import { httpClient } from "../../src/utils/httpClient.js";
 
+/**
+ * Creates a JSON HTTP response mock for provider tests.
+ *
+ * @param {unknown} payload - Response payload returned by json() and text().
+ * @param {number} status - HTTP status code.
+ * @returns {object} Mock HTTP response.
+ */
 function jsonResponse(payload, status = 200) {
   return {
     status,
@@ -14,6 +21,13 @@ function jsonResponse(payload, status = 200) {
   };
 }
 
+/**
+ * Creates a streaming HTTP response mock from newline-delimited chunks.
+ *
+ * @param {string[]} chunks - Text chunks yielded by the stream.
+ * @param {number} status - HTTP status code.
+ * @returns {object} Mock streaming response.
+ */
 function streamResponse(chunks, status = 200) {
   return {
     status,
@@ -29,6 +43,13 @@ function streamResponse(chunks, status = 200) {
   };
 }
 
+/**
+ * Creates a streaming HTTP response mock with a custom stream generator.
+ *
+ * @param {Function} streamText - Async generator function returned by the response.
+ * @param {number} status - HTTP status code.
+ * @returns {object} Mock streaming response.
+ */
 function customStreamResponse(streamText, status = 200) {
   return {
     status,
@@ -40,6 +61,9 @@ function customStreamResponse(streamText, status = 200) {
   };
 }
 
+/**
+ * Verifies KISSKI and Ollama provider request, response, and model-management behavior.
+ */
 describe("AI providers", () => {
   afterEach(() => {
     vi.restoreAllMocks();

@@ -7,6 +7,11 @@ const SCHEMA_VERSION = 3;
 let connection: _ZoteroTypes.DB | null = null;
 let initializationPromise: Promise<_ZoteroTypes.DB> | null = null;
 
+/**
+ * Opens and migrates the chat database once, then returns the shared connection.
+ *
+ * @returns Promise resolving to the initialized chat database connection.
+ */
 export async function initializeChatDatabase() {
   if (connection) {
     return connection;
@@ -25,10 +30,20 @@ export async function initializeChatDatabase() {
   }
 }
 
+/**
+ * Gets the initialized chat database connection.
+ *
+ * @returns Promise resolving to the shared chat database connection.
+ */
 export async function getChatDatabase() {
   return initializeChatDatabase();
 }
 
+/**
+ * Closes the shared chat database connection and clears initialization state.
+ *
+ * @returns Promise that resolves after the database has been closed.
+ */
 export async function closeChatDatabase() {
   if (!connection) {
     initializationPromise = null;
@@ -40,11 +55,21 @@ export async function closeChatDatabase() {
   initializationPromise = null;
 }
 
+/**
+ * Resolves the full filesystem path of the chat database file.
+ *
+ * @returns Promise resolving to the chat database file path.
+ */
 export async function getChatDatabasePath() {
   const dirPath = await ensureChatDatabaseDirectory();
   return PathUtils.join(dirPath, DATABASE_FILE_NAME);
 }
 
+/**
+ * Opens the chat database and applies pending schema migrations.
+ *
+ * @returns Promise resolving to an open database connection.
+ */
 async function openChatDatabase() {
   const dbPath = await getChatDatabasePath();
   const db = new Zotero.DBConnection(dbPath);
@@ -55,6 +80,11 @@ async function openChatDatabase() {
   return db;
 }
 
+/**
+ * Ensures the chat database directory exists inside Zotero's data directory.
+ *
+ * @returns Promise resolving to the chat database directory path.
+ */
 async function ensureChatDatabaseDirectory() {
   const zoteroDir = Zotero.DataDirectory.dir;
   const dbDir = PathUtils.join(zoteroDir, DATABASE_DIR_NAME);
@@ -67,6 +97,12 @@ async function ensureChatDatabaseDirectory() {
   return dbDir;
 }
 
+/**
+ * Migrates the chat database schema to the current version.
+ *
+ * @param db - Database connection to migrate.
+ * @returns Promise that resolves after all pending migrations have run.
+ */
 async function migrate(db: _ZoteroTypes.DB) {
   let version = await getSchemaVersion(db);
 
@@ -153,6 +189,12 @@ async function migrate(db: _ZoteroTypes.DB) {
   }
 }
 
+/**
+ * Reads the current SQLite user_version value.
+ *
+ * @param db - Database connection to inspect.
+ * @returns Promise resolving to the current schema version.
+ */
 async function getSchemaVersion(db: _ZoteroTypes.DB) {
   const rows = await db.queryAsync("PRAGMA user_version");
   const row = rows?.[0] as { user_version?: unknown } | undefined;
@@ -161,6 +203,14 @@ async function getSchemaVersion(db: _ZoteroTypes.DB) {
   return typeof version === "number" ? version : 0;
 }
 
+/**
+ * Checks whether a table contains a specific column.
+ *
+ * @param db - Database connection to inspect.
+ * @param table - Table name to inspect.
+ * @param column - Column name to look for.
+ * @returns Promise resolving to true when the column exists.
+ */
 async function hasColumn(db: _ZoteroTypes.DB, table: string, column: string) {
   const rows = (await db.queryAsync(`PRAGMA table_info(${table})`)) as
     | Array<{ name?: unknown }>

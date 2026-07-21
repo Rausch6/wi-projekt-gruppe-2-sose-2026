@@ -4,7 +4,15 @@ import {
   AIProviderConfigurationError,
 } from "../../src/ai/AIProvider.js";
 
+/**
+ * Test double that exposes the abstract AIProvider behavior through a concrete class.
+ */
 class TestProvider extends AIProvider {
+  /**
+   * Creates a provider with overridable base configuration.
+   *
+   * @param {object} options - Provider configuration overrides.
+   */
   constructor(options = {}) {
     super({
       id: "test",
@@ -16,6 +24,13 @@ class TestProvider extends AIProvider {
     this.chatCalls = [];
   }
 
+  /**
+   * Records chat calls and returns a deterministic response.
+   *
+   * @param {Array<object>} messages - Chat messages passed to the provider.
+   * @param {object} options - Chat options passed to the provider.
+   * @returns {Promise<object>} Deterministic chat response.
+   */
   async chat(messages, options = {}) {
     this.chatCalls.push({ messages, options });
     return {
@@ -28,6 +43,9 @@ class TestProvider extends AIProvider {
   }
 }
 
+/**
+ * Verifies shared behavior implemented by the abstract AIProvider base class.
+ */
 describe("AIProvider", () => {
   it("cannot be instantiated directly", () => {
     expect(() => new AIProvider({})).toThrow(TypeError);

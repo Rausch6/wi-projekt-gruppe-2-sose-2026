@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { getSelectableLocalModelValues } from "../../src/ui/localOllamaModels";
 
+/**
+ * Verifies filtering of locally installed Ollama models for UI selection.
+ */
 describe("local Ollama model selection", () => {
   it("contains only installed chat models", () => {
     expect(
