@@ -173,8 +173,8 @@ und keine echte Paper-Sammlung.
 
 ## Lizenz
 
-ZAIA wird gemäß der Projektkonfiguration unter `AGPL-3.0-or-later`
-veröffentlicht.
+ZAIA wird gemäß der Projektkonfiguration unter der MIT-Lizenz
+veröffentlicht. Siehe [license.txt](license.txt) für Details.
 
 ---
 
