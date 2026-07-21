@@ -2,6 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import { AIProviderManager } from "../../src/ai/AIProviderManager.js";
 import { AIProviderConfigurationError } from "../../src/ai/AIProvider.js";
 
+/**
+ * Creates a mock provider implementing the AIProviderManager contract.
+ *
+ * @param {string} id - Provider identifier used by the manager.
+ * @returns {object} Mock provider with spyable methods.
+ */
 function createProvider(id) {
   return {
     id,
@@ -25,6 +31,9 @@ function createProvider(id) {
   };
 }
 
+/**
+ * Verifies provider registration, configuration, and request routing in the manager.
+ */
 describe("AIProviderManager", () => {
   it("registers providers and switches the active provider", () => {
     const manager = new AIProviderManager();
