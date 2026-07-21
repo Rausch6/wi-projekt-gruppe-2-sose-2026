@@ -1,10 +1,18 @@
-// @ts-nocheck -- Upstream template examples target an older toolkit API.
+// @ts-nocheck
 import { getLocaleID } from "../utils/locale";
 import {
   registerAssistantToolbarButton,
   unregisterAssistantToolbarButton,
 } from "../ui/assistantToolbarButton";
 
+/**
+ * Wraps example methods with logging and error forwarding.
+ *
+ * @param target - Class constructor or prototype that owns the decorated member.
+ * @param propertyKey - Decorated member name.
+ * @param descriptor - Property descriptor for the decorated method.
+ * @returns Updated method descriptor with logging behavior.
+ */
 function example(
   target: any,
   propertyKey: string | symbol,
@@ -23,7 +31,16 @@ function example(
   return descriptor;
 }
 
+/**
+ * Registers and unregisters Zotero UI examples used by the plugin scaffold.
+ */
 export class UIExampleFactory {
+  /**
+   * Adds the assistant sidebar stylesheet to the Zotero main window.
+   *
+   * @param win - Zotero main window that should receive the stylesheet.
+   * @returns Nothing.
+   */
   @example
   static registerStyleSheet(win: _ZoteroTypes.MainWindow) {
     const doc = win.document;
@@ -41,28 +58,55 @@ export class UIExampleFactory {
     doc.documentElement?.appendChild(styles);
   }
 
+  /**
+   * Registers the ZAIA assistant toolbar button.
+   *
+   * @param win - Zotero main window that should receive the toolbar button.
+   * @returns Nothing.
+   */
   @example
   static registerAssistantToolbarButton(win: _ZoteroTypes.MainWindow) {
     registerAssistantToolbarButton(win);
   }
 
+  /**
+   * Unregisters the ZAIA assistant toolbar button.
+   *
+   * @param win - Zotero main window whose toolbar button should be removed.
+   * @returns Nothing.
+   */
   @example
   static unregisterAssistantToolbarButton(win: _ZoteroTypes.MainWindow) {
     unregisterAssistantToolbarButton(win);
   }
 
+  /**
+   * Unregisters the assistant side navigation item pane section.
+   *
+   * @returns Nothing.
+   */
   @example
   static unregisterAssistantSidenavButton() {
     const paneID = `${addon.data.config.addonRef}-ai-assistant-trigger`;
     Zotero.ItemPaneManager.unregisterSection(paneID);
   }
 
+  /**
+   * Unregisters template item pane sections from the upstream scaffold.
+   *
+   * @returns Nothing.
+   */
   @example
   static unregisterTemplateItemPaneSections() {
     Zotero.ItemPaneManager.unregisterSection("example");
     Zotero.ItemPaneManager.unregisterSection("reader-example");
   }
 
+  /**
+   * Registers a scaffold example column in Zotero's item tree.
+   *
+   * @returns Promise that resolves after the column has been registered.
+   */
   @example
   static async registerExtraColumn() {
     const field = "test1";
@@ -77,6 +121,11 @@ export class UIExampleFactory {
     });
   }
 
+  /**
+   * Registers a scaffold example column with a custom rendered cell.
+   *
+   * @returns Promise that resolves after the column has been registered.
+   */
   @example
   static async registerExtraColumnWithCustomCell() {
     const field = "test2";
@@ -98,6 +147,11 @@ export class UIExampleFactory {
     });
   }
 
+  /**
+   * Registers a scaffold item pane row that mirrors the item title.
+   *
+   * @returns Nothing.
+   */
   @example
   static registerItemPaneCustomInfoRow() {
     Zotero.ItemPaneManager.registerInfoRow({
@@ -112,10 +166,8 @@ export class UIExampleFactory {
         return item.getField("title");
       },
       onSetData: ({ item, value }) => {
-        // Guard against read-only items (e.g. in group libraries with restricted access).
         if (!item.isEditable()) return;
         item.setField("title", value);
-        // saveTx() is required to persist the change to the Zotero database.
         item.saveTx();
       },
     });

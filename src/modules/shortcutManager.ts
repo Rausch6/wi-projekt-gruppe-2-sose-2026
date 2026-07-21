@@ -19,8 +19,14 @@ import {
 
 const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
 
+/**
+ * Represents an executable shortcut action for a Zotero main window.
+ */
 type ShortcutAction = (win: _ZoteroTypes.MainWindow) => void | Promise<void>;
 
+/**
+ * Defines a ZAIA keyboard shortcut and its action.
+ */
 type ShortcutDefinition = {
   id: string;
   key: string;
@@ -73,6 +79,12 @@ const ZAIA_SHORTCUTS: ShortcutDefinition[] = [
   },
 ];
 
+/**
+ * Registers all ZAIA keyboard shortcuts for a Zotero main window.
+ *
+ * @param win - Zotero main window that should receive shortcut handlers.
+ * @returns Nothing.
+ */
 export function registerZAIAShortcuts(win: _ZoteroTypes.MainWindow) {
   unregisterZAIAShortcuts(win);
   validateShortcutDefinitions();
@@ -153,16 +165,34 @@ export function registerZAIAShortcuts(win: _ZoteroTypes.MainWindow) {
   );
 }
 
+/**
+ * Unregisters ZAIA keyboard shortcuts for a window.
+ *
+ * @param win - Window whose shortcut registration should be removed.
+ * @returns Nothing.
+ */
 export function unregisterZAIAShortcuts(win: Window) {
   shortcutRegistrations.get(win)?.();
 }
 
+/**
+ * Unregisters ZAIA keyboard shortcuts from every registered window.
+ *
+ * @returns Nothing.
+ */
 export function unregisterAllZAIAShortcuts() {
   for (const win of [...registeredWindows]) {
     unregisterZAIAShortcuts(win);
   }
 }
 
+/**
+ * Creates a XUL keyset fallback for ZAIA shortcuts.
+ *
+ * @param win - Zotero main window that should receive the keyset.
+ * @param runShortcut - Callback used to execute matched shortcuts.
+ * @returns Created keyset element.
+ */
 function createXULShortcutKeyset(
   win: _ZoteroTypes.MainWindow,
   runShortcut: (shortcut: ShortcutDefinition) => void,
@@ -196,6 +226,11 @@ function createXULShortcutKeyset(
   return keyset;
 }
 
+/**
+ * Validates that ZAIA shortcuts do not collide with reserved Zotero defaults.
+ *
+ * @returns Nothing.
+ */
 function validateShortcutDefinitions() {
   for (const shortcut of ZAIA_SHORTCUTS) {
     const key = normalizeShortcutKey(shortcut.key);
@@ -207,6 +242,12 @@ function validateShortcutDefinitions() {
   }
 }
 
+/**
+ * Checks whether a keyboard event matches a reserved Zotero shortcut.
+ *
+ * @param event - Keyboard event to inspect.
+ * @returns True when the shortcut is reserved by Zotero.
+ */
 function isReservedZoteroShortcut(event: KeyboardEvent) {
   if (!hasPlatformAccelerator(event) || !event.shiftKey || event.altKey) {
     return false;
@@ -215,6 +256,13 @@ function isReservedZoteroShortcut(event: KeyboardEvent) {
   return ZOTERO_DEFAULT_SHORTCUT_KEYS.has(normalizeShortcutKey(event.key));
 }
 
+/**
+ * Checks whether a keyboard event matches a configured shortcut key.
+ *
+ * @param event - Keyboard event to inspect.
+ * @param key - Shortcut key to match.
+ * @returns True when the event matches the ZAIA shortcut pattern.
+ */
 function matchesShortcut(event: KeyboardEvent, key: string) {
   return (
     hasPlatformAccelerator(event) &&
@@ -224,25 +272,54 @@ function matchesShortcut(event: KeyboardEvent, key: string) {
   );
 }
 
+/**
+ * Checks whether a keyboard event uses the platform accelerator key.
+ *
+ * @param event - Keyboard event to inspect.
+ * @returns True when Cmd on macOS or Ctrl elsewhere is active.
+ */
 function hasPlatformAccelerator(event: KeyboardEvent) {
   return Zotero.isMac
     ? event.metaKey && !event.ctrlKey
     : event.ctrlKey && !event.metaKey;
 }
 
+/**
+ * Normalizes a shortcut key for comparison.
+ *
+ * @param key - Shortcut key to normalize.
+ * @returns Uppercase single-character key or original non-character key.
+ */
 function normalizeShortcutKey(key: string) {
   return key.length === 1 ? key.toUpperCase() : key;
 }
 
+/**
+ * Formats all configured shortcuts for logging.
+ *
+ * @returns List of human-readable shortcut labels.
+ */
 function formatShortcutList() {
   return ZAIA_SHORTCUTS.map((shortcut) => formatShortcut(shortcut.key));
 }
 
+/**
+ * Formats a shortcut key with platform-specific modifiers.
+ *
+ * @param key - Shortcut key to format.
+ * @returns Human-readable shortcut label.
+ */
 function formatShortcut(key: string) {
   const modifier = Zotero.isMac ? "Cmd" : "Ctrl";
   return `${modifier}+Shift+${key.toUpperCase()}`;
 }
 
+/**
+ * Toggles assistant sidebar visibility or focus.
+ *
+ * @param win - Zotero main window containing the sidebar.
+ * @returns Nothing.
+ */
 function toggleSidebarFocus(win: _ZoteroTypes.MainWindow) {
   if (!isAssistantSidebarOpen(win)) {
     openAssistantSidebar(win);
@@ -259,6 +336,12 @@ function toggleSidebarFocus(win: _ZoteroTypes.MainWindow) {
   focusZoteroLibrary(win);
 }
 
+/**
+ * Opens the assistant sidebar and starts a new chat.
+ *
+ * @param win - Zotero main window containing the assistant UI.
+ * @returns Promise that resolves after the new chat composer is focused.
+ */
 async function startNewChat(win: _ZoteroTypes.MainWindow) {
   openAssistantSidebar(win);
   focusAssistantSidebar(win);
@@ -267,6 +350,12 @@ async function startNewChat(win: _ZoteroTypes.MainWindow) {
   showShortcutNotification("Neuer ZAIA-Chat gestartet");
 }
 
+/**
+ * Opens the assistant popout window or focuses an existing one.
+ *
+ * @param win - Zotero main window owning the popout.
+ * @returns Nothing.
+ */
 function openOrFocusPopout(win: _ZoteroTypes.MainWindow) {
   if (focusAssistantPopoutWindow(win)) return;
 
@@ -284,6 +373,12 @@ function openOrFocusPopout(win: _ZoteroTypes.MainWindow) {
   }
 }
 
+/**
+ * Toggles the favorite state of the active chat.
+ *
+ * @param win - Zotero main window containing the assistant UI.
+ * @returns Promise that resolves after the favorite state was toggled.
+ */
 async function favoriteActiveChat(win: _ZoteroTypes.MainWindow) {
   openAssistantSidebar(win);
   const isFavorite = await toggleActiveChatFavorite();
@@ -292,11 +387,23 @@ async function favoriteActiveChat(win: _ZoteroTypes.MainWindow) {
   );
 }
 
+/**
+ * Opens the assistant context window once the sidebar is ready.
+ *
+ * @param win - Zotero main window containing the assistant UI.
+ * @returns Nothing.
+ */
 function openContext(win: _ZoteroTypes.MainWindow) {
   openAssistantSidebar(win);
   openContextWhenReady(win);
 }
 
+/**
+ * Focuses the model selector in the assistant sidebar.
+ *
+ * @param win - Zotero main window containing the assistant UI.
+ * @returns Nothing.
+ */
 function focusModel(win: _ZoteroTypes.MainWindow) {
   openAssistantSidebar(win);
   focusAssistantSidebar(win);
@@ -307,6 +414,12 @@ function focusModel(win: _ZoteroTypes.MainWindow) {
   }, 0);
 }
 
+/**
+ * Retries opening the context window until the assistant sidebar is ready.
+ *
+ * @param win - Zotero main window containing the assistant UI.
+ * @returns Nothing.
+ */
 function openContextWhenReady(win: _ZoteroTypes.MainWindow) {
   let attempts = 0;
   const tryOpen = () => {
@@ -323,6 +436,12 @@ function openContextWhenReady(win: _ZoteroTypes.MainWindow) {
   });
 }
 
+/**
+ * Returns keyboard focus to Zotero's library pane.
+ *
+ * @param win - Zotero main window containing the library pane.
+ * @returns Nothing.
+ */
 function focusZoteroLibrary(win: _ZoteroTypes.MainWindow) {
   const pane = (win as unknown as { ZoteroPane?: _ZoteroTypes.ZoteroPane })
     .ZoteroPane;
@@ -335,6 +454,12 @@ function focusZoteroLibrary(win: _ZoteroTypes.MainWindow) {
   (win.document.activeElement as HTMLElement | null)?.blur?.();
 }
 
+/**
+ * Logs a shortcut notification.
+ *
+ * @param text - Notification text to log.
+ * @returns Nothing.
+ */
 function showShortcutNotification(text: string) {
   Zotero.debug(`[ZAIA Shortcut] ${text}`);
 }

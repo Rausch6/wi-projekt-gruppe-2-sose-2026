@@ -78,6 +78,12 @@ const PREFERENCE_FIELD_NAMES: Partial<Record<keyof PluginSettings, string>> = {
   autoDeleteOldChats: "auto-delete-old-chats",
 };
 
+/**
+ * Initializes the preference window, migrates hidden values, and binds UI events.
+ *
+ * @param window - Preference window to initialize.
+ * @returns Promise that resolves when preference scripts are registered.
+ */
 export async function registerPrefsScripts(window: Window) {
   addon.data.prefs = {
     window,
@@ -91,12 +97,23 @@ export async function registerPrefsScripts(window: Window) {
   applyRequestedPreferenceFocus(window);
 }
 
+/**
+ * Requests that the semantic search preference receives focus when preferences open.
+ *
+ * @returns Nothing.
+ */
 export function requestSemanticSearchPreferenceFocus() {
   semanticSearchFocusRequested = true;
   const window = addon.data.prefs?.window;
   if (window && !window.closed) applyRequestedPreferenceFocus(window);
 }
 
+/**
+ * Applies a pending semantic search focus request to the given window.
+ *
+ * @param window - Preference window containing the semantic search field.
+ * @returns Nothing.
+ */
 function applyRequestedPreferenceFocus(window: Window) {
   if (!semanticSearchFocusRequested) return;
   const field = getElement<HTMLInputElement>(
@@ -115,6 +132,12 @@ function applyRequestedPreferenceFocus(window: Window) {
   }, 2_400);
 }
 
+/**
+ * Binds preference field and command events in the preference window.
+ *
+ * @param window - Preference window whose controls should be wired.
+ * @returns Nothing.
+ */
 function bindPreferenceEvents(window: Window) {
   for (const fieldName of FIELD_NAMES) {
     getElement<HTMLInputElement | HTMLSelectElement>(
@@ -146,6 +169,14 @@ function bindPreferenceEvents(window: Window) {
   });
 }
 
+/**
+ * Binds a command handler to a preference control.
+ *
+ * @param window - Preference window containing the command element.
+ * @param name - Preference element suffix to bind.
+ * @param handler - Event handler invoked for the command.
+ * @returns Nothing.
+ */
 function bindCommand(
   window: Window,
   name: string,
@@ -155,8 +186,10 @@ function bindCommand(
 }
 
 /**
- * Übernimmt Einstellungsfelder in den Laufzeitzustand und konfiguriert Provider
- * einschließlich ihrer getrennt gespeicherten Modellwerte neu.
+ * Synchronizes preference fields into runtime settings and provider configuration.
+ *
+ * @param window - Preference window whose fields should be read.
+ * @returns Nothing.
  */
 function syncRuntimeSettings(window: Window) {
   const nextSettings = readSettingsFromFields(window);
@@ -175,8 +208,10 @@ function syncRuntimeSettings(window: Window) {
 }
 
 /**
- * Liest die Einstellungsfelder aus. Das aktive Chatmodell und das Ollama-Modell
- * bleiben in `model` und `ollamaModel` dauerhaft voneinander getrennt.
+ * Reads plugin settings from the preference window fields.
+ *
+ * @param window - Preference window whose fields should be read.
+ * @returns Complete plugin settings object built from current field values.
  */
 function readSettingsFromFields(window: Window): PluginSettings {
   const provider = addon.data.settings.provider || DEFAULT_SETTINGS.provider;
@@ -228,16 +263,13 @@ function readSettingsFromFields(window: Window): PluginSettings {
 }
 
 /**
- * Synchronisiert den in den Einstellungen ausgewählten Provider mit dem
- * Provider-Manager und aktualisiert anschließend beide Providerkonfigurationen.
- * Dadurch stehen bei einem späteren Toggle bereits die aktuellen Cloud- und
- * Ollama-Werte bereit.
+ * Applies runtime settings to the active provider, configured providers, and embeddings.
+ *
+ * @returns Nothing.
  */
 function configureProvidersFromSettings() {
   const settings = addon.data.settings;
 
-  // Die aktive ID steuert das Standardziel aller Anfragen ohne explizite
-  // providerId; die Konfigurationen beider Provider bleiben parallel erhalten.
   addon.api.ai.setActiveProvider(settings.provider);
   addon.api.ai.configureProvider("kisski", {
     apiKey: settings.apiKey,
@@ -251,6 +283,11 @@ function configureProvidersFromSettings() {
   addon.api.configureEmbeddings();
 }
 
+/**
+ * Migrates hidden preferences that are not directly exposed as editable fields.
+ *
+ * @returns Nothing.
+ */
 function migrateHiddenPreferences() {
   const storedEmbeddingModel = getPluginPreference("embeddingModel");
   if (storedEmbeddingModel !== EMBEDDING_DEFAULT_MODEL) {
@@ -259,6 +296,13 @@ function migrateHiddenPreferences() {
   }
 }
 
+/**
+ * Loads available models for a provider and updates the matching select field.
+ *
+ * @param window - Preference window containing model controls.
+ * @param provider - Provider whose models should be loaded.
+ * @returns Promise that resolves after the model list and status have been updated.
+ */
 async function loadModels(window: Window, provider: LLMProvider) {
   const status = getProviderStatusElement(window, provider);
   const button = getElement<HTMLButtonElement>(
@@ -331,6 +375,13 @@ async function loadModels(window: Window, provider: LLMProvider) {
   }
 }
 
+/**
+ * Tests the selected provider connection and updates the related status element.
+ *
+ * @param window - Preference window containing provider status controls.
+ * @param provider - Provider whose connection should be tested.
+ * @returns Promise that resolves after the connection test is complete.
+ */
 async function testProviderConnection(window: Window, provider: LLMProvider) {
   const status = getProviderStatusElement(window, provider);
   const button = getElement<HTMLButtonElement>(
@@ -366,6 +417,12 @@ async function testProviderConnection(window: Window, provider: LLMProvider) {
   }
 }
 
+/**
+ * Tests the embedding service connection and updates its status element.
+ *
+ * @param window - Preference window containing embedding service controls.
+ * @returns Promise that resolves after the embedding test is complete.
+ */
 async function testEmbeddingService(window: Window) {
   const status = getElement<HTMLElement>(window, "embedding-service-status");
   const button = getElement<HTMLButtonElement>(
@@ -395,6 +452,12 @@ async function testEmbeddingService(window: Window) {
   }
 }
 
+/**
+ * Resets all plugin preferences to their default values after confirmation.
+ *
+ * @param window - Preference window used for confirmation and field updates.
+ * @returns Nothing.
+ */
 function resetPreferences(window: Window) {
   const status = getElement<HTMLElement>(window, "reset-status");
   const confirmed = window.confirm(
@@ -414,6 +477,13 @@ function resetPreferences(window: Window) {
   setStatus(status, "Standardwerte wurden wiederhergestellt.", "success");
 }
 
+/**
+ * Writes plugin settings into preference fields.
+ *
+ * @param window - Preference window containing the fields.
+ * @param settings - Settings whose values should be displayed.
+ * @returns Nothing.
+ */
 function applySettingsToFields(window: Window, settings: PluginSettings) {
   setModelSelectOptions(window, "kisski", [], settings.model, "idle");
   setModelSelectOptions(window, "ollama", [], settings.ollamaModel, "idle");
@@ -425,6 +495,14 @@ function applySettingsToFields(window: Window, settings: PluginSettings) {
   }
 }
 
+/**
+ * Writes a single value to a preference field.
+ *
+ * @param window - Preference window containing the field.
+ * @param name - Preference element suffix.
+ * @param value - Value to write into the field.
+ * @returns Nothing.
+ */
 function setFieldValue(window: Window, name: string, value: PreferenceValue) {
   const element = getElement<HTMLInputElement | HTMLSelectElement>(
     window,
@@ -443,6 +521,14 @@ function setFieldValue(window: Window, name: string, value: PreferenceValue) {
   element.value = String(value);
 }
 
+/**
+ * Reads and trims a text-like preference value.
+ *
+ * @param window - Preference window containing the field.
+ * @param name - Preference element suffix.
+ * @param fallback - Value returned when the field is missing.
+ * @returns Trimmed field value or fallback.
+ */
 function readTextValue(window: Window, name: string, fallback: string) {
   const element = getElement<HTMLInputElement | HTMLSelectElement>(
     window,
@@ -451,10 +537,28 @@ function readTextValue(window: Window, name: string, fallback: string) {
   return element ? element.value.trim() : fallback;
 }
 
+/**
+ * Reads a checkbox preference value.
+ *
+ * @param window - Preference window containing the checkbox.
+ * @param name - Preference element suffix.
+ * @param fallback - Value returned when the checkbox is missing.
+ * @returns Checkbox state or fallback.
+ */
 function readBooleanValue(window: Window, name: string, fallback: boolean) {
   return getElement<HTMLInputElement>(window, name)?.checked ?? fallback;
 }
 
+/**
+ * Reads a numeric preference value constrained to a range.
+ *
+ * @param window - Preference window containing the number field.
+ * @param name - Preference element suffix.
+ * @param fallback - Value returned when parsing fails.
+ * @param min - Minimum accepted value.
+ * @param max - Maximum accepted value.
+ * @returns Parsed number clamped to the configured range.
+ */
 function readNumberValue(
   window: Window,
   name: string,
@@ -468,6 +572,14 @@ function readNumberValue(
   return Math.min(max, Math.max(min, parsedValue));
 }
 
+/**
+ * Reads a provider selection from a preference select field.
+ *
+ * @param window - Preference window containing the select field.
+ * @param name - Preference element suffix.
+ * @param fallback - Provider returned when the field is missing or invalid.
+ * @returns Selected provider or fallback.
+ */
 function readProviderValue(
   window: Window,
   name: string,
@@ -477,6 +589,13 @@ function readProviderValue(
   return value === "ollama" || value === "kisski" ? value : fallback;
 }
 
+/**
+ * Normalizes provider model records into sorted select options.
+ *
+ * @param models - Raw model records returned by the provider API.
+ * @param provider - Provider whose model records are being normalized.
+ * @returns Sorted and deduplicated model options.
+ */
 function normalizeModelOptions(
   models: unknown,
   provider: LLMProvider,
@@ -506,6 +625,16 @@ function normalizeModelOptions(
   );
 }
 
+/**
+ * Replaces the model select options for a provider.
+ *
+ * @param window - Preference window containing the select field.
+ * @param provider - Provider whose select field should be updated.
+ * @param models - Model options to display.
+ * @param selectedModel - Currently configured model value.
+ * @param state - Loading state represented by the select field.
+ * @returns Update metadata describing whether the selected model was available.
+ */
 function setModelSelectOptions(
   window: Window,
   provider: LLMProvider,
@@ -560,6 +689,14 @@ function setModelSelectOptions(
   };
 }
 
+/**
+ * Creates the disabled placeholder option for a model select field.
+ *
+ * @param window - Preference window used to create DOM nodes.
+ * @param label - Placeholder label.
+ * @param selected - Whether the placeholder should be selected.
+ * @returns Placeholder option element.
+ */
 function createModelPlaceholderOption(
   window: Window,
   label: string,
@@ -570,6 +707,15 @@ function createModelPlaceholderOption(
   return option;
 }
 
+/**
+ * Creates a selectable model option.
+ *
+ * @param window - Preference window used to create DOM nodes.
+ * @param value - Option value.
+ * @param label - Option label.
+ * @param selected - Whether the option should be selected.
+ * @returns Model option element.
+ */
 function createModelOption(
   window: Window,
   value: string,
@@ -586,10 +732,22 @@ function createModelOption(
   return option;
 }
 
+/**
+ * Formats a model option for display.
+ *
+ * @param model - Model option to format.
+ * @returns Display label for the option.
+ */
 function formatModelOptionLabel(model: ModelOption) {
   return model.name === model.id ? model.id : `${model.name} (${model.id})`;
 }
 
+/**
+ * Checks whether a model ID represents a local embedding model.
+ *
+ * @param model - Model identifier to inspect.
+ * @returns True when the model appears to be an embedding model.
+ */
 function isLocalEmbeddingModel(model: string) {
   const value = model.trim().toLowerCase();
   if (!value) return false;
@@ -600,6 +758,12 @@ function isLocalEmbeddingModel(model: string) {
   );
 }
 
+/**
+ * Formats a provider connection result for display in preferences.
+ *
+ * @param result - Provider connection result to format.
+ * @returns Human-readable provider connection status.
+ */
 function formatProviderConnectionResult(result: ProviderConnectionResult) {
   const providerLabel = result.provider === "ollama" ? "Ollama" : "Cloud";
   const model = result.model ? ` (${result.model})` : "";
@@ -634,6 +798,12 @@ function formatProviderConnectionResult(result: ProviderConnectionResult) {
   }
 }
 
+/**
+ * Formats an embedding connection result for display in preferences.
+ *
+ * @param result - Embedding connection result to format.
+ * @returns Human-readable embedding connection status.
+ */
 function formatEmbeddingConnectionResult(result: EmbeddingConnectionResult) {
   const model = result.model ?? REQUIRED_EMBEDDING_MODEL;
 
@@ -670,24 +840,56 @@ function formatEmbeddingConnectionResult(result: EmbeddingConnectionResult) {
   }
 }
 
+/**
+ * Gets the model select element for a provider.
+ *
+ * @param window - Preference window containing the select element.
+ * @param provider - Provider whose model field should be returned.
+ * @returns Model select element, or null when it is missing.
+ */
 function getModelSelect(window: Window, provider: LLMProvider) {
   return getElement<HTMLSelectElement>(window, getModelFieldName(provider));
 }
 
+/**
+ * Resolves the preference field name for a provider's model setting.
+ *
+ * @param provider - Provider whose model field name should be returned.
+ * @returns Preference element suffix for the provider model.
+ */
 function getModelFieldName(provider: LLMProvider) {
   return provider === "ollama" ? "ollama-model" : "model";
 }
 
+/**
+ * Reads the currently configured model for a provider.
+ *
+ * @param provider - Provider whose configured model should be read.
+ * @returns Configured model name.
+ */
 function getConfiguredModel(provider: LLMProvider) {
   return provider === "ollama"
     ? addon.data.settings.ollamaModel
     : addon.data.settings.model;
 }
 
+/**
+ * Formats the provider name used in preference status messages.
+ *
+ * @param provider - Provider whose label should be returned.
+ * @returns Human-readable provider label.
+ */
 function getModelProviderLabel(provider: LLMProvider) {
   return provider === "ollama" ? "Ollama" : "Cloud";
 }
 
+/**
+ * Builds placeholder text for a model select field.
+ *
+ * @param provider - Provider whose placeholder should be built.
+ * @param state - Current model select state.
+ * @returns Placeholder text for the select field.
+ */
 function getModelPlaceholderText(
   provider: LLMProvider,
   state: ModelSelectState,
@@ -706,6 +908,13 @@ function getModelPlaceholderText(
   }
 }
 
+/**
+ * Gets the provider status element for the selected provider.
+ *
+ * @param window - Preference window containing status elements.
+ * @param provider - Provider whose status element should be returned.
+ * @returns Status element, or null when it is missing.
+ */
 function getProviderStatusElement(window: Window, provider: LLMProvider) {
   return getElement<HTMLElement>(
     window,
@@ -713,10 +922,25 @@ function getProviderStatusElement(window: Window, provider: LLMProvider) {
   );
 }
 
+/**
+ * Toggles the disabled state of a button while async work is running.
+ *
+ * @param button - Button to update.
+ * @param busy - Whether the button should be disabled.
+ * @returns Nothing.
+ */
 function setButtonBusy(button: HTMLButtonElement | null, busy: boolean) {
   if (button) button.disabled = busy;
 }
 
+/**
+ * Toggles busy state for a provider model select field.
+ *
+ * @param window - Preference window containing the select field.
+ * @param provider - Provider whose select field should be updated.
+ * @param busy - Whether the select field is currently busy.
+ * @returns Nothing.
+ */
 function setModelSelectBusy(
   window: Window,
   provider: LLMProvider,
@@ -729,6 +953,14 @@ function setModelSelectBusy(
   select.setAttribute("aria-busy", String(busy));
 }
 
+/**
+ * Writes a message and optional state to a status element.
+ *
+ * @param element - Status element to update.
+ * @param message - Text to display.
+ * @param state - Optional status state stored in the dataset.
+ * @returns Nothing.
+ */
 function setStatus(
   element: HTMLElement | null,
   message: string,
@@ -744,12 +976,25 @@ function setStatus(
   }
 }
 
+/**
+ * Finds a preference element by generated ZAIA preference ID.
+ *
+ * @param window - Preference window to search.
+ * @param name - Preference element suffix.
+ * @returns Matching element, or null when it is missing.
+ */
 function getElement<T extends Element = Element>(window: Window, name: string) {
   return window.document.querySelector<T>(
     `#zotero-prefpane-${config.addonRef}-${name}`,
   );
 }
 
+/**
+ * Reads a plugin preference value safely.
+ *
+ * @param key - Plugin setting key to read.
+ * @returns Stored preference value, or undefined when reading fails.
+ */
 function getPluginPreference(key: keyof PluginSettings) {
   try {
     return Zotero.Prefs.get(`${config.prefsPrefix}.${key}`, true);
@@ -758,6 +1003,13 @@ function getPluginPreference(key: keyof PluginSettings) {
   }
 }
 
+/**
+ * Stores a plugin preference value.
+ *
+ * @param key - Plugin setting key to write.
+ * @param value - Preference value to store.
+ * @returns Nothing.
+ */
 function setPluginPreference(
   key: keyof PluginSettings,
   value: PreferenceValue,
@@ -765,6 +1017,12 @@ function setPluginPreference(
   Zotero.Prefs.set(`${config.prefsPrefix}.${key}`, value, true);
 }
 
+/**
+ * Converts an unknown thrown value into a message string.
+ *
+ * @param error - Error-like value to format.
+ * @returns Error message string.
+ */
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
