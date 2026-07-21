@@ -16,6 +16,14 @@ import {
   getUnindexedPaperContextWarning,
 } from "../../src/ui/paperContextIndexStatus";
 
+/**
+ * Erstellt ein Mock-Item für Tests mit Zotero-Eigenschaften.
+ * 
+ * @param id Die ID des Items.
+ * @param libraryID Die ID der Bibliothek, zu der das Item gehört.
+ * @param title Der Titel des Items.
+ * @returns Ein Mock-Objekt, das ein Zotero-Item simuliert.
+ */
 function createItem(id: number, libraryID: number, title: string) {
   return {
     id,
@@ -34,6 +42,13 @@ function createItem(id: number, libraryID: number, title: string) {
   };
 }
 
+/**
+ * Erstellt einen Paper-Datensatz für Tests, wie er vom IndexManager verwendet wird.
+ * 
+ * @param itemID Die ID des Zotero-Items.
+ * @param libraryID Die ID der Bibliothek.
+ * @returns Ein PaperRecord-Objekt mit Testdaten.
+ */
 function createPaperRecord(itemID: number, libraryID: number): PaperRecord {
   return {
     itemID,
@@ -48,6 +63,11 @@ function createPaperRecord(itemID: number, libraryID: number): PaperRecord {
   };
 }
 
+/**
+ * Tests für die Indexierungssteuerung (Indexing Controls).
+ * Diese Testsuite überprüft das Verhalten des BackgroundIndexers,
+ * das Sammeln von Papern, und die Interaktion mit Zotero-Events (hinzufügen, ändern, löschen).
+ */
 describe("indexing controls", () => {
   const item101 = createItem(101, 1, "Paper 101");
   const item202 = createItem(202, 2, "Paper 202");
@@ -112,6 +132,9 @@ describe("indexing controls", () => {
     delete (globalThis as any).Zotero;
   });
 
+  /**
+   * Stellt sicher, dass Zotero "add"-Events nicht automatisch in die Warteschlange eingereiht werden.
+   */
   it("does not enqueue Zotero add events automatically", () => {
     const enqueueSpy = vi.spyOn(backgroundIndexer, "enqueue");
 
@@ -121,6 +144,10 @@ describe("indexing controls", () => {
     expect(vectorStore.addChunks).not.toHaveBeenCalled();
   });
 
+  /**
+   * Prüft, dass bei Änderung eines PDF-Anhangs keine erneute Einreihung erfolgt,
+   * wenn das übergeordnete Item noch nicht indexiert wurde.
+   */
   it("does not re-enqueue on modify when the PDF's parent item is not indexed yet", async () => {
     const attachment = {
       id: 501,
@@ -141,6 +168,10 @@ describe("indexing controls", () => {
     expect(enqueueSpy).not.toHaveBeenCalled();
   });
 
+  /**
+   * Stellt sicher, dass bei Änderung von Metadaten eines regulären Items (nicht des Anhangs)
+   * keine erneute Einreihung in die Warteschlange stattfindet.
+   */
   it("does not re-enqueue on modify of a regular item's metadata (not the attachment)", async () => {
     vi.spyOn(vectorStore, "getIndexedItemIds").mockReturnValue(
       new Set(["101"]),
@@ -155,6 +186,10 @@ describe("indexing controls", () => {
     expect(enqueueSpy).not.toHaveBeenCalled();
   });
 
+  /**
+   * Überprüft, ob ein bereits indexiertes Paper bei Änderung seines PDF-Anhangs
+   * erneut in die Indexierungs-Warteschlange eingereiht wird.
+   */
   it("re-enqueues an already indexed paper when its PDF attachment is modified", async () => {
     vi.spyOn(vectorStore, "getIndexedItemIds").mockReturnValue(
       new Set(["101"]),
@@ -177,6 +212,10 @@ describe("indexing controls", () => {
     });
   });
 
+  /**
+   * Stellt sicher, dass das übergeordnete Item aus dem Index entfernt wird,
+   * wenn ein untergeordneter Anhang in den Papierkorb verschoben (trashed) wird.
+   */
   it("removes the parent item from the index when a child attachment is trashed", async () => {
     const attachment = {
       id: 501,
@@ -196,6 +235,10 @@ describe("indexing controls", () => {
     });
   });
 
+  /**
+   * Prüft, ob Paper, die manuell in die Warteschlange eingereiht werden,
+   * ordnungsgemäß indexiert werden, inklusive der Extraktion und dem Hinzufügen von Chunks.
+   */
   it("still indexes papers that are manually enqueued", async () => {
     backgroundIndexer.enqueue([101]);
 
@@ -221,6 +264,10 @@ describe("indexing controls", () => {
     );
   });
 
+  /**
+   * Überprüft, ob bei einer vollständigen Bibliotheksindexierung nur die
+   * ausgewählten Bibliotheken berücksichtigt werden.
+   */
   it("limits full library indexing to the selected libraries", async () => {
     vi.spyOn(LibraryScopeManager, "listLibraryScopes").mockReturnValue([
       {
@@ -254,6 +301,9 @@ describe("indexing controls", () => {
     expect(PdfExtractor.extractDocument).not.toHaveBeenCalledWith(item101);
   });
 
+  /**
+   * Testet die Filterung von Papern im IndexManager anhand der ausgewählten Bibliotheks-IDs.
+   */
   it("filters index manager papers by checked library IDs", () => {
     const papers = [
       createPaperRecord(101, 1),
@@ -268,6 +318,10 @@ describe("indexing controls", () => {
     expect(filterPapersByLibrary(papers, new Set())).toEqual([]);
   });
 
+  /**
+   * Stellt sicher, dass `loadAllData` bei Items nicht aufgerufen wird,
+   * um Endlosschleifen durch "modify"-Events zu vermeiden.
+   */
   it("does not call loadAllData on items to avoid modify event loops", async () => {
     const item = {
       ...item101,
@@ -291,6 +345,10 @@ describe("indexing controls", () => {
     ]);
   });
 
+  /**
+   * Testet die Zählung von einzigartigen, nicht indexierten Papern im aktiven Kontext
+   * sowie die korrekten Warnmeldungen basierend auf der Anzahl.
+   */
   it("counts unique unindexed papers in the active context", () => {
     const references = [
       { itemID: 101 },
@@ -308,6 +366,10 @@ describe("indexing controls", () => {
     );
   });
 
+  /**
+   * Überprüft, ob die Einstellung für den anfänglichen Indexierungs-Hinweis (Prompt)
+   * nach der ersten Verwendung gespeichert wird.
+   */
   it("stores the initial indexing prompt preference after first use", () => {
     const prefGet = vi.spyOn(globalThis.Zotero.Prefs, "get");
     const prefSet = vi.spyOn(globalThis.Zotero.Prefs, "set");
