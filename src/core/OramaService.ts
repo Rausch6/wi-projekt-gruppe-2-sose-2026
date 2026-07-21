@@ -460,6 +460,7 @@ export class OramaService {
 
       Zotero.debug("[OramaService] Index erfolgreich gespeichert.");
     } catch (e) {
+      Zotero.logError(e instanceof Error ? e : new Error(String(e)));
       Zotero.debug(`[OramaService] Fehler beim Speichern des Index: ${e}`);
     }
   }

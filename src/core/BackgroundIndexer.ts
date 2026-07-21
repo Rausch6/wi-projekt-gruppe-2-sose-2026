@@ -495,8 +495,13 @@ export class BackgroundIndexer {
 
       if (oramaChunks.length > 0) {
         vectorStore.markAsIndexing(targetId.toString(), textHash);
-        await vectorStore.addChunks(oramaChunks);
-        vectorStore.markAsIndexed(targetId.toString());
+        try {
+          await vectorStore.addChunks(oramaChunks);
+          vectorStore.markAsIndexed(targetId.toString());
+        } catch (err) {
+          vectorStore.deleteIndexRecord(targetId.toString());
+          throw err;
+        }
 
         if (this.activeRunMode !== "full") {
           this.emitSingleDone(targetId);
@@ -600,6 +605,13 @@ export class BackgroundIndexer {
       );
     }
 
+    if (allEmbeddings.length !== chunks.length) {
+      throw new Error(
+        `[BackgroundIndexer] computeEmbeddings hat ${allEmbeddings.length} Vektoren ` +
+        `für ${chunks.length} Chunks erzeugt (Item ${targetId}).`,
+      );
+    }
+
     return allEmbeddings;
   }
 
@@ -616,6 +628,14 @@ export class BackgroundIndexer {
     chunks: TextChunk[],
     embeddings: number[][],
   ): ChunkDocument[] {
+    
+    if (embeddings.length !== chunks.length) {
+      throw new Error(
+        `[BackgroundIndexer] Embedding-Längen-Mismatch für Item ${targetId}: ` +
+        `${chunks.length} Chunks, aber ${embeddings.length} Embeddings erhalten.`,
+      );
+    }
+
     return chunks.map((chunk, i) => ({
       id: `doc_${targetId}_${chunk.id}`,
       zoteroItemId: targetId.toString(),
