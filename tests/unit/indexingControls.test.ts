@@ -17,12 +17,12 @@ import {
 } from "../../src/ui/paperContextIndexStatus";
 
 /**
- * Erstellt ein Mock-Item für Tests mit Zotero-Eigenschaften.
- * 
- * @param id Die ID des Items.
- * @param libraryID Die ID der Bibliothek, zu der das Item gehört.
- * @param title Der Titel des Items.
- * @returns Ein Mock-Objekt, das ein Zotero-Item simuliert.
+ * Erstellt ein vollständig geladenes Mock-Item für Tests mit Zotero-Eigenschaften.
+ *
+ * @param id - Die ID des Items.
+ * @param libraryID - Die ID der Bibliothek, zu der das Item gehört.
+ * @param title - Der Titel des Items.
+ * @returns Ein Mock-Objekt, das ein vollständig geladenes Zotero-Item simuliert.
  */
 function createItem(id: number, libraryID: number, title: string) {
   return {
@@ -44,9 +44,9 @@ function createItem(id: number, libraryID: number, title: string) {
 
 /**
  * Erstellt einen Paper-Datensatz für Tests, wie er vom IndexManager verwendet wird.
- * 
- * @param itemID Die ID des Zotero-Items.
- * @param libraryID Die ID der Bibliothek.
+ *
+ * @param itemID - Die ID des Zotero-Items.
+ * @param libraryID - Die ID der Bibliothek.
  * @returns Ein PaperRecord-Objekt mit Testdaten.
  */
 function createPaperRecord(itemID: number, libraryID: number): PaperRecord {
@@ -64,9 +64,10 @@ function createPaperRecord(itemID: number, libraryID: number): PaperRecord {
 }
 
 /**
- * Tests für die Indexierungssteuerung (Indexing Controls).
+ * Tests für die Indexierungssteuerung.
  * Diese Testsuite überprüft das Verhalten des BackgroundIndexers,
- * das Sammeln von Papern, und die Interaktion mit Zotero-Events (hinzufügen, ändern, löschen).
+ * das Sammeln von Papern sowie die Interaktion mit Zotero-Events
+ * (Hinzufügen, Ändern, Löschen).
  */
 describe("indexing controls", () => {
   const item101 = createItem(101, 1, "Paper 101");
@@ -117,11 +118,17 @@ describe("indexing controls", () => {
         isFilesEditable: vi.fn(() => true),
       },
       Items: {
-        getAsync: vi.fn(async (itemID: number) =>
-          itemID === 202 ? item202 : item101,
-        ),
+        getAsync: vi.fn(async (itemID: number | number[]) => {
+          if (Array.isArray(itemID)) {
+            return itemID.map((id) => (id === 202 ? item202 : item101));
+          }
+          return itemID === 202 ? item202 : item101;
+        }),
         getAll: vi.fn(async (libraryID: number) =>
           libraryID === 2 ? [item202] : [item101],
+        ),
+        getAllIDs: vi.fn(async (libraryID: number) =>
+          libraryID === 2 ? [202] : [101],
         ),
       },
     } as any;
@@ -133,7 +140,8 @@ describe("indexing controls", () => {
   });
 
   /**
-   * Stellt sicher, dass Zotero "add"-Events nicht automatisch in die Warteschlange eingereiht werden.
+   * Stellt sicher, dass Zotero „add"-Events nicht automatisch in die
+   * Warteschlange eingereiht werden.
    */
   it("does not enqueue Zotero add events automatically", () => {
     const enqueueSpy = vi.spyOn(backgroundIndexer, "enqueue");
@@ -169,7 +177,7 @@ describe("indexing controls", () => {
   });
 
   /**
-   * Stellt sicher, dass bei Änderung von Metadaten eines regulären Items (nicht des Anhangs)
+   * Stellt sicher, dass bei Änderung von Metadaten eines regulären Items
    * keine erneute Einreihung in die Warteschlange stattfindet.
    */
   it("does not re-enqueue on modify of a regular item's metadata (not the attachment)", async () => {
@@ -187,8 +195,8 @@ describe("indexing controls", () => {
   });
 
   /**
-   * Überprüft, ob ein bereits indexiertes Paper bei Änderung seines PDF-Anhangs
-   * erneut in die Indexierungs-Warteschlange eingereiht wird.
+   * Überprüft, ob ein bereits indexiertes Paper bei Änderung seines
+   * PDF-Anhangs erneut in die Indexierungs-Warteschlange eingereiht wird.
    */
   it("re-enqueues an already indexed paper when its PDF attachment is modified", async () => {
     vi.spyOn(vectorStore, "getIndexedItemIds").mockReturnValue(
@@ -214,7 +222,7 @@ describe("indexing controls", () => {
 
   /**
    * Stellt sicher, dass das übergeordnete Item aus dem Index entfernt wird,
-   * wenn ein untergeordneter Anhang in den Papierkorb verschoben (trashed) wird.
+   * wenn ein untergeordneter Anhang in den Papierkorb verschoben wird.
    */
   it("removes the parent item from the index when a child attachment is trashed", async () => {
     const attachment = {
@@ -236,8 +244,8 @@ describe("indexing controls", () => {
   });
 
   /**
-   * Prüft, ob Paper, die manuell in die Warteschlange eingereiht werden,
-   * ordnungsgemäß indexiert werden, inklusive der Extraktion und dem Hinzufügen von Chunks.
+   * Überprüft, ob manuell in die Warteschlange eingereihte Paper
+   * ordnungsgemäß indexiert werden, inklusive Extraktion und Chunk-Einfügung.
    */
   it("still indexes papers that are manually enqueued", async () => {
     backgroundIndexer.enqueue([101]);
@@ -319,10 +327,88 @@ describe("indexing controls", () => {
   });
 
   /**
+   * Stellt sicher, dass collectPapers die Item-IDs über getAllIDs abruft
+   * und die vollständigen Items anschließend per Batch über getAsync lädt.
+   * Damit wird verhindert, dass Items mit ungeladenen Daten
+   * verarbeitet werden, wenn eine Bibliothek noch nicht in der Seitenleiste geöffnet wurde.
+   */
+  it("loads items via getAllIDs and getAsync batch to avoid UnloadedDataException", async () => {
+    vi.spyOn(LibraryScopeManager, "listLibraryScopes").mockReturnValue([
+      {
+        libraryID: 1,
+        name: "Library 1",
+        type: "user",
+        groupID: null,
+        editable: true,
+        filesEditable: true,
+      },
+    ]);
+
+    const result = await collectPapers(vectorStore);
+
+    expect(globalThis.Zotero.Items.getAllIDs).toHaveBeenCalledWith(1);
+    expect(globalThis.Zotero.Items.getAsync).toHaveBeenCalledWith([101]);
+    expect(result.papers).toHaveLength(1);
+    expect(result.papers[0]).toMatchObject({
+      itemID: 101,
+      title: "Paper 101",
+    });
+  });
+
+  /**
+   * Stellt sicher, dass collectPapers den Titel korrekt anzeigt,
+   * auch wenn getField zum Zeitpunkt des ersten Zugriffs eine Exception wirft.
+   * Nach dem Laden über getAsync muss der korrekte Titel verfügbar sein.
+   */
+  it("shows correct title after getAsync load even if item data was initially unloaded", async () => {
+    vi.spyOn(LibraryScopeManager, "listLibraryScopes").mockReturnValue([
+      {
+        libraryID: 1,
+        name: "Library 1",
+        type: "user",
+        groupID: null,
+        editable: true,
+        filesEditable: true,
+      },
+    ]);
+
+    const fullyLoadedItem = {
+      ...item101,
+      getField: vi.fn((field: string) => {
+        if (field === "title") return "Vollständig geladener Titel";
+        if (field === "year") return "2025";
+        return "";
+      }),
+    };
+
+    vi.mocked(globalThis.Zotero.Items.getAllIDs).mockResolvedValueOnce([101]);
+    vi.mocked(globalThis.Zotero.Items.getAsync).mockResolvedValueOnce([
+      fullyLoadedItem,
+    ]);
+
+    const result = await collectPapers(vectorStore);
+
+    expect(result.papers[0].title).toBe("Vollständig geladener Titel");
+    expect(result.papers[0].year).toBe("2025");
+  });
+
+  /**
    * Stellt sicher, dass `loadAllData` bei Items nicht aufgerufen wird,
-   * um Endlosschleifen durch "modify"-Events zu vermeiden.
+   * da dies modify-Events auslösen würde, die den BackgroundIndexer
+   * zu einer unerwünschten Re-Indexierung der gesamten Bibliothek veranlassen.
    */
   it("does not call loadAllData on items to avoid modify event loops", async () => {
+    vi.spyOn(LibraryScopeManager, "listLibraryScopes").mockReturnValue([
+      {
+        libraryID: 1,
+        name: "Library 1",
+        type: "user",
+        groupID: null,
+        editable: true,
+        filesEditable: true,
+      },
+    ]);
+
     const item = {
       ...item101,
       loadAllData: vi.fn(async () => {}),
@@ -332,7 +418,9 @@ describe("indexing controls", () => {
         return "";
       }),
     };
-    vi.mocked(globalThis.Zotero.Items.getAll).mockResolvedValueOnce([item]);
+
+    vi.mocked(globalThis.Zotero.Items.getAllIDs).mockResolvedValueOnce([101]);
+    vi.mocked(globalThis.Zotero.Items.getAsync).mockResolvedValueOnce([item]);
 
     const result = await collectPapers(vectorStore);
 
@@ -343,6 +431,65 @@ describe("indexing controls", () => {
         title: "Test Titel",
       }),
     ]);
+  });
+
+  /**
+   * Stellt sicher, dass bei einem Fehler in getAllIDs oder getAsync
+   * die betroffene Bibliothek übersprungen wird und die übrigen Paper
+   * weiterhin korrekt geladen werden.
+   */
+  it("skips a library and continues if loading its items fails", async () => {
+    vi.spyOn(LibraryScopeManager, "listLibraryScopes").mockReturnValue([
+      {
+        libraryID: 1,
+        name: "Library 1",
+        type: "user",
+        groupID: null,
+        editable: true,
+        filesEditable: true,
+      },
+      {
+        libraryID: 2,
+        name: "Library 2",
+        type: "group",
+        groupID: 22,
+        editable: true,
+        filesEditable: true,
+      },
+    ]);
+
+    vi.mocked(globalThis.Zotero.Items.getAllIDs)
+      .mockRejectedValueOnce(new Error("Datenbankfehler"))
+      .mockResolvedValueOnce([202]);
+    vi.mocked(globalThis.Zotero.Items.getAsync).mockResolvedValueOnce([
+      item202,
+    ]);
+
+    const result = await collectPapers(vectorStore);
+
+    expect(globalThis.Zotero.logError).toHaveBeenCalled();
+    expect(result.papers).toHaveLength(1);
+    expect(result.papers[0].itemID).toBe(202);
+  });
+
+  /**
+   * Überprüft, ob die Einstellung für den anfänglichen Indexierungsdialog
+   * nach der ersten Verwendung gespeichert wird.
+   */
+  it("stores the initial indexing prompt preference after first use", () => {
+    const prefGet = vi.spyOn(globalThis.Zotero.Prefs, "get");
+    const prefSet = vi.spyOn(globalThis.Zotero.Prefs, "set");
+
+    prefGet.mockReturnValueOnce(false);
+    expect(shouldShowInitialIndexPrompt()).toBe(true);
+
+    markInitialIndexPromptShown();
+
+    expect(prefSet).toHaveBeenCalledWith(
+      "extensions.zotero.zaia.initialIndexPromptShown",
+      true,
+      true,
+    );
   });
 
   /**
@@ -363,26 +510,6 @@ describe("indexing controls", () => {
     );
     expect(getUnindexedPaperContextWarning(2)).toBe(
       "2 Paper im Kontext sind noch nicht indexiert.",
-    );
-  });
-
-  /**
-   * Überprüft, ob die Einstellung für den anfänglichen Indexierungs-Hinweis (Prompt)
-   * nach der ersten Verwendung gespeichert wird.
-   */
-  it("stores the initial indexing prompt preference after first use", () => {
-    const prefGet = vi.spyOn(globalThis.Zotero.Prefs, "get");
-    const prefSet = vi.spyOn(globalThis.Zotero.Prefs, "set");
-
-    prefGet.mockReturnValueOnce(false);
-    expect(shouldShowInitialIndexPrompt()).toBe(true);
-
-    markInitialIndexPromptShown();
-
-    expect(prefSet).toHaveBeenCalledWith(
-      "extensions.zotero.zaia.initialIndexPromptShown",
-      true,
-      true,
     );
   });
 });

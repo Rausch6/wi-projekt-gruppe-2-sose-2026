@@ -3,6 +3,12 @@ declare namespace Zotero {
   type Item = any;
 }
 
+/**
+ * Prüft, ob ein Zotero-Item für den ZAIA-Index geeignet ist.
+ *
+ * @param item - Das zu prüfende Zotero-Item.
+ * @returns `true`, wenn das Item indexierbar ist, sonst `false`.
+ */
 export function isIndexableItem(item: Zotero.Item): boolean {
   if (isDeletedItem(item)) {
     return false;
@@ -30,38 +36,27 @@ export function isIndexableItem(item: Zotero.Item): boolean {
   return Boolean(item.isPDFAttachment?.());
 }
 
+/**
+ * Prüft, ob ein Zotero-Item als gelöscht markiert ist.
+ *
+ * @param item - Das zu prüfende Zotero-Item.
+ * @returns `true`, wenn das Item gelöscht ist, sonst `false`.
+ */
 export function isDeletedItem(item: Zotero.Item): boolean {
   try {
-    // item.deleted is the correct internal Zotero property.
-    // getField("deleted") is not a valid metadata field and may cause warnings.
     return Boolean(item.deleted);
   } catch {
     return false;
   }
 }
 
-export async function loadItemCompletely(
-  item: Zotero.Item,
-): Promise<Zotero.Item> {
-  try {
-    // WICHTIG: Wir rufen hier absichtlich NICHT `item.loadAllData(true)` auf.
-    // Ein massenhafter Aufruf von loadAllData() für alle Items der Bibliothek 
-    // zwingt Zotero dazu, für jedes einzelne Paper ein "modify"-Event abzufeuern.
-    // Dies würde den BackgroundIndexer fluten und Zotero sowie die GPU komplett blockieren,
-    // da fälschlicherweise eine komplette Re-Indexierung der Bibliothek getriggert wird.
-    return item;
-  } catch (error) {
-    try {
-      return (await Zotero.Items.getAsync(item.id)) ?? item;
-    } catch (reloadError) {
-      Zotero.debug(
-        `ZAIA: Item ${item.id} konnte für den Index Manager nicht vollständig geladen werden: ${reloadError || error}`,
-      );
-      return item;
-    }
-  }
-}
-
+/**
+ * Gibt den Anzeigetitel eines Zotero-Items zurück.
+ * Falls kein Titel vorhanden ist, wird der Dateiname als Fallback verwendet.
+ *
+ * @param item - Das Zotero-Item, dessen Titel ermittelt werden soll.
+ * @returns Den Titel des Items oder „Ohne Titel", falls kein Titel verfügbar ist.
+ */
 export function getItemTitle(item: Zotero.Item): string {
   const title = getItemField(item, "title", "");
   if (title) {
@@ -76,6 +71,16 @@ export function getItemTitle(item: Zotero.Item): string {
   }
 }
 
+/**
+ * Liest ein Metadatenfeld eines Zotero-Items aus.
+ * Gibt den angegebenen Fallback-Wert zurück, falls das Feld nicht vorhanden ist
+ * oder beim Zugriff eine Exception geworfen wird.
+ *
+ * @param item - Das Zotero-Item.
+ * @param field - Der Name des abzufragenden Metadatenfelds.
+ * @param fallback - Rückgabewert, falls das Feld leer oder nicht lesbar ist.
+ * @returns Den Feldwert als String oder den Fallback.
+ */
 export function getItemField(
   item: Zotero.Item,
   field: string,
@@ -89,6 +94,13 @@ export function getItemField(
   }
 }
 
+/**
+ * Gibt die Autorenliste eines Zotero-Items als formatierten String zurück.
+ * Es werden maximal drei Autoren aufgeführt.
+ *
+ * @param item - Das Zotero-Item, dessen Autoren ermittelt werden sollen.
+ * @returns Kommagetrennte Autorennamen oder „Unbekannt", falls keine vorhanden sind.
+ */
 export function getItemCreators(item: Zotero.Item): string {
   try {
     const creators = item.getCreators?.();
@@ -108,6 +120,13 @@ export function getItemCreators(item: Zotero.Item): string {
   }
 }
 
+/**
+ * Gibt den Typ eines Zotero-Items als lesbaren String zurück.
+ *
+ * @param item - Das Zotero-Item, dessen Typ ermittelt werden soll.
+ * @returns „PDF" bei PDF-Anhängen, den Zotero-Itemtyp bei regulären Items
+ *          oder „Eintrag" als generischen Fallback.
+ */
 export function getItemType(item: Zotero.Item): string {
   if (item.isPDFAttachment?.()) {
     return "PDF";
@@ -126,7 +145,7 @@ export function getItemType(item: Zotero.Item): string {
       return String(rawType);
     }
   } catch {
-    // Fall through to the generic label.
+    return "Eintrag";
   }
 
   return "Eintrag";
