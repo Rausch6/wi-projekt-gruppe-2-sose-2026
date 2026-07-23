@@ -1,13 +1,43 @@
 import { backgroundIndexer } from "../core/BackgroundIndexer";
 import { indexingEvents } from "../core/IndexingEventBus";
 import { vectorStore } from "../core/OramaService";
-import type { IndexManagerElements, IndexManagerState, VectorStore, BackgroundIndexerService } from "./indexManager/types";
+import type {
+  IndexManagerElements,
+  IndexManagerState,
+  VectorStore,
+  BackgroundIndexerService,
+} from "./indexManager/types";
 import { clearSelections } from "./indexManager/state";
-import { renderIndexManager, setStatus, showIndexingActive, updateFilterOptions, formatDuration, ALL_FILTER_VALUE } from "./indexManager/render";
-import { reloadPapers, indexSelectedPapers, unindexSelectedPapers, rebuildIndex, clearIndex, maybeShowInitialIndexPrompt, logError } from "./indexManager/actions";
+import {
+  renderIndexManager,
+  setStatus,
+  showIndexingActive,
+  updateFilterOptions,
+  formatDuration,
+  ALL_FILTER_VALUE,
+} from "./indexManager/render";
+import {
+  reloadPapers,
+  indexSelectedPapers,
+  unindexSelectedPapers,
+  rebuildIndex,
+  clearIndex,
+  maybeShowInitialIndexPrompt,
+  logError,
+} from "./indexManager/actions";
 
+/**
+ * Event-bus cleanup callback associated with each open index manager window.
+ */
 const indexingEventCleanups = new WeakMap<Window, () => void>();
 
+/**
+ * Initializes index-manager state, DOM bindings, and indexing subscriptions.
+ *
+ * @param window - Index manager dialog window.
+ * @param _owner - Owning Zotero window supplied by the XHTML bootstrap hook.
+ * @returns Promise resolved after papers and filter data have been loaded.
+ */
 export async function initializeIndexManagerWindow(
   window: Window,
   _owner: any,
@@ -51,6 +81,13 @@ export async function initializeIndexManagerWindow(
   void maybeShowInitialIndexPrompt(window, elements, state, backgroundIndexer);
 }
 
+/**
+ * Releases index event subscriptions when the dialog is unloaded.
+ *
+ * @param window - Index manager dialog being closed.
+ * @param _owner - Optional owning Zotero window.
+ * @returns Nothing.
+ */
 export function handleIndexManagerWindowUnload(
   window: Window,
   _owner?: Window,
@@ -59,24 +96,50 @@ export function handleIndexManagerWindowUnload(
   indexingEventCleanups.delete(window);
 }
 
+/**
+ * Resolves and validates all DOM elements required by the index manager.
+ *
+ * @param document - Index manager document to query.
+ * @returns Typed element collection, or null when the XHTML is incomplete.
+ */
 function getRequiredElements(document: Document): IndexManagerElements | null {
   const elements = {
-    searchInput: document.getElementById("index-search-input") as HTMLInputElement | null,
-    libraryFilter: document.getElementById("index-library-filter") as HTMLSelectElement | null,
-    typeFilter: document.getElementById("index-type-filter") as HTMLSelectElement | null,
-    yearFilter: document.getElementById("index-year-filter") as HTMLSelectElement | null,
+    searchInput: document.getElementById(
+      "index-search-input",
+    ) as HTMLInputElement | null,
+    libraryFilter: document.getElementById(
+      "index-library-filter",
+    ) as HTMLSelectElement | null,
+    typeFilter: document.getElementById(
+      "index-type-filter",
+    ) as HTMLSelectElement | null,
+    yearFilter: document.getElementById(
+      "index-year-filter",
+    ) as HTMLSelectElement | null,
     status: document.getElementById("index-action-status"),
     indexingBanner: document.getElementById("indexing-banner"),
     indexingBannerActive: document.getElementById("indexing-banner-active"),
     indexingBannerActiveText: document.getElementById(
       "indexing-banner-active-text",
     ),
-    refreshButton: document.getElementById("btn-refresh") as HTMLButtonElement | null,
-    rebuildButton: document.getElementById("btn-rebuild-index") as HTMLButtonElement | null,
-    cancelIndexingButton: document.getElementById("btn-cancel-indexing") as HTMLButtonElement | null,
-    clearIndexButton: document.getElementById("btn-clear-index") as HTMLButtonElement | null,
-    indexSelectedButton: document.getElementById("btn-index-selected") as HTMLButtonElement | null,
-    unindexSelectedButton: document.getElementById("btn-unindex-selected") as HTMLButtonElement | null,
+    refreshButton: document.getElementById(
+      "btn-refresh",
+    ) as HTMLButtonElement | null,
+    rebuildButton: document.getElementById(
+      "btn-rebuild-index",
+    ) as HTMLButtonElement | null,
+    cancelIndexingButton: document.getElementById(
+      "btn-cancel-indexing",
+    ) as HTMLButtonElement | null,
+    clearIndexButton: document.getElementById(
+      "btn-clear-index",
+    ) as HTMLButtonElement | null,
+    indexSelectedButton: document.getElementById(
+      "btn-index-selected",
+    ) as HTMLButtonElement | null,
+    unindexSelectedButton: document.getElementById(
+      "btn-unindex-selected",
+    ) as HTMLButtonElement | null,
     unindexedList: document.getElementById("unindexed-list"),
     indexedList: document.getElementById("indexed-list"),
     unindexedEmpty: document.getElementById("unindexed-empty"),
@@ -92,6 +155,16 @@ function getRequiredElements(document: Document): IndexManagerElements | null {
   return elements as IndexManagerElements;
 }
 
+/**
+ * Connects filters and command buttons to state transitions and index actions.
+ *
+ * @param window - Index manager dialog window.
+ * @param elements - Required index manager controls.
+ * @param state - Mutable index manager state.
+ * @param vectorStoreService - Vector-store service used for delete operations.
+ * @param backgroundIndexerService - Background indexing service.
+ * @returns Nothing.
+ */
 function bindEvents(
   window: Window,
   elements: IndexManagerElements,
@@ -136,7 +209,14 @@ function bindEvents(
     renderIndexManager(window, elements, state);
   });
 
-  function bindAsyncButton(button: HTMLButtonElement | null, handler: () => Promise<void> | void) {
+  /**
+   * Prevents duplicate button activation until the asynchronous action updates
+   * the complete manager state.
+   */
+  function bindAsyncButton(
+    button: HTMLButtonElement | null,
+    handler: () => Promise<void> | void,
+  ) {
     if (!button) return;
     button.addEventListener("click", () => {
       if (button.disabled) return;
@@ -145,22 +225,54 @@ function bindEvents(
     });
   }
 
-  bindAsyncButton(elements.refreshButton, () => reloadPapers(window, elements, state, vectorStoreService, backgroundIndexerService));
-  bindAsyncButton(elements.rebuildButton, () => rebuildIndex(window, elements, state, backgroundIndexerService));
+  bindAsyncButton(elements.refreshButton, () =>
+    reloadPapers(
+      window,
+      elements,
+      state,
+      vectorStoreService,
+      backgroundIndexerService,
+    ),
+  );
+  bindAsyncButton(elements.rebuildButton, () =>
+    rebuildIndex(window, elements, state, backgroundIndexerService),
+  );
   bindAsyncButton(elements.cancelIndexingButton, () => {
     backgroundIndexerService.abort();
     setStatus(elements.status, "Abbruch angefordert ...", "warning");
   });
-  bindAsyncButton(elements.clearIndexButton, () => clearIndex(window, elements, state, vectorStoreService));
-  bindAsyncButton(elements.indexSelectedButton, () => indexSelectedPapers(window, elements, state, backgroundIndexerService));
-  bindAsyncButton(elements.unindexSelectedButton, () => unindexSelectedPapers(window, elements, state, vectorStoreService));
+  bindAsyncButton(elements.clearIndexButton, () =>
+    clearIndex(window, elements, state, vectorStoreService),
+  );
+  bindAsyncButton(elements.indexSelectedButton, () =>
+    indexSelectedPapers(window, elements, state, backgroundIndexerService),
+  );
+  bindAsyncButton(elements.unindexSelectedButton, () =>
+    unindexSelectedPapers(window, elements, state, vectorStoreService),
+  );
 }
 
+/**
+ * Formats the optional count of papers skipped during text extraction.
+ *
+ * @param skippedCount - Number of skipped papers reported by the indexer.
+ * @returns Empty text or a sentence suffix describing skipped papers.
+ */
 function formatSkippedSuffix(skippedCount?: number): string {
   if (!skippedCount) return "";
   return ` ${skippedCount} Paper ohne extrahierbaren Text übersprungen.`;
 }
 
+/**
+ * Mirrors background-indexer lifecycle events into the dialog state and banner.
+ *
+ * @param window - Index manager dialog window.
+ * @param elements - Required index manager controls.
+ * @param state - Mutable index manager state.
+ * @param vectorStoreService - Vector-store service used while reloading papers.
+ * @param backgroundIndexerService - Background indexing service.
+ * @returns Cleanup callback that unsubscribes every indexing event listener.
+ */
 function bindIndexingEvents(
   window: Window,
   elements: IndexManagerElements,
@@ -168,6 +280,9 @@ function bindIndexingEvents(
   vectorStoreService: VectorStore,
   backgroundIndexerService: BackgroundIndexerService,
 ): () => void {
+  /**
+   * Reloads both paper columns before showing a terminal operation message.
+   */
   const reloadAndShowStatus = (
     message: string,
     type: "" | "success" | "warning" | "error",
@@ -258,14 +373,17 @@ function bindIndexingEvents(
     );
   });
 
-  const unsubError = indexingEvents.on("error", ({ itemID, message, paperTitle }) => {
-    if (itemID !== undefined) {
-      state.queuedItemIDs.delete(itemID);
-    }
-    renderIndexManager(window, elements, state);
-    const title = paperTitle ? `"${paperTitle}"` : "Paper";
-    setStatus(elements.status, `Fehler bei ${title}: ${message}`, "error");
-  });
+  const unsubError = indexingEvents.on(
+    "error",
+    ({ itemID, message, paperTitle }) => {
+      if (itemID !== undefined) {
+        state.queuedItemIDs.delete(itemID);
+      }
+      renderIndexManager(window, elements, state);
+      const title = paperTitle ? `"${paperTitle}"` : "Paper";
+      setStatus(elements.status, `Fehler bei ${title}: ${message}`, "error");
+    },
+  );
 
   const unsubFinished = indexingEvents.on(
     "finished",

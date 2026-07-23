@@ -13,6 +13,12 @@ type MockItemOptions = {
   fields?: Record<string, string>;
 };
 
+/**
+ * Creates a Zotero item mock with the metadata methods used by PaperContextService.
+ *
+ * @param options - Metadata and Zotero identifiers for the mocked item.
+ * @returns Mocked Zotero item object.
+ */
 function createMockItem(options: MockItemOptions) {
   const fields = {
     title: options.title,
@@ -47,6 +53,9 @@ function createMockItem(options: MockItemOptions) {
   };
 }
 
+/**
+ * Verifies the PaperContextService pipeline from Zotero metadata to vector context output.
+ */
 describe("paper context pipeline integration", () => {
   const marketingItem = createMockItem({
     id: 101,

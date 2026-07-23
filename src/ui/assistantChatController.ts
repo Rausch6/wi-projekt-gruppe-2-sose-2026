@@ -108,6 +108,9 @@ type AIChatResult = {
   usage?: AIUsage | null;
 };
 
+/**
+ * Represents a chat message rendered in the assistant UI.
+ */
 export type AssistantChatMessage = {
   id: number;
   role: ChatRole;
@@ -219,6 +222,9 @@ let setupWasVisible = false;
 
 const SETUP_STALL_TIMEOUT_MS = 3_000;
 
+/**
+ * Captures the last prompt routing decision for diagnostics.
+ */
 export type PromptContextRouteDebug = {
   prompt: string;
   provider: LLMProvider;
@@ -234,6 +240,9 @@ export type PromptContextRouteDebug = {
   error?: string;
 };
 
+/**
+ * Captures the last assistant request payload for diagnostics.
+ */
 export type AssistantRequestDebug = {
   provider: LLMProvider;
   model: string;
@@ -243,6 +252,12 @@ export type AssistantRequestDebug = {
   createdAt: string;
 };
 
+/**
+ * Binds assistant chat behavior to a rendered sidebar host.
+ *
+ * @param host - Sidebar host element containing the assistant UI.
+ * @returns Nothing.
+ */
 export function bindAssistantChat(host: HTMLElement) {
   hosts.add(host);
 
@@ -330,9 +345,7 @@ export function bindAssistantChat(host: HTMLElement) {
     if (!prompt || requestRunning || !isChatReady()) return;
 
     if (textarea) textarea.value = "";
-    void sendChatPrompt(prompt).catch(() => {
-      // The error is already rendered as a chat message.
-    });
+    void sendChatPrompt(prompt).catch(() => {});
   };
 
   sendButton?.addEventListener("click", () => {
@@ -418,8 +431,6 @@ export function bindAssistantChat(host: HTMLElement) {
     hosts.add(host);
     setModelPickerExpanded(!modelPickerExpanded);
   });
-  // Jeder Provider-Button übergibt seine data-provider-ID an den zentralen
-  // Umschaltpfad. Dadurch bleibt die eigentliche Wechselwirkung an einer Stelle.
   for (const providerButton of providerButtons) {
     providerButton.addEventListener("click", () => {
       hosts.add(host);
@@ -470,8 +481,6 @@ export function bindAssistantChat(host: HTMLElement) {
     void ensureModelOptionsLoaded(getActiveProvider());
     toggleModelDropdown(modelDropdown);
   });
-  // Das Dropdown unterscheidet zwischen der Aktion zum Hinzufügen eines lokalen
-  // Modells und einer echten Modellauswahl mit data-model-value.
   modelDropdown?.addEventListener("click", (event) => {
     const addButton = (
       event.target as Element | null
@@ -598,20 +607,45 @@ export function bindAssistantChat(host: HTMLElement) {
   }
 }
 
+/**
+ * Gets g et si de ba rv ie w.
+ *
+ * @param host - Parameter used by getSidebarView.
+ * @returns Result produced by getSidebarView.
+ */
 function getSidebarView(host: HTMLElement): SidebarView {
   return sidebarViews.get(host) ?? "chat";
 }
 
+/**
+ * Gets g et si de ba rv ie wt ar ge t.
+ *
+ * @param button - Parameter used by getSidebarViewTarget.
+ * @returns Result produced by getSidebarViewTarget.
+ */
 function getSidebarViewTarget(button: HTMLButtonElement): SidebarView {
   return button.dataset.viewTarget === "about" ? "about" : "chat";
 }
 
+/**
+ * Sets s et si de ba rv ie w.
+ *
+ * @param host - Parameter used by setSidebarView.
+ * @param view - Parameter used by setSidebarView.
+ * @returns Result produced by setSidebarView.
+ */
 function setSidebarView(host: HTMLElement, view: SidebarView) {
   hosts.add(host);
   sidebarViews.set(host, view);
   renderHost(host);
 }
 
+/**
+ * Ensures e ns ur el oc al mo de li ns ta ll ev en th an dl er.
+ *
+ * @param win - Parameter used by ensureLocalModelInstallEventHandler.
+ * @returns Result produced by ensureLocalModelInstallEventHandler.
+ */
 function ensureLocalModelInstallEventHandler(win: Window | null) {
   if (!win || localModelInstallEventWindows.has(win)) return;
 
@@ -648,6 +682,11 @@ async function useInstalledLocalModel(model: string) {
   syncAllModelPickers();
 }
 
+/**
+ * Initializes chat persistence and resets the active chat view.
+ *
+ * @returns Promise that resolves after chat summaries are loaded.
+ */
 export async function initializeChatPersistence() {
   await refreshChatSummaries(false);
   activeChatID = null;
@@ -656,17 +695,34 @@ export async function initializeChatPersistence() {
   renderAllHosts();
 }
 
+/**
+ * Registers a window whose Zotero selection can affect paper context controls.
+ *
+ * @param win - Window to register, or null when unavailable.
+ * @returns Nothing.
+ */
 export function registerPaperContextSelectionWindow(win: Window | null) {
   ensurePaperContextSelectionPolling(win);
   ensurePaperContextSelectionEventHandlers(win);
   win?.setTimeout(refreshPaperContextControls, 0);
 }
 
+/**
+ * Refreshes paper context controls across all assistant hosts.
+ *
+ * @returns Nothing.
+ */
 export function refreshPaperContextControls() {
   lastAutomaticPaperContextSignature = getAutomaticPaperContextSignature();
   syncAllPaperContextControls();
 }
 
+/**
+ * Sends a user prompt through the active assistant chat flow.
+ *
+ * @param prompt - User prompt to submit.
+ * @returns Promise resolving to the user message or assistant response.
+ */
 export async function sendChatPrompt(prompt: string) {
   const content = prompt.trim();
   if (!content) {
@@ -772,19 +828,40 @@ export async function sendChatPrompt(prompt: string) {
   }
 }
 
+/**
+ * Returns a snapshot of the currently rendered chat messages.
+ *
+ * @returns Assistant chat messages in display order.
+ */
 export function getChatMessages() {
   return messages.map((message) => ({ ...message }));
 }
 
+/**
+ * Gets the active persisted chat identifier.
+ *
+ * @returns Active chat ID, or null when no chat is active.
+ */
 export function getActiveChatID() {
   return activeChatID;
 }
 
+/**
+ * Lists persisted chat summaries.
+ *
+ * @returns Promise resolving to chat summaries.
+ */
 export async function listChats() {
   await refreshChatSummaries(false);
   return chatSummaries.map((chat) => ({ ...chat }));
 }
 
+/**
+ * Creates a new persisted chat and makes it active.
+ *
+ * @param input - Optional metadata for the created chat.
+ * @returns Promise resolving to the created chat.
+ */
 export async function createChat(input: CreateChatInput = {}) {
   if (requestRunning) {
     throw new Error(
@@ -805,6 +882,12 @@ export async function createChat(input: CreateChatInput = {}) {
   return chat;
 }
 
+/**
+ * Loads a persisted chat into the assistant UI.
+ *
+ * @param chatID - Chat identifier to load.
+ * @returns Promise resolving to the loaded chat with messages.
+ */
 export async function loadChat(chatID: string) {
   if (requestRunning) {
     throw new Error(
@@ -835,6 +918,12 @@ export async function loadChat(chatID: string) {
   return chat;
 }
 
+/**
+ * Deletes a persisted chat and clears it from the active view when needed.
+ *
+ * @param chatID - Chat identifier to delete.
+ * @returns Promise that resolves after deletion.
+ */
 export async function deleteChat(chatID: string) {
   if (requestRunning) {
     throw new Error("Während ZAIA antwortet kann kein Chat gelöscht werden.");
@@ -854,6 +943,13 @@ export async function deleteChat(chatID: string) {
   renderAllHosts();
 }
 
+/**
+ * Updates the favorite state of a persisted chat.
+ *
+ * @param chatID - Chat identifier to update.
+ * @param isFavorite - Whether the chat should be marked as favorite.
+ * @returns Promise that resolves after the favorite state is saved.
+ */
 export async function setChatFavorite(chatID: string, isFavorite: boolean) {
   if (requestRunning) {
     throw new Error(
@@ -866,16 +962,31 @@ export async function setChatFavorite(chatID: string, isFavorite: boolean) {
   renderAllHosts();
 }
 
+/**
+ * Clears the active chat and returns to the welcome view.
+ *
+ * @returns Nothing.
+ */
 export function clearChat() {
   returnToWelcome();
 }
 
+/**
+ * Creates a new chat and focuses the assistant composer.
+ *
+ * @returns Promise resolving to the created chat.
+ */
 export async function createChatAndFocusComposer() {
   const chat = await createChat();
   focusAssistantComposer();
   return chat;
 }
 
+/**
+ * Toggles the favorite state of the active chat.
+ *
+ * @returns Promise resolving to the new favorite state.
+ */
 export async function toggleActiveChatFavorite() {
   const chatID = activeChatID;
   if (!chatID) {
@@ -887,6 +998,12 @@ export async function toggleActiveChatFavorite() {
   return nextFavorite;
 }
 
+/**
+ * Focuses the assistant composer in the preferred host.
+ *
+ * @param owner - Optional owner window used to choose a host.
+ * @returns True when the composer was focused.
+ */
 export function focusAssistantComposer(owner?: Window | null) {
   const host = getPreferredAssistantHost(owner);
   const textarea = host?.querySelector<HTMLTextAreaElement>(".zai-input");
@@ -894,6 +1011,12 @@ export function focusAssistantComposer(owner?: Window | null) {
   return Boolean(textarea);
 }
 
+/**
+ * Focuses the model selection control in the preferred host.
+ *
+ * @param owner - Optional owner window used to choose a host.
+ * @returns True when the model selection control was focused.
+ */
 export function focusModelSelection(owner?: Window | null) {
   const host = getPreferredAssistantHost(owner);
   if (!host) return false;
@@ -911,6 +1034,12 @@ export function focusModelSelection(owner?: Window | null) {
   return false;
 }
 
+/**
+ * Opens the context popover in the preferred host.
+ *
+ * @param owner - Optional owner window used to choose a host.
+ * @returns True when the context popover was opened.
+ */
 export function openContextWindow(owner?: Window | null) {
   const host = getPreferredAssistantHost(owner);
   if (!host || !isAssistantHostReadyForPopover(host)) return false;
@@ -928,6 +1057,10 @@ export function openContextWindow(owner?: Window | null) {
   return true;
 }
 
+/**
+ * Returns to r et ur nt ow el co me.
+ * @returns Result produced by returnToWelcome.
+ */
 function returnToWelcome() {
   activeChatID = null;
   showAllChats = false;
@@ -941,6 +1074,10 @@ function returnToWelcome() {
   });
 }
 
+/**
+ * Cancels c an ce la ct iv ea ss is ta nt re sp on se.
+ * @returns Result produced by cancelActiveAssistantResponse.
+ */
 function cancelActiveAssistantResponse() {
   if (!requestRunning || activeChatCancelRequested) return;
 
@@ -949,10 +1086,22 @@ function cancelActiveAssistantResponse() {
   renderAllHosts();
 }
 
+/**
+ * Checks whether i sa ct iv ec ha tr eq ue st ca nc el le d.
+ *
+ * @param requestID - Parameter used by isActiveChatRequestCancelled.
+ * @returns Result produced by isActiveChatRequestCancelled.
+ */
 function isActiveChatRequestCancelled(requestID: number) {
   return requestID === activeChatRequestID && activeChatCancelRequested;
 }
 
+/**
+ * Refreshes r ef re sh ch at su mm ar ie s.
+ *
+ * @param render - Parameter used by refreshChatSummaries.
+ * @returns Result produced by refreshChatSummaries.
+ */
 async function refreshChatSummaries(render = true) {
   try {
     const chats = await ChatRepository.listChats();
@@ -967,11 +1116,22 @@ async function refreshChatSummaries(render = true) {
   if (render) renderAllHosts();
 }
 
+/**
+ * Handles i nv al id at ec ha ts um ma ri es.
+ * @returns Result produced by invalidateChatSummaries.
+ */
 function invalidateChatSummaries() {
   chatSummariesLoaded = false;
   chatSummaries.length = 0;
 }
 
+/**
+ * Requests r eq ue st as si st an tr es po ns e.
+ *
+ * @param requestMessages - Parameter used by requestAssistantResponse.
+ * @param requestID - Parameter used by requestAssistantResponse.
+ * @returns Result produced by requestAssistantResponse.
+ */
 async function requestAssistantResponse(
   requestMessages: RequestMessage[],
   requestID: number,
@@ -996,6 +1156,13 @@ async function requestAssistantResponse(
   return requestBufferedAssistantResponse(requestMessages, requestID);
 }
 
+/**
+ * Requests r eq ue st st re am in ga ss is ta nt re sp on se.
+ *
+ * @param requestMessages - Parameter used by requestStreamingAssistantResponse.
+ * @param requestID - Parameter used by requestStreamingAssistantResponse.
+ * @returns Result produced by requestStreamingAssistantResponse.
+ */
 async function requestStreamingAssistantResponse(
   requestMessages: RequestMessage[],
   requestID: number,
@@ -1040,6 +1207,13 @@ async function requestStreamingAssistantResponse(
   return finalMessage ?? failNoAnswer();
 }
 
+/**
+ * Requests r eq ue st bu ff er ed as si st an tr es po ns e.
+ *
+ * @param requestMessages - Parameter used by requestBufferedAssistantResponse.
+ * @param requestID - Parameter used by requestBufferedAssistantResponse.
+ * @returns Result produced by requestBufferedAssistantResponse.
+ */
 async function requestBufferedAssistantResponse(
   requestMessages: RequestMessage[],
   requestID: number,
@@ -1074,12 +1248,20 @@ function getActiveProvider(): LLMProvider {
   return addon.data.settings.provider === "ollama" ? "ollama" : "kisski";
 }
 
+/**
+ * Checks whether i sa ct iv ep ro vi de rr ea dy.
+ * @returns Result produced by isActiveProviderReady.
+ */
 function isActiveProviderReady() {
   return isProviderConnectionReady(
     addon.data.runtime.providerConnections[getActiveProvider()],
   );
 }
 
+/**
+ * Checks whether i se mb ed di ng re ad y.
+ * @returns Result produced by isEmbeddingReady.
+ */
 function isEmbeddingReady() {
   return (
     !addon.data.settings.embeddingSearchEnabled ||
@@ -1087,6 +1269,10 @@ function isEmbeddingReady() {
   );
 }
 
+/**
+ * Checks whether i sc ha tr ea dy.
+ * @returns Result produced by isChatReady.
+ */
 function isChatReady() {
   return getCurrentSetupReadiness().ready;
 }
@@ -1106,6 +1292,10 @@ function getCurrentSetupReadiness(): SetupReadiness {
   );
 }
 
+/**
+ * Gets g et ch at re ad in es se rr or te xt.
+ * @returns Result produced by getChatReadinessErrorText.
+ */
 function getChatReadinessErrorText() {
   if (addon.data.settings.embeddingSearchEnabled && !isEmbeddingReady()) {
     return getString("sidebar-active-embedding-not-connected-error");
@@ -1128,12 +1318,22 @@ function getActiveModel(provider: LLMProvider = getActiveProvider()) {
   return isLocalEmbeddingModel(model) ? OLLAMA_DEFAULT_MODEL : model;
 }
 
+/**
+ * Gets g et se le ct ed me ta da ta fi el ds.
+ * @returns Result produced by getSelectedMetadataFields.
+ */
 function getSelectedMetadataFields() {
   return getMetadataFieldsForSelection(
     addon.data.settings.metadataFieldSelection,
   );
 }
 
+/**
+ * Creates c re at er eq ue st me ss ag es.
+ *
+ * @param prompt - Parameter used by createRequestMessages.
+ * @returns Result produced by createRequestMessages.
+ */
 async function createRequestMessages(prompt: string) {
   const requestMessages: RequestMessage[] = [];
   const paperContext = await createPaperContextMessage(prompt);
@@ -1160,6 +1360,12 @@ async function createRequestMessages(prompt: string) {
   return requestMessages;
 }
 
+/**
+ * Creates c re at ep ap er co nt ex tm es sa ge.
+ *
+ * @param prompt - Parameter used by createPaperContextMessage.
+ * @returns Result produced by createPaperContextMessage.
+ */
 async function createPaperContextMessage(prompt: string) {
   const provider = addon.data.settings.provider;
   const shouldIncludePaper =
@@ -1232,6 +1438,13 @@ async function createPaperContextMessage(prompt: string) {
   return createLegacyPaperContextMessage(prompt, reference);
 }
 
+/**
+ * Creates c re at el eg ac yp ap er co nt ex tm es sa ge.
+ *
+ * @param prompt - Parameter used by createLegacyPaperContextMessage.
+ * @param reference - Parameter used by createLegacyPaperContextMessage.
+ * @returns Result produced by createLegacyPaperContextMessage.
+ */
 async function createLegacyPaperContextMessage(
   prompt: string,
   reference: PaperReference | null,
@@ -1251,6 +1464,15 @@ async function createLegacyPaperContextMessage(
   return context.systemMessage;
 }
 
+/**
+ * Builds b ui ld co nt ex tf ro mr ou te de ci si on.
+ *
+ * @param decision - Parameter used by buildContextFromRouteDecision.
+ * @param prompt - Parameter used by buildContextFromRouteDecision.
+ * @param candidates - Parameter used by buildContextFromRouteDecision.
+ * @param reference - Parameter used by buildContextFromRouteDecision.
+ * @returns Result produced by buildContextFromRouteDecision.
+ */
 async function buildContextFromRouteDecision(
   decision: PromptContextRouteDecision,
   prompt: string,
@@ -1294,6 +1516,13 @@ async function buildContextFromRouteDecision(
   }
 }
 
+/**
+ * Builds b ui ld at ta ch ed pa pe rc on te xt.
+ *
+ * @param prompt - Parameter used by buildAttachedPaperContext.
+ * @param references - Parameter used by buildAttachedPaperContext.
+ * @returns Result produced by buildAttachedPaperContext.
+ */
 async function buildAttachedPaperContext(
   prompt: string,
   references: PaperReference[],
@@ -1321,6 +1550,14 @@ async function buildAttachedPaperContext(
   return null;
 }
 
+/**
+ * Builds b ui ld si ng le pa pe rc on te xt.
+ *
+ * @param decision - Parameter used by buildSinglePaperContext.
+ * @param prompt - Parameter used by buildSinglePaperContext.
+ * @param reference - Parameter used by buildSinglePaperContext.
+ * @returns Result produced by buildSinglePaperContext.
+ */
 async function buildSinglePaperContext(
   decision: PromptContextRouteDecision,
   prompt: string,
@@ -1344,6 +1581,12 @@ async function buildSinglePaperContext(
   return context?.systemMessage ?? null;
 }
 
+/**
+ * Determines whether s ho ul du se se le ct ed pa pe rf or pr om pt.
+ *
+ * @param prompt - Parameter used by shouldUseSelectedPaperForPrompt.
+ * @returns Result produced by shouldUseSelectedPaperForPrompt.
+ */
 function shouldUseSelectedPaperForPrompt(prompt: string) {
   const normalizedPrompt = prompt
     .toLowerCase()
@@ -1365,6 +1608,10 @@ function shouldUseSelectedPaperForPrompt(prompt: string) {
   );
 }
 
+/**
+ * Gets g et pr om pt ro ut er ca nd id at es.
+ * @returns Result produced by getPromptRouterCandidates.
+ */
 async function getPromptRouterCandidates() {
   const maxItems = clampCandidateLimit(addon.data.settings.maxItems);
   const candidates: RagItemCandidate[] = [];
@@ -1384,6 +1631,13 @@ async function getPromptRouterCandidates() {
   return candidates.sort(sortRagCandidatesByRecency);
 }
 
+/**
+ * Sorts s or tr ag ca nd id at es by re ce nc y.
+ *
+ * @param first - Parameter used by sortRagCandidatesByRecency.
+ * @param second - Parameter used by sortRagCandidatesByRecency.
+ * @returns Result produced by sortRagCandidatesByRecency.
+ */
 function sortRagCandidatesByRecency(
   first: RagItemCandidate,
   second: RagItemCandidate,
@@ -1391,11 +1645,23 @@ function sortRagCandidatesByRecency(
   return getCandidateTimestamp(second) - getCandidateTimestamp(first);
 }
 
+/**
+ * Handles c la mp ca nd id at el im it.
+ *
+ * @param value - Parameter used by clampCandidateLimit.
+ * @returns Result produced by clampCandidateLimit.
+ */
 function clampCandidateLimit(value: number) {
   if (!Number.isFinite(value)) return 200;
   return Math.min(1000, Math.max(1, Math.floor(value)));
 }
 
+/**
+ * Gets g et ca nd id at et im es ta mp.
+ *
+ * @param candidate - Parameter used by getCandidateTimestamp.
+ * @returns Result produced by getCandidateTimestamp.
+ */
 function getCandidateTimestamp(candidate: RagItemCandidate) {
   const parsed = Date.parse(
     candidate.dateModified || candidate.dateAdded || "",
@@ -1403,6 +1669,12 @@ function getCandidateTimestamp(candidate: RagItemCandidate) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+/**
+ * Handles t op ro mp tr ou te rc an di da te.
+ *
+ * @param candidate - Parameter used by toPromptRouterCandidate.
+ * @returns Result produced by toPromptRouterCandidate.
+ */
 function toPromptRouterCandidate(
   candidate: RagItemCandidate,
 ): PromptContextRouterCandidate {
@@ -1426,6 +1698,13 @@ function toPromptRouterCandidate(
   };
 }
 
+/**
+ * Builds b ui ld me ta da ta co nt ex t.
+ *
+ * @param candidates - Parameter used by buildMetadataContext.
+ * @param fields - Parameter used by buildMetadataContext.
+ * @returns Result produced by buildMetadataContext.
+ */
 function buildMetadataContext(
   candidates: RagItemCandidate[],
   fields: MetadataFieldSelection[] = getSelectedMetadataFields(),
@@ -1452,6 +1731,13 @@ function buildMetadataContext(
   ].join("\n");
 }
 
+/**
+ * Formats f or ma tc an di da te me ta da ta.
+ *
+ * @param candidate - Parameter used by formatCandidateMetadata.
+ * @param fields - Parameter used by formatCandidateMetadata.
+ * @returns Result produced by formatCandidateMetadata.
+ */
 function formatCandidateMetadata(
   candidate: RagItemCandidate,
   fields: MetadataFieldSelection[],
@@ -1480,6 +1766,13 @@ function formatCandidateMetadata(
   return [...lines, "[/PAPER]"].join("\n");
 }
 
+/**
+ * Normalizes n or ma li ze me ta da ta va lu e.
+ *
+ * @param value - Parameter used by normalizeMetadataValue.
+ * @param fallback - Parameter used by normalizeMetadataValue.
+ * @returns Result produced by normalizeMetadataValue.
+ */
 function normalizeMetadataValue(value: unknown, fallback = "") {
   const normalized = String(value ?? "")
     .replace(/\s+/g, " ")
@@ -1487,6 +1780,13 @@ function normalizeMetadataValue(value: unknown, fallback = "") {
   return normalized || fallback;
 }
 
+/**
+ * Filters f il te rc an di da te it em id s.
+ *
+ * @param decision - Parameter used by filterCandidateItemIDs.
+ * @param candidates - Parameter used by filterCandidateItemIDs.
+ * @returns Result produced by filterCandidateItemIDs.
+ */
 function filterCandidateItemIDs(
   decision: PromptContextRouteDecision,
   candidates: RagItemCandidate[],
@@ -1522,10 +1822,26 @@ function filterCandidateItemIDs(
     .map((candidate) => candidate.itemID);
 }
 
+/**
+ * Normalizes n or ma li ze fi lt er te xt.
+ *
+ * @param value - Parameter used by normalizeFilterText.
+ * @returns Result produced by normalizeFilterText.
+ */
 function normalizeFilterText(value: unknown) {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
 
+/**
+ * Records r ec or dp ro mp tc on te xt ro ut ed eb ug.
+ *
+ * @param provider - Parameter used by recordPromptContextRouteDebug.
+ * @param model - Parameter used by recordPromptContextRouteDebug.
+ * @param decision - Parameter used by recordPromptContextRouteDebug.
+ * @param candidates - Parameter used by recordPromptContextRouteDebug.
+ * @param contextMode - Parameter used by recordPromptContextRouteDebug.
+ * @returns Result produced by recordPromptContextRouteDebug.
+ */
 function recordPromptContextRouteDebug({
   prompt,
   provider,
@@ -1560,6 +1876,13 @@ function recordPromptContextRouteDebug({
   );
 }
 
+/**
+ * Records r ec or dp ro mp tc on te xt ro ut es ki pp ed.
+ *
+ * @param prompt - Parameter used by recordPromptContextRouteSkipped.
+ * @param reason - Parameter used by recordPromptContextRouteSkipped.
+ * @returns Result produced by recordPromptContextRouteSkipped.
+ */
 function recordPromptContextRouteSkipped(prompt: string, reason: string) {
   lastPromptContextRouteDebug = {
     prompt,
@@ -1585,6 +1908,13 @@ function recordPromptContextRouteSkipped(prompt: string, reason: string) {
   );
 }
 
+/**
+ * Records r ec or dp ro mp tc on te xt ro ut ef al lb ac k.
+ *
+ * @param prompt - Parameter used by recordPromptContextRouteFallback.
+ * @param error - Parameter used by recordPromptContextRouteFallback.
+ * @returns Result produced by recordPromptContextRouteFallback.
+ */
 function recordPromptContextRouteFallback(prompt: string, error: unknown) {
   lastPromptContextRouteDebug = {
     prompt,
@@ -1611,6 +1941,13 @@ function recordPromptContextRouteFallback(prompt: string, error: unknown) {
   );
 }
 
+/**
+ * Gets g et co nt ex tm od e.
+ *
+ * @param decision - Parameter used by getContextMode.
+ * @param context - Parameter used by getContextMode.
+ * @returns Result produced by getContextMode.
+ */
 function getContextMode(
   decision: PromptContextRouteDecision,
   context: string | null | undefined,
@@ -1620,6 +1957,13 @@ function getContextMode(
   return decision.route;
 }
 
+/**
+ * Gets g et de ci si on it em id s.
+ *
+ * @param decision - Parameter used by getDecisionItemIDs.
+ * @param candidates - Parameter used by getDecisionItemIDs.
+ * @returns Result produced by getDecisionItemIDs.
+ */
 function getDecisionItemIDs(
   decision: PromptContextRouteDecision,
   candidates: RagItemCandidate[],
@@ -1647,6 +1991,11 @@ function getDecisionItemIDs(
   return [];
 }
 
+/**
+ * Returns the last captured prompt context routing debug payload.
+ *
+ * @returns Last prompt context debug payload, or null when none exists.
+ */
 export function getLastPromptContextRouteDebug() {
   return lastPromptContextRouteDebug
     ? {
@@ -1658,6 +2007,11 @@ export function getLastPromptContextRouteDebug() {
     : null;
 }
 
+/**
+ * Formats the last prompt context routing debug payload as JSON.
+ *
+ * @returns Human-readable debug string.
+ */
 export function formatLastPromptContextRouteDebug() {
   const debug = getLastPromptContextRouteDebug();
   if (!debug) return "Noch keine Prompt-Kontext-Entscheidung vorhanden.";
@@ -1665,6 +2019,13 @@ export function formatLastPromptContextRouteDebug() {
   return JSON.stringify(debug, null, 2);
 }
 
+/**
+ * Records r ec or da ss is ta nt re qu es td eb ug.
+ *
+ * @param requestMessages - Parameter used by recordAssistantRequestDebug.
+ * @param transport - Parameter used by recordAssistantRequestDebug.
+ * @returns Result produced by recordAssistantRequestDebug.
+ */
 function recordAssistantRequestDebug(
   requestMessages: RequestMessage[],
   transport: AssistantRequestDebug["transport"],
@@ -1683,6 +2044,11 @@ function recordAssistantRequestDebug(
   );
 }
 
+/**
+ * Returns the last captured assistant request debug payload.
+ *
+ * @returns Last assistant request debug payload, or null when none exists.
+ */
 export function getLastAssistantRequestDebug() {
   return lastAssistantRequestDebug
     ? {
@@ -1694,6 +2060,11 @@ export function getLastAssistantRequestDebug() {
     : null;
 }
 
+/**
+ * Formats the last assistant request debug payload as JSON.
+ *
+ * @returns Human-readable debug string.
+ */
 export function formatLastAssistantRequestDebug() {
   const debug = getLastAssistantRequestDebug();
   if (!debug) return "Noch kein KI-Request vorhanden.";
@@ -1701,6 +2072,12 @@ export function formatLastAssistantRequestDebug() {
   return JSON.stringify(debug, null, 2);
 }
 
+/**
+ * Handles c on fi gu re pr ov id er fo rr ou ti ng.
+ *
+ * @param provider - Parameter used by configureProviderForRouting.
+ * @returns Result produced by configureProviderForRouting.
+ */
 function configureProviderForRouting(provider: LLMProvider) {
   addon.api.ai.configureProvider(
     provider,
@@ -1717,10 +2094,20 @@ function configureProviderForRouting(provider: LLMProvider) {
   );
 }
 
+/**
+ * Gets g et ef fe ct iv ec on te xt ro ut er pr ov id er.
+ * @returns Result produced by getEffectiveContextRouterProvider.
+ */
 function getEffectiveContextRouterProvider(): LLMProvider {
   return addon.data.settings.contextRouterProvider;
 }
 
+/**
+ * Gets g et ro ut er mo de l.
+ *
+ * @param provider - Parameter used by getRouterModel.
+ * @returns Result produced by getRouterModel.
+ */
 function getRouterModel(provider: LLMProvider) {
   if (provider === "ollama") {
     const model = addon.data.settings.ollamaModel;
@@ -1730,6 +2117,10 @@ function getRouterModel(provider: LLMProvider) {
   return addon.data.settings.model;
 }
 
+/**
+ * Gets g et ac ti ve pa pe rr ef er en ce.
+ * @returns Result produced by getActivePaperReference.
+ */
 async function getActivePaperReference(): Promise<PaperReference | null> {
   const selectedItem = await ItemManager.getSelectedRegularItem();
   if (selectedItem) {
@@ -1760,6 +2151,12 @@ async function getActivePaperReference(): Promise<PaperReference | null> {
   return null;
 }
 
+/**
+ * Appends a pp en da ss is ta nt de lt a.
+ *
+ * @param delta - Parameter used by appendAssistantDelta.
+ * @returns Result produced by appendAssistantDelta.
+ */
 function appendAssistantDelta(delta: string): AssistantChatMessage | null {
   const activeResponse = activeAssistantResponse;
   if (!activeResponse) {
@@ -1795,6 +2192,10 @@ function appendAssistantDelta(delta: string): AssistantChatMessage | null {
   return activeResponse.assistantMessage;
 }
 
+/**
+ * Handles f in al iz ea ct iv ea ss is ta nt me ss ag e.
+ * @returns Result produced by finalizeActiveAssistantMessage.
+ */
 function finalizeActiveAssistantMessage() {
   const message = activeAssistantResponse?.assistantMessage;
   if (!message) return null;
@@ -1815,6 +2216,12 @@ function finalizeActiveAssistantMessage() {
   return message;
 }
 
+/**
+ * Handles u pd at ea ct iv ea ct iv it y.
+ *
+ * @param phase - Parameter used by updateActiveActivity.
+ * @returns Result produced by updateActiveActivity.
+ */
 function updateActiveActivity(phase: ActiveAssistantResponse["phase"]) {
   const activeResponse = activeAssistantResponse;
   if (!activeResponse || activeResponse.assistantMessage?.content.trim()) {
@@ -1829,6 +2236,10 @@ function updateActiveActivity(phase: ActiveAssistantResponse["phase"]) {
   renderAllHosts();
 }
 
+/**
+ * Gets g et vi si bl ea ct iv it y.
+ * @returns Result produced by getVisibleActivity.
+ */
 function getVisibleActivity() {
   const activeResponse = activeAssistantResponse;
   if (
@@ -1843,6 +2254,10 @@ function getVisibleActivity() {
   return activeResponse.activity;
 }
 
+/**
+ * Checks whether h as re al ch at me ss ag es.
+ * @returns Result produced by hasRealChatMessages.
+ */
 function hasRealChatMessages() {
   return messages.some(
     (message) =>
@@ -1851,6 +2266,13 @@ function hasRealChatMessages() {
   );
 }
 
+/**
+ * Derives d er iv ea ct iv it ym es sa ge.
+ *
+ * @param prompt - Parameter used by deriveActivityMessage.
+ * @param phase - Parameter used by deriveActivityMessage.
+ * @returns Result produced by deriveActivityMessage.
+ */
 function deriveActivityMessage(
   prompt: string,
   phase: ActiveAssistantResponse["phase"],
@@ -1908,6 +2330,12 @@ function deriveActivityMessage(
   return "Denke nach...";
 }
 
+/**
+ * Determines whether s ho ul df al lb ac kt ob uf fe re dc ha t.
+ *
+ * @param error - Parameter used by shouldFallbackToBufferedChat.
+ * @returns Result produced by shouldFallbackToBufferedChat.
+ */
 function shouldFallbackToBufferedChat(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   return /stream|sse|event-stream|unsupported|not supported|chatStream/i.test(
@@ -1915,10 +2343,22 @@ function shouldFallbackToBufferedChat(error: unknown) {
   );
 }
 
+/**
+ * Throws the failure for f ai ln oa ns we r.
+ * @returns Result produced by failNoAnswer.
+ */
 function failNoAnswer(): never {
   throw new Error("ZAIA hat keine Textantwort zurückgegeben.");
 }
 
+/**
+ * Appends a pp en dm es sa ge.
+ *
+ * @param role - Parameter used by appendMessage.
+ * @param content - Parameter used by appendMessage.
+ * @param tokenUsage - Parameter used by appendMessage.
+ * @returns Result produced by appendMessage.
+ */
 function appendMessage(
   role: ChatRole,
   content: string,
@@ -1936,6 +2376,12 @@ function appendMessage(
   return message;
 }
 
+/**
+ * Ensures e ns ur ea ct iv ec ha t.
+ *
+ * @param firstPrompt - Parameter used by ensureActiveChat.
+ * @returns Result produced by ensureActiveChat.
+ */
 async function ensureActiveChat(
   firstPrompt: string,
 ): Promise<ActiveChatResolution> {
@@ -1973,6 +2419,13 @@ async function ensureActiveChat(
   };
 }
 
+/**
+ * Handles t ry ge ne ra te ch at ti tl e.
+ *
+ * @param chatID - Parameter used by tryGenerateChatTitle.
+ * @param firstPrompt - Parameter used by tryGenerateChatTitle.
+ * @returns Result produced by tryGenerateChatTitle.
+ */
 async function tryGenerateChatTitle(chatID: string, firstPrompt: string) {
   try {
     await generateChatTitle(chatID, firstPrompt);
@@ -1985,6 +2438,13 @@ async function tryGenerateChatTitle(chatID: string, firstPrompt: string) {
   }
 }
 
+/**
+ * Handles g en er at ec ha tt it le.
+ *
+ * @param chatID - Parameter used by generateChatTitle.
+ * @param firstPrompt - Parameter used by generateChatTitle.
+ * @returns Result produced by generateChatTitle.
+ */
 async function generateChatTitle(chatID: string, firstPrompt: string) {
   const content = await requestGeneratedTitleContent([
     {
@@ -2004,6 +2464,12 @@ async function generateChatTitle(chatID: string, firstPrompt: string) {
   await refreshChatSummaries(true);
 }
 
+/**
+ * Requests r eq ue st ge ne ra te dt it le co nt en t.
+ *
+ * @param requestMessages - Parameter used by requestGeneratedTitleContent.
+ * @returns Result produced by requestGeneratedTitleContent.
+ */
 async function requestGeneratedTitleContent(
   requestMessages: Array<{ role: "system" | "user"; content: string }>,
 ) {
@@ -2046,6 +2512,12 @@ async function requestGeneratedTitleContent(
   throw new Error("ZAIA konnte keinen Chat-Titel generieren.");
 }
 
+/**
+ * Normalizes n or ma li ze ge ne ra te dc ha tt it le.
+ *
+ * @param content - Parameter used by normalizeGeneratedChatTitle.
+ * @returns Result produced by normalizeGeneratedChatTitle.
+ */
 function normalizeGeneratedChatTitle(content: unknown) {
   if (typeof content !== "string") return "";
 
@@ -2062,6 +2534,13 @@ function normalizeGeneratedChatTitle(content: unknown) {
   return `${title.slice(0, MAX_GENERATED_TITLE_LENGTH - 3).trim()}...`;
 }
 
+/**
+ * Persists p er si st ch at me ss ag e.
+ *
+ * @param chatID - Parameter used by persistChatMessage.
+ * @param message - Parameter used by persistChatMessage.
+ * @returns Result produced by persistChatMessage.
+ */
 async function persistChatMessage(
   chatID: string,
   message: AssistantChatMessage,
@@ -2083,11 +2562,21 @@ async function persistChatMessage(
   });
 }
 
+/**
+ * Resets r es et me ss ag es.
+ * @returns Result produced by resetMessages.
+ */
 function resetMessages() {
   messages.length = 0;
   nextMessageID = 1;
 }
 
+/**
+ * Gets g et pr ef er re da ss is ta nt ho st.
+ *
+ * @param owner - Parameter used by getPreferredAssistantHost.
+ * @returns Result produced by getPreferredAssistantHost.
+ */
 function getPreferredAssistantHost(owner?: Window | null) {
   const connectedHosts = [...hosts].filter((host) => {
     if (!host.isConnected) {
@@ -2121,6 +2610,12 @@ function getPreferredAssistantHost(owner?: Window | null) {
   return connectedHosts[0] ?? null;
 }
 
+/**
+ * Checks whether i sa ss is ta nt ho st re ad yf or po po ve r.
+ *
+ * @param host - Parameter used by isAssistantHostReadyForPopover.
+ * @returns Result produced by isAssistantHostReadyForPopover.
+ */
 function isAssistantHostReadyForPopover(host: HTMLElement) {
   if (host.hidden || host.getAttribute("aria-hidden") === "true") {
     return false;
@@ -2129,6 +2624,12 @@ function isAssistantHostReadyForPopover(host: HTMLElement) {
   return isElementReadyForPopover(host);
 }
 
+/**
+ * Checks whether i se le me nt re ad yf or po po ve r.
+ *
+ * @param element - Parameter used by isElementReadyForPopover.
+ * @returns Result produced by isElementReadyForPopover.
+ */
 function isElementReadyForPopover(element: HTMLElement) {
   const win = element.ownerDocument.defaultView;
   const style = win?.getComputedStyle(element);
@@ -2140,6 +2641,10 @@ function isElementReadyForPopover(element: HTMLElement) {
   return rect.width > 0 && rect.height > 0;
 }
 
+/**
+ * Gets g et se le ct ed it em ch at in pu t.
+ * @returns Result produced by getSelectedItemChatInput.
+ */
 function getSelectedItemChatInput(): CreateChatInput {
   try {
     const item = ItemManager.filterItems()[0];
@@ -2157,6 +2662,12 @@ function getSelectedItemChatInput(): CreateChatInput {
   }
 }
 
+/**
+ * Derives d er iv ec ha tt it le.
+ *
+ * @param prompt - Parameter used by deriveChatTitle.
+ * @returns Result produced by deriveChatTitle.
+ */
 function deriveChatTitle(prompt: string) {
   const normalized = prompt.replace(/\s+/g, " ").trim();
   if (normalized.length <= 60) return normalized;
@@ -2164,6 +2675,10 @@ function deriveChatTitle(prompt: string) {
   return `${normalized.slice(0, 57)}...`;
 }
 
+/**
+ * Renders r en de ra ll ho st s.
+ * @returns Result produced by renderAllHosts.
+ */
 function renderAllHosts() {
   for (const host of [...hosts]) {
     if (!host.isConnected) {
@@ -2211,6 +2726,12 @@ function updateSetupStallState(
   }, SETUP_STALL_TIMEOUT_MS);
 }
 
+/**
+ * Renders r en de rh os t.
+ *
+ * @param host - Parameter used by renderHost.
+ * @returns Result produced by renderHost.
+ */
 function renderHost(host: HTMLElement) {
   const main = host.querySelector<HTMLElement>(".zai-main");
   const top = host.querySelector<HTMLElement>(".zai-top");
@@ -2257,11 +2778,10 @@ function renderHost(host: HTMLElement) {
   );
   const chatReady = readiness.ready;
   updateSetupStallState(chatReady, hasActionableMilestone);
-  // Sticky: once the setup view is showing, keep it showing through a
-  // transient "checking" re-verification (e.g. switching from one provider
-  // that needs setup to another that also does) instead of dropping to the
-  // welcome screen for a frame and popping back. It still yields the
-  // instant a provider is confirmed ready.
+  /**
+   * Once the setup view is showing, keep it visible through transient
+   * re-checking so provider switches do not flash the welcome screen.
+   */
   const showSetup =
     hasActionableMilestone || setupStalled || (setupWasVisible && !chatReady);
   setupWasVisible = showSetup;
@@ -2433,9 +2953,6 @@ function createSetupMilestoneElement(
     "zai-setup-milestone-marker",
   );
   marker.setAttribute("aria-hidden", "true");
-  // Milestones aren't a strict sequence a user must complete in order, so
-  // the marker communicates status (done vs. needs something) rather than
-  // position.
   marker.textContent = milestone.state === "complete" ? "✓" : "!";
 
   const card = createControllerHtmlElement(
@@ -2856,6 +3373,14 @@ function getOllamaServiceStatusText(
   return getString("sidebar-local-unreachable");
 }
 
+/**
+ * Creates c re at eh tm lb ut to n.
+ *
+ * @param doc - Parameter used by createHtmlButton.
+ * @param className - Parameter used by createHtmlButton.
+ * @param text - Parameter used by createHtmlButton.
+ * @returns Result produced by createHtmlButton.
+ */
 function createHtmlButton(doc: Document, className: string, text: string) {
   const button = createControllerHtmlElement(
     doc,
@@ -2867,16 +3392,35 @@ function createHtmlButton(doc: Document, className: string, text: string) {
   return button;
 }
 
+/**
+ * Checks whether i sp ro vi de rc on ne ct io nr ea dy.
+ *
+ * @param connection - Parameter used by isProviderConnectionReady.
+ * @returns Result produced by isProviderConnectionReady.
+ */
 function isProviderConnectionReady(
   connection: ProviderConnectionResult | undefined,
 ) {
   return connection?.status === "ready";
 }
 
+/**
+ * Checks whether i se mb ed di ng co nn ec ti on re ad y.
+ *
+ * @param connection - Parameter used by isEmbeddingConnectionReady.
+ * @returns Result produced by isEmbeddingConnectionReady.
+ */
 function isEmbeddingConnectionReady(connection: EmbeddingConnectionResult) {
   return connection.status === "ready";
 }
 
+/**
+ * Gets g et co mp os er st at us te xt.
+ *
+ * @param providerReady - Parameter used by getComposerStatusText.
+ * @param readiness - Parameter used by getComposerStatusText.
+ * @returns Result produced by getComposerStatusText.
+ */
 function getComposerStatusText(
   providerReady: boolean,
   readiness?: SetupReadiness,
@@ -2898,6 +3442,13 @@ function getComposerStatusText(
   return requestRunning ? "ZAIA antwortet" : "";
 }
 
+/**
+ * Synchronizes s yn cs en db ut to n.
+ *
+ * @param button - Parameter used by syncSendButton.
+ * @param providerReady - Parameter used by syncSendButton.
+ * @returns Result produced by syncSendButton.
+ */
 function syncSendButton(button: HTMLButtonElement, providerReady: boolean) {
   const doc = button.ownerDocument;
   const isStopping = requestRunning && activeChatCancelRequested;
@@ -3046,6 +3597,13 @@ function getProviderConnectionStatusText(
   return getString("sidebar-connection-check-failed");
 }
 
+/**
+ * Creates c re at em es sa ge el em en t.
+ *
+ * @param host - Parameter used by createMessageElement.
+ * @param message - Parameter used by createMessageElement.
+ * @returns Result produced by createMessageElement.
+ */
 function createMessageElement(
   host: HTMLElement,
   message: AssistantChatMessage,
@@ -3106,6 +3664,13 @@ function createMessageElement(
   return row;
 }
 
+/**
+ * Creates c re at em es sa ge co py ac ti on s.
+ *
+ * @param host - Parameter used by createMessageCopyActions.
+ * @param message - Parameter used by createMessageCopyActions.
+ * @returns Result produced by createMessageCopyActions.
+ */
 function createMessageCopyActions(
   host: HTMLElement,
   message: AssistantChatMessage,
@@ -3133,6 +3698,14 @@ function createMessageCopyActions(
   return actions;
 }
 
+/**
+ * Copies c op ym es sa ge to cl ip bo ar d.
+ *
+ * @param host - Parameter used by copyMessageToClipboard.
+ * @param text - Parameter used by copyMessageToClipboard.
+ * @param button - Parameter used by copyMessageToClipboard.
+ * @returns Result produced by copyMessageToClipboard.
+ */
 async function copyMessageToClipboard(
   host: HTMLElement,
   text: string,
@@ -3152,6 +3725,13 @@ async function copyMessageToClipboard(
   }
 }
 
+/**
+ * Handles w ri te te xt to cl ip bo ar d.
+ *
+ * @param host - Parameter used by writeTextToClipboard.
+ * @param text - Parameter used by writeTextToClipboard.
+ * @returns Result produced by writeTextToClipboard.
+ */
 async function writeTextToClipboard(host: HTMLElement, text: string) {
   const win = host.ownerDocument?.defaultView;
   const clipboard = win?.navigator?.clipboard;
@@ -3172,6 +3752,12 @@ async function writeTextToClipboard(host: HTMLElement, text: string) {
   throw clipboardError ?? new Error("Clipboard API nicht verfügbar.");
 }
 
+/**
+ * Copies c op yt ex tw it hc li pb oa rd he lp er.
+ *
+ * @param text - Parameter used by copyTextWithClipboardHelper.
+ * @returns Result produced by copyTextWithClipboardHelper.
+ */
 function copyTextWithClipboardHelper(text: string) {
   try {
     Components.classes["@mozilla.org/widget/clipboardhelper;1"]
@@ -3183,6 +3769,13 @@ function copyTextWithClipboardHelper(text: string) {
   }
 }
 
+/**
+ * Copies c op yt ex tw it hs el ec ti on fa ll ba ck.
+ *
+ * @param host - Parameter used by copyTextWithSelectionFallback.
+ * @param text - Parameter used by copyTextWithSelectionFallback.
+ * @returns Result produced by copyTextWithSelectionFallback.
+ */
 function copyTextWithSelectionFallback(host: HTMLElement, text: string) {
   const doc = host.ownerDocument;
   const textarea = doc.createElementNS(
@@ -3211,6 +3804,15 @@ function copyTextWithSelectionFallback(host: HTMLElement, text: string) {
   }
 }
 
+/**
+ * Sets s et co py bu tt on st at e.
+ *
+ * @param host - Parameter used by setCopyButtonState.
+ * @param button - Parameter used by setCopyButtonState.
+ * @param ariaLabel - Parameter used by setCopyButtonState.
+ * @param copied - Parameter used by setCopyButtonState.
+ * @returns Result produced by setCopyButtonState.
+ */
 function setCopyButtonState(
   host: HTMLElement,
   button: HTMLButtonElement,
@@ -3241,6 +3843,12 @@ function setCopyButtonState(
   }, 1200);
 }
 
+/**
+ * Creates c re at ec op yi co n.
+ *
+ * @param doc - Parameter used by createCopyIcon.
+ * @returns Result produced by createCopyIcon.
+ */
 function createCopyIcon(doc: Document) {
   const svg = doc.createElementNS(SVG_NS, "svg");
   const rectBack = doc.createElementNS(SVG_NS, "rect");
@@ -3263,6 +3871,12 @@ function createCopyIcon(doc: Document) {
   return svg;
 }
 
+/**
+ * Creates c re at ec he ck ic on.
+ *
+ * @param doc - Parameter used by createCheckIcon.
+ * @returns Result produced by createCheckIcon.
+ */
 function createCheckIcon(doc: Document) {
   const svg = doc.createElementNS(SVG_NS, "svg");
   const path = doc.createElementNS(SVG_NS, "path");
@@ -3278,6 +3892,12 @@ function createCheckIcon(doc: Document) {
   return svg;
 }
 
+/**
+ * Creates c re at es en da rr ow ic on.
+ *
+ * @param doc - Parameter used by createSendArrowIcon.
+ * @returns Result produced by createSendArrowIcon.
+ */
 function createSendArrowIcon(doc: Document) {
   const svg = createIconSvg(doc, "20");
   const line = doc.createElementNS(SVG_NS, "path");
@@ -3290,6 +3910,12 @@ function createSendArrowIcon(doc: Document) {
   return svg;
 }
 
+/**
+ * Creates c re at es to ps qu ar ei co n.
+ *
+ * @param doc - Parameter used by createStopSquareIcon.
+ * @returns Result produced by createStopSquareIcon.
+ */
 function createStopSquareIcon(doc: Document) {
   const svg = createIconSvg(doc, "22");
   const square = doc.createElementNS(SVG_NS, "rect");
@@ -3304,6 +3930,13 @@ function createStopSquareIcon(doc: Document) {
   return svg;
 }
 
+/**
+ * Creates c re at ei co ns vg.
+ *
+ * @param doc - Parameter used by createIconSvg.
+ * @param size - Parameter used by createIconSvg.
+ * @returns Result produced by createIconSvg.
+ */
 function createIconSvg(doc: Document, size: string) {
   const svg = doc.createElementNS(SVG_NS, "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
@@ -3319,6 +3952,13 @@ function createIconSvg(doc: Document, size: string) {
   return svg;
 }
 
+/**
+ * Creates c re at ea ct iv it ye le me nt.
+ *
+ * @param host - Parameter used by createActivityElement.
+ * @param text - Parameter used by createActivityElement.
+ * @returns Result produced by createActivityElement.
+ */
 function createActivityElement(host: HTMLElement, text: string) {
   const element = host.ownerDocument!.createElementNS(
     HTML_NS,
@@ -3329,6 +3969,13 @@ function createActivityElement(host: HTMLElement, text: string) {
   return element;
 }
 
+/**
+ * Renders r en de rc ha tl is t.
+ *
+ * @param host - Parameter used by renderChatList.
+ * @param chatList - Parameter used by renderChatList.
+ * @returns Result produced by renderChatList.
+ */
 function renderChatList(host: HTMLElement, chatList: HTMLElement) {
   const doc = host.ownerDocument!;
   if (!chatSummariesLoaded) {
@@ -3360,17 +4007,31 @@ function renderChatList(host: HTMLElement, chatList: HTMLElement) {
   chatList.replaceChildren(...entries);
 }
 
+/**
+ * Gets g et ac ti ve ch at ti tl e.
+ * @returns Result produced by getActiveChatTitle.
+ */
 function getActiveChatTitle() {
   const chat = getActiveChatSummary();
   return chat?.title || "Unbenannter Chat";
 }
 
+/**
+ * Gets g et ac ti ve ch at su mm ar y.
+ * @returns Result produced by getActiveChatSummary.
+ */
 function getActiveChatSummary() {
   if (!activeChatID) return null;
 
   return chatSummaries.find((entry) => entry.id === activeChatID) ?? null;
 }
 
+/**
+ * Confirms c on fi rm de le te ac ti ve ch at.
+ *
+ * @param host - Parameter used by confirmDeleteActiveChat.
+ * @returns Result produced by confirmDeleteActiveChat.
+ */
 function confirmDeleteActiveChat(host: HTMLElement) {
   const win = host.ownerDocument?.defaultView;
   if (typeof win?.confirm !== "function") return true;
@@ -3378,6 +4039,12 @@ function confirmDeleteActiveChat(host: HTMLElement) {
   return win.confirm(`Chat "${getActiveChatTitle()}" wirklich löschen?`);
 }
 
+/**
+ * Formats f or ma tr el at iv et im e.
+ *
+ * @param value - Parameter used by formatRelativeTime.
+ * @returns Result produced by formatRelativeTime.
+ */
 function formatRelativeTime(value: string) {
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) return "";
@@ -3408,12 +4075,20 @@ function syncAllModelPickers() {
   }
 }
 
+/**
+ * Synchronizes s yn ca ll me ta da ta fi el dc on tr ol s.
+ * @returns Result produced by syncAllMetadataFieldControls.
+ */
 function syncAllMetadataFieldControls() {
   for (const host of [...hosts]) {
     syncMetadataFieldControls(host);
   }
 }
 
+/**
+ * Synchronizes s yn ca ll pa pe rc on te xt co nt ro ls.
+ * @returns Result produced by syncAllPaperContextControls.
+ */
 function syncAllPaperContextControls() {
   syncPaperContextBadges();
   for (const host of [...hosts]) {
@@ -3421,6 +4096,10 @@ function syncAllPaperContextControls() {
   }
 }
 
+/**
+ * Synchronizes s yn cp ap er co nt ex tb ad ge s.
+ * @returns Result produced by syncPaperContextBadges.
+ */
 function syncPaperContextBadges() {
   const count = getVisiblePaperContextCount();
   const documents = new Set<Document>();
@@ -3432,9 +4111,7 @@ function syncPaperContextBadges() {
     for (const win of Zotero.getMainWindows()) {
       if (win.document) documents.add(win.document);
     }
-  } catch {
-    // Sidebar hosts are still handled above.
-  }
+  } catch {}
 
   for (const doc of documents) {
     doc
@@ -3446,6 +4123,12 @@ function syncPaperContextBadges() {
   }
 }
 
+/**
+ * Ensures e ns ur ep ap er co nt ex ts el ec ti on po ll in g.
+ *
+ * @param win - Parameter used by ensurePaperContextSelectionPolling.
+ * @returns Result produced by ensurePaperContextSelectionPolling.
+ */
 function ensurePaperContextSelectionPolling(win: Window | null) {
   if (!win) return;
   if (paperContextSelectionPollID !== null) return;
@@ -3460,6 +4143,12 @@ function ensurePaperContextSelectionPolling(win: Window | null) {
   }, 500);
 }
 
+/**
+ * Ensures e ns ur ep ap er co nt ex ts el ec ti on ev en th an dl er s.
+ *
+ * @param win - Parameter used by ensurePaperContextSelectionEventHandlers.
+ * @returns Result produced by ensurePaperContextSelectionEventHandlers.
+ */
 function ensurePaperContextSelectionEventHandlers(win: Window | null) {
   if (!win || paperContextSelectionWindows.has(win)) return;
 
@@ -3493,6 +4182,12 @@ function syncModelPicker(host: HTMLElement) {
   );
 }
 
+/**
+ * Synchronizes s yn cm et ad at af ie ld co nt ro ls.
+ *
+ * @param host - Parameter used by syncMetadataFieldControls.
+ * @returns Result produced by syncMetadataFieldControls.
+ */
 function syncMetadataFieldControls(host: HTMLElement) {
   const selection = normalizeMetadataFieldSelection(
     addon.data.settings.metadataFieldSelection,
@@ -3514,6 +4209,13 @@ function syncMetadataFieldControls(host: HTMLElement) {
   button?.setAttribute("title", title);
 }
 
+/**
+ * Saves s av em et ad at af ie ld se le ct io n.
+ *
+ * @param checkboxes - Parameter used by saveMetadataFieldSelection.
+ * @param changedCheckbox - Parameter used by saveMetadataFieldSelection.
+ * @returns Result produced by saveMetadataFieldSelection.
+ */
 function saveMetadataFieldSelection(
   checkboxes: HTMLInputElement[],
   changedCheckbox: HTMLInputElement,
@@ -3534,6 +4236,12 @@ function saveMetadataFieldSelection(
   syncAllMetadataFieldControls();
 }
 
+/**
+ * Synchronizes s yn cp ap er co nt ex tc on tr ol s.
+ *
+ * @param host - Parameter used by syncPaperContextControls.
+ * @returns Result produced by syncPaperContextControls.
+ */
 function syncPaperContextControls(host: HTMLElement) {
   const automaticEntries = getAutomaticPaperContextEntries();
   const manualEntries = getManualPaperContextEntries(automaticEntries);
@@ -3572,6 +4280,13 @@ function syncPaperContextControls(host: HTMLElement) {
   }
 }
 
+/**
+ * Synchronizes s yn cp ap er co nt ex ti nd ex wa rn in g.
+ *
+ * @param host - Parameter used by syncPaperContextIndexWarning.
+ * @param entries - Parameter used by syncPaperContextIndexWarning.
+ * @returns Result produced by syncPaperContextIndexWarning.
+ */
 function syncPaperContextIndexWarning(
   host: HTMLElement,
   entries: PaperContextEntry[],
@@ -3594,6 +4309,14 @@ function syncPaperContextIndexWarning(
     : "";
 }
 
+/**
+ * Renders r en de rp ap er co nt ex tl is t.
+ *
+ * @param list - Parameter used by renderPaperContextList.
+ * @param entries - Parameter used by renderPaperContextList.
+ * @param emptyText - Parameter used by renderPaperContextList.
+ * @returns Result produced by renderPaperContextList.
+ */
 function renderPaperContextList(
   list: HTMLElement,
   entries: PaperContextEntry[],
@@ -3622,6 +4345,12 @@ function renderPaperContextList(
   );
 }
 
+/**
+ * Renders r en de rp ap er li br ar yr es ul ts.
+ *
+ * @param container - Parameter used by renderPaperLibraryResults.
+ * @returns Result produced by renderPaperLibraryResults.
+ */
 function renderPaperLibraryResults(container: HTMLElement) {
   const doc = container.ownerDocument;
   const hasSearch = Boolean(paperLibrarySearchValue.trim());
@@ -3672,6 +4401,13 @@ function renderPaperLibraryResults(container: HTMLElement) {
   );
 }
 
+/**
+ * Creates c re at ep ap er co nt ex tr ow.
+ *
+ * @param doc - Parameter used by createPaperContextRow.
+ * @param entry - Parameter used by createPaperContextRow.
+ * @returns Result produced by createPaperContextRow.
+ */
 function createPaperContextRow(doc: Document, entry: PaperContextEntry) {
   const row = createControllerHtmlElement(
     doc,
@@ -3716,6 +4452,13 @@ function createPaperContextRow(doc: Document, entry: PaperContextEntry) {
   return row;
 }
 
+/**
+ * Creates c re at ep ap er li br ar yr es ul tr ow.
+ *
+ * @param doc - Parameter used by createPaperLibraryResultRow.
+ * @param option - Parameter used by createPaperLibraryResultRow.
+ * @returns Result produced by createPaperLibraryResultRow.
+ */
 function createPaperLibraryResultRow(
   doc: Document,
   option: PaperLibraryOption,
@@ -3760,6 +4503,12 @@ function createPaperLibraryResultRow(
   return row;
 }
 
+/**
+ * Ensures e ns ur ep ap er li br ar yo pt io ns lo ad ed.
+ *
+ * @param force - Parameter used by ensurePaperLibraryOptionsLoaded.
+ * @returns Result produced by ensurePaperLibraryOptionsLoaded.
+ */
 async function ensurePaperLibraryOptionsLoaded(force = false) {
   if (
     !force &&
@@ -3798,6 +4547,10 @@ async function ensurePaperLibraryOptionsLoaded(force = false) {
   syncAllPaperContextControls();
 }
 
+/**
+ * Adds a dd be st ma tc hi ng pa pe rt om an ua lc on te xt.
+ * @returns Result produced by addBestMatchingPaperToManualContext.
+ */
 function addBestMatchingPaperToManualContext() {
   const option = getBestMatchingPaperLibraryOption();
   if (!option) return;
@@ -3805,6 +4558,12 @@ function addBestMatchingPaperToManualContext() {
   addPaperLibraryOptionToManualContext(option);
 }
 
+/**
+ * Adds a dd pa pe rl ib ra ry op ti on to ma nu al co nt ex t.
+ *
+ * @param option - Parameter used by addPaperLibraryOptionToManualContext.
+ * @returns Result produced by addPaperLibraryOptionToManualContext.
+ */
 function addPaperLibraryOptionToManualContext(option: PaperLibraryOption) {
   manualPaperContextEntries.set(getPaperContextKey(option), {
     libraryID: option.libraryID,
@@ -3819,6 +4578,12 @@ function addPaperLibraryOptionToManualContext(option: PaperLibraryOption) {
   syncAllPaperContextControls();
 }
 
+/**
+ * Removes r em ov ea ut om at ic pa pe rc on te xt en tr y.
+ *
+ * @param entry - Parameter used by removeAutomaticPaperContextEntry.
+ * @returns Result produced by removeAutomaticPaperContextEntry.
+ */
 async function removeAutomaticPaperContextEntry(entry: PaperContextEntry) {
   const key = getPaperContextKey(entry);
   manualPaperContextEntries.delete(key);
@@ -3833,10 +4598,20 @@ async function removeAutomaticPaperContextEntry(entry: PaperContextEntry) {
   syncAllPaperContextControls();
 }
 
+/**
+ * Gets g et be st ma tc hi ng pa pe rl ib ra ry op ti on.
+ * @returns Result produced by getBestMatchingPaperLibraryOption.
+ */
 function getBestMatchingPaperLibraryOption() {
   return getFilteredPaperLibraryOptions()[0] ?? null;
 }
 
+/**
+ * Creates c re at ep ap er li br ar yo pt io n.
+ *
+ * @param candidate - Parameter used by createPaperLibraryOption.
+ * @returns Result produced by createPaperLibraryOption.
+ */
 function createPaperLibraryOption(
   candidate: RagItemCandidate,
 ): PaperLibraryOption {
@@ -3862,6 +4637,10 @@ function createPaperLibraryOption(
   return option;
 }
 
+/**
+ * Gets g et fi lt er ed pa pe rl ib ra ry op ti on s.
+ * @returns Result produced by getFilteredPaperLibraryOptions.
+ */
 function getFilteredPaperLibraryOptions() {
   const attachedKeys = new Set(
     getVisiblePaperContextEntries().map(getPaperContextKey),
@@ -3878,6 +4657,10 @@ function getFilteredPaperLibraryOptions() {
     .slice(0, 8);
 }
 
+/**
+ * Gets g et vi si bl ep ap er co nt ex te nt ri es.
+ * @returns Result produced by getVisiblePaperContextEntries.
+ */
 function getVisiblePaperContextEntries() {
   const entries = new Map<string, PaperContextEntry>();
 
@@ -3893,6 +4676,10 @@ function getVisiblePaperContextEntries() {
   return [...entries.values()];
 }
 
+/**
+ * Gets g et vi si bl ep ap er co nt ex tc ou nt.
+ * @returns Result produced by getVisiblePaperContextCount.
+ */
 function getVisiblePaperContextCount() {
   const automaticEntries = getAutomaticPaperContextEntries();
   return (
@@ -3901,6 +4688,12 @@ function getVisiblePaperContextCount() {
   );
 }
 
+/**
+ * Gets g et ma nu al pa pe rc on te xt en tr ie s.
+ *
+ * @param automaticEntries - Parameter used by getManualPaperContextEntries.
+ * @returns Result produced by getManualPaperContextEntries.
+ */
 function getManualPaperContextEntries(automaticEntries: PaperContextEntry[]) {
   const automaticKeys = new Set(automaticEntries.map(getPaperContextKey));
   return [...manualPaperContextEntries.values()].filter(
@@ -3908,6 +4701,10 @@ function getManualPaperContextEntries(automaticEntries: PaperContextEntry[]) {
   );
 }
 
+/**
+ * Gets g et fo rc ed pa pe rc on te xt re fe re nc es.
+ * @returns Result produced by getForcedPaperContextReferences.
+ */
 function getForcedPaperContextReferences() {
   const references = new Map<string, PaperReference>();
 
@@ -3931,12 +4728,20 @@ function getForcedPaperContextReferences() {
   return [...references.values()];
 }
 
+/**
+ * Gets g et au to ma ti cp ap er co nt ex te nt ri es.
+ * @returns Result produced by getAutomaticPaperContextEntries.
+ */
 function getAutomaticPaperContextEntries() {
   return getSelectedContextItems().map((item) =>
     createPaperContextEntry(item, "automatic"),
   );
 }
 
+/**
+ * Gets g et se le ct ed co nt ex ti te ms.
+ * @returns Result produced by getSelectedContextItems.
+ */
 function getSelectedContextItems() {
   try {
     return ItemManager.filterItems();
@@ -3948,10 +4753,21 @@ function getSelectedContextItems() {
   }
 }
 
+/**
+ * Gets g et au to ma ti cp ap er co nt ex ts ig na tu re.
+ * @returns Result produced by getAutomaticPaperContextSignature.
+ */
 function getAutomaticPaperContextSignature() {
   return getAutomaticPaperContextEntries().map(getPaperContextKey).join("|");
 }
 
+/**
+ * Creates c re at ep ap er co nt ex te nt ry.
+ *
+ * @param item - Parameter used by createPaperContextEntry.
+ * @param source - Parameter used by createPaperContextEntry.
+ * @returns Result produced by createPaperContextEntry.
+ */
 function createPaperContextEntry(
   item: Zotero.Item,
   source: PaperContextEntry["source"],
@@ -3968,14 +4784,35 @@ function createPaperContextEntry(
   };
 }
 
+/**
+ * Gets g et pa pe rc on te xt me ta.
+ *
+ * @param entry - Parameter used by getPaperContextMeta.
+ * @returns Result produced by getPaperContextMeta.
+ */
 function getPaperContextMeta(entry: PaperContextEntry) {
   return [entry.firstCreator, entry.year].filter(Boolean).join(" · ");
 }
 
+/**
+ * Gets g et pa pe rc on te xt ke y.
+ *
+ * @param reference - Parameter used by getPaperContextKey.
+ * @returns Result produced by getPaperContextKey.
+ */
 function getPaperContextKey(reference: PaperReference) {
   return `${reference.libraryID}:${reference.itemKey}`;
 }
 
+/**
+ * Creates c re at ec on tr ol le rh tm le le me nt.
+ *
+ * @param doc - Parameter used by createControllerHtmlElement.
+ * @param tagName - Parameter used by createControllerHtmlElement.
+ * @param className - Parameter used by createControllerHtmlElement.
+ * @param text - Parameter used by createControllerHtmlElement.
+ * @returns Result produced by createControllerHtmlElement.
+ */
 function createControllerHtmlElement<K extends keyof HTMLElementTagNameMap>(
   doc: Document,
   tagName: K,
@@ -3988,6 +4825,12 @@ function createControllerHtmlElement<K extends keyof HTMLElementTagNameMap>(
   return element;
 }
 
+/**
+ * Toggles t og gl em et ad at ap op ov er.
+ *
+ * @param control - Parameter used by toggleMetadataPopover.
+ * @returns Result produced by toggleMetadataPopover.
+ */
 function toggleMetadataPopover(control: HTMLElement) {
   const open = !control.classList.contains("zai-metadata-control-open");
   if (open) {
@@ -3997,6 +4840,12 @@ function toggleMetadataPopover(control: HTMLElement) {
   }
 }
 
+/**
+ * Opens o pe nm et ad at ap op ov er.
+ *
+ * @param control - Parameter used by openMetadataPopover.
+ * @returns Result produced by openMetadataPopover.
+ */
 function openMetadataPopover(control: HTMLElement) {
   closeOtherMetadataPopovers(control);
   const button = control.querySelector<HTMLButtonElement>(
@@ -4009,6 +4858,12 @@ function openMetadataPopover(control: HTMLElement) {
   popover?.removeAttribute("hidden");
 }
 
+/**
+ * Closes c lo se me ta da ta po po ve r.
+ *
+ * @param control - Parameter used by closeMetadataPopover.
+ * @returns Result produced by closeMetadataPopover.
+ */
 function closeMetadataPopover(control: HTMLElement) {
   const button = control.querySelector<HTMLButtonElement>(
     ".zai-metadata-button",
@@ -4020,6 +4875,12 @@ function closeMetadataPopover(control: HTMLElement) {
   popover?.setAttribute("hidden", "");
 }
 
+/**
+ * Closes c lo se ot he rm et ad at ap op ov er s.
+ *
+ * @param control - Parameter used by closeOtherMetadataPopovers.
+ * @returns Result produced by closeOtherMetadataPopovers.
+ */
 function closeOtherMetadataPopovers(control: HTMLElement) {
   control.ownerDocument
     .querySelectorAll<HTMLElement>(".zai-metadata-control-open")
@@ -4030,6 +4891,12 @@ function closeOtherMetadataPopovers(control: HTMLElement) {
     });
 }
 
+/**
+ * Ensures e ns ur em et ad at ap op ov er ou ts id eh an dl er.
+ *
+ * @param doc - Parameter used by ensureMetadataPopoverOutsideHandler.
+ * @returns Result produced by ensureMetadataPopoverOutsideHandler.
+ */
 function ensureMetadataPopoverOutsideHandler(doc: Document) {
   if (metadataPopoverDocuments.has(doc)) return;
 
@@ -4046,6 +4913,13 @@ function ensureMetadataPopoverOutsideHandler(doc: Document) {
   });
 }
 
+/**
+ * Synchronizes s yn cm od el pi ck er di sc lo su re.
+ *
+ * @param host - Parameter used by syncModelPickerDisclosure.
+ * @param provider - Parameter used by syncModelPickerDisclosure.
+ * @returns Result produced by syncModelPickerDisclosure.
+ */
 function syncModelPickerDisclosure(host: HTMLElement, provider: LLMProvider) {
   const picker = host.querySelector<HTMLElement>(".zai-model-picker");
   const toggle = host.querySelector<HTMLButtonElement>(
@@ -4073,6 +4947,12 @@ function syncModelPickerDisclosure(host: HTMLElement, provider: LLMProvider) {
   }
 }
 
+/**
+ * Sets s et mo de lp ic ke re xp an de d.
+ *
+ * @param expanded - Parameter used by setModelPickerExpanded.
+ * @returns Result produced by setModelPickerExpanded.
+ */
 function setModelPickerExpanded(expanded: boolean) {
   modelPickerExpanded = expanded;
   if (!expanded) {
@@ -4131,13 +5011,20 @@ function setActiveProvider(provider: LLMProvider) {
     addon.api.configureEmbeddings();
   }
 
-  // Auch ein Klick auf den bereits aktiven Provider synchronisiert die UI und
-  // stößt eine aktuelle Modell- und Verbindungsprüfung an.
+  /**
+   * A click on the already active provider still refreshes UI, models, and
+   * connection readiness so stale setup state is corrected.
+   */
   syncAllModelPickers();
   void ensureModelOptionsLoaded(provider);
   void revalidateCurrentReadiness(true);
 }
 
+/**
+ * Resets setup-relevant runtime state after preferences that affect readiness changed.
+ *
+ * @returns Nothing.
+ */
 export function handleSetupRelevantSettingsChanged() {
   nextProviderConnectionRequestID += 1;
   nextEmbeddingConnectionRequestID += 1;
@@ -4163,6 +5050,12 @@ export function handleSetupRelevantSettingsChanged() {
   void revalidateCurrentReadiness(true);
 }
 
+/**
+ * Confirms c on fi rm te rm in at eo ll am a.
+ *
+ * @param host - Parameter used by confirmTerminateOllama.
+ * @returns Result produced by confirmTerminateOllama.
+ */
 function confirmTerminateOllama(host: HTMLElement) {
   const win = host.ownerDocument.defaultView;
   if (!win) return false;
@@ -4172,6 +5065,10 @@ function confirmTerminateOllama(host: HTMLElement) {
   );
 }
 
+/**
+ * Terminates t er mi na te ol la ma co mp le te ly.
+ * @returns Result produced by terminateOllamaCompletely.
+ */
 async function terminateOllamaCompletely() {
   ollamaTerminateRunning = true;
   renderAllHosts();
@@ -4226,6 +5123,12 @@ async function revalidateCurrentReadiness(force: boolean) {
   return getCurrentSetupReadiness();
 }
 
+/**
+ * Ensures e ns ur ep ro vi de rc on ne ct io nc he ck ed.
+ *
+ * @param provider - Parameter used by ensureProviderConnectionChecked.
+ * @returns Result produced by ensureProviderConnectionChecked.
+ */
 function ensureProviderConnectionChecked(provider: LLMProvider) {
   const connection = addon.data.runtime.providerConnections[provider];
   if (connection) {
@@ -4236,6 +5139,13 @@ function ensureProviderConnectionChecked(provider: LLMProvider) {
   void checkProviderConnection(provider, false);
 }
 
+/**
+ * Checks c he ck pr ov id er co nn ec ti on.
+ *
+ * @param provider - Parameter used by checkProviderConnection.
+ * @param force - Parameter used by checkProviderConnection.
+ * @returns Result produced by checkProviderConnection.
+ */
 async function checkProviderConnection(provider: LLMProvider, force: boolean) {
   const currentConnection = addon.data.runtime.providerConnections[provider];
   if (!force && currentConnection) return currentConnection;
@@ -4266,6 +5176,12 @@ async function checkProviderConnection(provider: LLMProvider, force: boolean) {
   }
 }
 
+/**
+ * Checks c he ck em be dd in gc on ne ct io n.
+ *
+ * @param force - Parameter used by checkEmbeddingConnection.
+ * @returns Result produced by checkEmbeddingConnection.
+ */
 async function checkEmbeddingConnection(force: boolean) {
   const currentConnection = addon.data.runtime.embeddingConnection;
   if (!force && currentConnection.status !== "unknown") {
@@ -4434,11 +5350,10 @@ async function pullSetupModel(
   const provider = addon.api.ai.getProvider("ollama");
   if (typeof provider.pullModel !== "function") return;
 
-  // Must be created from the same window whose fetch() will actually send
-  // the request - Gecko rejects an AbortSignal from a different global
-  // ("'signal' member of RequestInit does not implement interface
-  // AbortSignal"), which is exactly what happened when this used the
-  // generic, window-agnostic AbortController before.
+  /**
+   * The controller must come from the same window as fetch because Gecko
+   * rejects AbortSignal instances created in a different global.
+   */
   const controller = createWindowAbortController(win);
   setupModelDownloads.set(target, {
     status: "downloading",
@@ -4463,10 +5378,10 @@ async function pullSetupModel(
             statusText: formatProgressStatus(progress),
             controller,
           });
-          // Ollama streams a progress line every few KB, which can be many
-          // times a second - re-rendering the whole sidebar that often
-          // would block the tab reading the response and stall the
-          // download. A render every 300ms is still smooth.
+          /**
+           * Ollama can stream progress many times per second; throttling
+           * renders keeps the response reader from being blocked by UI work.
+           */
           const now = Date.now();
           if (!progress.done && now - lastProgressRenderAt < 300) {
             return;
@@ -4474,9 +5389,10 @@ async function pullSetupModel(
           lastProgressRenderAt = now;
           renderAllHosts();
         } catch (renderError) {
-          // A bug in the progress UI must never bubble up into pullModel's
-          // stream-reading loop, where it would get misread as a network
-          // failure and abort an otherwise healthy download.
+          /**
+           * Progress UI failures must not bubble into the model stream reader,
+           * where they would be treated as download failures.
+           */
           Zotero.logError(
             renderError instanceof Error
               ? renderError
@@ -4502,10 +5418,10 @@ async function pullSetupModel(
     }
 
     Zotero.logError(error instanceof Error ? error : new Error(String(error)));
-    // AIProviderResponseError's own message is a generic summary; the real
-    // underlying cause (e.g. the actual network/parse error) is chained via
-    // `.cause`. Log it too so a recurring report can be root-caused from
-    // Zotero's error console instead of guessing from the friendly text.
+    /**
+     * Provider response errors can wrap the actionable failure in `cause`;
+     * logging it preserves root-cause detail in Zotero's error console.
+     */
     const cause =
       error && typeof error === "object" && "cause" in error
         ? (error as { cause?: unknown }).cause
@@ -4540,6 +5456,10 @@ function cancelSetupModelDownload(target: SetupModelDownloadTarget) {
   renderAllHosts();
 }
 
+/**
+ * Waits for w ai tf or ol la ma co nn ec ti on.
+ * @returns Result produced by waitForOllamaConnection.
+ */
 async function waitForOllamaConnection() {
   const timeoutAt = Date.now() + 12_000;
   let result: ProviderConnectionResult | undefined;
@@ -4553,6 +5473,12 @@ async function waitForOllamaConnection() {
   return result;
 }
 
+/**
+ * Delays execution for the requested duration.
+ *
+ * @param ms - Parameter used by delay.
+ * @returns Result produced by delay.
+ */
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -4607,6 +5533,13 @@ async function ensureModelOptionsLoaded(provider: LLMProvider, force = false) {
   }
 }
 
+/**
+ * Normalizes n or ma li ze mo de lo pt io ns.
+ *
+ * @param models - Parameter used by normalizeModelOptions.
+ * @param provider - Parameter used by normalizeModelOptions.
+ * @returns Result produced by normalizeModelOptions.
+ */
 function normalizeModelOptions(
   models: unknown,
   provider?: LLMProvider,
@@ -4644,6 +5577,12 @@ function normalizeModelOptions(
   return sortModelOptions(options);
 }
 
+/**
+ * Checks whether i sl oc al em be dd in gm od el.
+ *
+ * @param model - Parameter used by isLocalEmbeddingModel.
+ * @returns Result produced by isLocalEmbeddingModel.
+ */
 function isLocalEmbeddingModel(model: string) {
   const value = model.trim().toLowerCase();
   if (!value) return false;
@@ -4721,12 +5660,25 @@ function getModelDropdownValues(
   return [...new Set(values.filter(Boolean))].sort(compareModelNames);
 }
 
+/**
+ * Sorts s or tm od el op ti on s.
+ *
+ * @param options - Parameter used by sortModelOptions.
+ * @returns Result produced by sortModelOptions.
+ */
 function sortModelOptions(options: ModelOption[]) {
   return [...options].sort((a, b) =>
     compareModelNames(a.name || a.id, b.name || b.id),
   );
 }
 
+/**
+ * Compares c om pa re mo de ln am es.
+ *
+ * @param a - Parameter used by compareModelNames.
+ * @param b - Parameter used by compareModelNames.
+ * @returns Result produced by compareModelNames.
+ */
 function compareModelNames(a: string, b: string) {
   return a.localeCompare(b, undefined, {
     sensitivity: "base",
@@ -4734,6 +5686,14 @@ function compareModelNames(a: string, b: string) {
   });
 }
 
+/**
+ * Creates c re at em od el dr op do wn st at e.
+ *
+ * @param doc - Parameter used by createModelDropdownState.
+ * @param provider - Parameter used by createModelDropdownState.
+ * @param modelCount - Parameter used by createModelDropdownState.
+ * @returns Result produced by createModelDropdownState.
+ */
 function createModelDropdownState(
   doc: Document,
   provider: LLMProvider,
@@ -4783,6 +5743,12 @@ function createModelDropdownOption(
   return option;
 }
 
+/**
+ * Creates c re at em od el dr op do wn ad db ut to n.
+ *
+ * @param doc - Parameter used by createModelDropdownAddButton.
+ * @returns Result produced by createModelDropdownAddButton.
+ */
 function createModelDropdownAddButton(doc: Document) {
   const button = doc.createElementNS(HTML_NS, "button") as HTMLButtonElement;
   button.className = "zai-model-select-add-button";
@@ -4845,6 +5811,12 @@ function selectModelDropdownValue(dropdown: HTMLElement, value: string) {
 }
 
 /** Liest den Provider, dem das aktuell dargestellte Dropdown zugeordnet ist. */
+/**
+ * Gets g et dr op do wn pr ov id er.
+ *
+ * @param dropdown - Parameter used by getDropdownProvider.
+ * @returns Result produced by getDropdownProvider.
+ */
 function getDropdownProvider(dropdown: HTMLElement): LLMProvider {
   return dropdown.dataset.provider === "ollama" ? "ollama" : "kisski";
 }
@@ -4862,8 +5834,10 @@ function setProviderModel(provider: LLMProvider, value: string) {
   const model = value.trim();
   if (!model) return;
 
-  // Cloud- und Lokalmodell besitzen absichtlich getrennte Speicherfelder, damit
-  // ein Providerwechsel jeweils die vorherige Modellauswahl wiederherstellt.
+  /**
+   * Cloud and local models intentionally use separate preference fields so a
+   * provider switch restores the previous selection for that provider.
+   */
   if (provider === "ollama") {
     addon.data.settings.ollamaModel = model;
     savePluginPreference("ollamaModel", model);
@@ -4872,8 +5846,10 @@ function setProviderModel(provider: LLMProvider, value: string) {
     savePluginPreference("model", model);
   }
 
-  // Der Manager wird sofort aktualisiert; nur beim aktiven Provider müssen auch
-  // Verbindungen und davon abhängige Embeddings neu geprüft werden.
+  /**
+   * The manager is updated immediately; readiness checks only need to rerun
+   * when the changed model belongs to the active provider.
+   */
   addon.api.ai.setModel(model, provider);
   delete addon.data.runtime.providerConnections[provider];
   if (provider === getActiveProvider()) {
@@ -4883,7 +5859,12 @@ function setProviderModel(provider: LLMProvider, value: string) {
   }
 }
 
-/** Liefert die kurze sichtbare Beschriftung des gewählten Providers. */
+/**
+ * Formats the short visible label for a provider.
+ *
+ * @param provider - Provider whose label should be returned.
+ * @returns Short provider label.
+ */
 function getProviderLabel(provider: LLMProvider) {
   return provider === "ollama" ? "Lokal" : "Cloud";
 }
@@ -4898,6 +5879,12 @@ function savePluginPreference(key: string, value: string) {
   Zotero.Prefs.set(`${addon.data.config.prefsPrefix}.${key}`, value, true);
 }
 
+/**
+ * Toggles t og gl em od el dr op do wn.
+ *
+ * @param dropdown - Parameter used by toggleModelDropdown.
+ * @returns Result produced by toggleModelDropdown.
+ */
 function toggleModelDropdown(dropdown: HTMLElement) {
   const open = !dropdown.classList.contains("zai-model-select-wrap-open");
   if (open) {
@@ -4907,6 +5894,12 @@ function toggleModelDropdown(dropdown: HTMLElement) {
   }
 }
 
+/**
+ * Opens o pe nm od el dr op do wn.
+ *
+ * @param dropdown - Parameter used by openModelDropdown.
+ * @returns Result produced by openModelDropdown.
+ */
 function openModelDropdown(dropdown: HTMLElement) {
   closeOtherModelDropdowns(dropdown);
   const button = dropdown.querySelector<HTMLButtonElement>(".zai-model-select");
@@ -4920,6 +5913,12 @@ function openModelDropdown(dropdown: HTMLElement) {
   options.hidden = false;
 }
 
+/**
+ * Closes c lo se mo de ld ro pd ow n.
+ *
+ * @param dropdown - Parameter used by closeModelDropdown.
+ * @returns Result produced by closeModelDropdown.
+ */
 function closeModelDropdown(dropdown: HTMLElement) {
   const button = dropdown.querySelector<HTMLButtonElement>(".zai-model-select");
   const options = dropdown.querySelector<HTMLElement>(
@@ -4933,6 +5932,12 @@ function closeModelDropdown(dropdown: HTMLElement) {
   }
 }
 
+/**
+ * Closes c lo se ot he rm od el dr op do wn s.
+ *
+ * @param dropdown - Parameter used by closeOtherModelDropdowns.
+ * @returns Result produced by closeOtherModelDropdowns.
+ */
 function closeOtherModelDropdowns(dropdown: HTMLElement) {
   dropdown.ownerDocument
     .querySelectorAll<HTMLElement>(".zai-model-select-wrap-open")
@@ -4943,6 +5948,12 @@ function closeOtherModelDropdowns(dropdown: HTMLElement) {
     });
 }
 
+/**
+ * Ensures e ns ur em od el dr op do wn ou ts id eh an dl er.
+ *
+ * @param doc - Parameter used by ensureModelDropdownOutsideHandler.
+ * @returns Result produced by ensureModelDropdownOutsideHandler.
+ */
 function ensureModelDropdownOutsideHandler(doc: Document) {
   if (modelDropdownDocuments.has(doc)) return;
 
@@ -4959,6 +5970,13 @@ function ensureModelDropdownOutsideHandler(doc: Document) {
   });
 }
 
+/**
+ * Handles h an dl em od el dr op do wn ke yd ow n.
+ *
+ * @param event - Parameter used by handleModelDropdownKeydown.
+ * @param dropdown - Parameter used by handleModelDropdownKeydown.
+ * @returns Result produced by handleModelDropdownKeydown.
+ */
 function handleModelDropdownKeydown(
   event: KeyboardEvent,
   dropdown: HTMLElement,
@@ -5016,12 +6034,24 @@ function handleModelDropdownKeydown(
   }
 }
 
+/**
+ * Gets g et mo de ld ro pd ow no pt io nb ut to ns.
+ *
+ * @param dropdown - Parameter used by getModelDropdownOptionButtons.
+ * @returns Result produced by getModelDropdownOptionButtons.
+ */
 function getModelDropdownOptionButtons(dropdown: HTMLElement) {
   return Array.from(
     dropdown.querySelectorAll(".zai-model-select-option"),
   ) as unknown as HTMLButtonElement[];
 }
 
+/**
+ * Logs l og si mu la ti on pr om pt.
+ *
+ * @param message - Parameter used by logSimulationPrompt.
+ * @returns Result produced by logSimulationPrompt.
+ */
 function logSimulationPrompt(message: AssistantChatMessage) {
   const output = `[Zotero AI Simulation] Prompt #${message.id}:\n${message.content}`;
   Zotero.debug(output);
@@ -5039,6 +6069,12 @@ function logSimulationPrompt(message: AssistantChatMessage) {
   consoleObject?.log?.(output);
 }
 
+/**
+ * Sets s et si mu la ti on en ab le d.
+ *
+ * @param enabled - Parameter used by setSimulationEnabled.
+ * @returns Result produced by setSimulationEnabled.
+ */
 function setSimulationEnabled(enabled: boolean) {
   simulationEnabled = enabled;
   renderAllHosts();
@@ -5048,6 +6084,10 @@ function setSimulationEnabled(enabled: boolean) {
   return getSimulationState();
 }
 
+/**
+ * Gets g et si mu la ti on st at e.
+ * @returns Result produced by getSimulationState.
+ */
 function getSimulationState() {
   return {
     enabled: simulationEnabled,
@@ -5055,6 +6095,13 @@ function getSimulationState() {
   };
 }
 
+/**
+ * Replies to r ep ly to si mu la ti on.
+ *
+ * @param content - Parameter used by replyToSimulation.
+ * @param promptID - Parameter used by replyToSimulation.
+ * @returns Result produced by replyToSimulation.
+ */
 function replyToSimulation(content: string, promptID?: number) {
   if (!simulationEnabled) {
     throw new Error(
@@ -5092,6 +6139,9 @@ function replyToSimulation(content: string, promptID?: number) {
   return message;
 }
 
+/**
+ * Development helper API for simulating assistant replies without calling a provider.
+ */
 export const chatSimulation = {
   enable() {
     return setSimulationEnabled(true);

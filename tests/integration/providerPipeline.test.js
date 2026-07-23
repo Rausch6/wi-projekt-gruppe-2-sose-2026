@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AIProviderManager } from "../../src/ai/AIProviderManager.js";
 
+/**
+ * Creates the minimal fetch response shape consumed by the HTTP client.
+ *
+ * @param {number} status - HTTP response status code.
+ * @param {unknown} body - JSON-serializable response body.
+ * @returns {object} Mocked fetch response.
+ */
 function createFetchResponse(status, body) {
   return {
     status,
@@ -11,6 +18,9 @@ function createFetchResponse(status, body) {
   };
 }
 
+/**
+ * Verifies end-to-end provider routing through the manager and HTTP client layer.
+ */
 describe("provider pipeline integration", () => {
   afterEach(() => {
     vi.restoreAllMocks();

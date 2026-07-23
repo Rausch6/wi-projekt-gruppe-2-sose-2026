@@ -15,18 +15,33 @@ const SLOT_ATTRIBUTE = "data-zai-assistant-trigger-slot";
 const BUTTON_LABEL = "Zotero AI Assistent";
 const BUTTON_TOOLTIP = "ZAIA-Plugin öffnen/schließen";
 
+/**
+ * Zotero side-navigation element IDs supported by current and older layouts.
+ */
 const SIDENAV_IDS = ["zotero-view-item-sidenav", "zotero-context-pane-sidenav"];
 
+/**
+ * Cleanup state for every Zotero main window that received an assistant button.
+ */
 const states = new WeakMap<Window, { cleanup: () => void }>();
 
+/**
+ * Document extension exposed by Zotero for creating native XUL controls.
+ */
 type XulDocument = Document & {
   createXULElement?: (tagName: string) => XULElement;
 };
 
+/**
+ * Zotero side-navigation element with its optional internal container.
+ */
 type SidenavElement = Element & {
   container?: Element;
 };
 
+/**
+ * Mounted assistant trigger together with all listeners needed for cleanup.
+ */
 type MountedButton = {
   root: Element;
   button: Element;
@@ -36,6 +51,15 @@ type MountedButton = {
   stopClick?: EventListener;
 };
 
+/**
+ * Adds the assistant trigger to every supported Zotero side navigation.
+ *
+ * A mutation observer also mounts the trigger when Zotero creates a context
+ * pane after the plugin has initialized.
+ *
+ * @param win - Zotero main window receiving the assistant trigger.
+ * @returns Nothing.
+ */
 export function registerAssistantToolbarButton(win: _ZoteroTypes.MainWindow) {
   const doc = win.document;
   unregisterAssistantToolbarButton(win);
@@ -122,6 +146,12 @@ export function registerAssistantToolbarButton(win: _ZoteroTypes.MainWindow) {
   });
 }
 
+/**
+ * Removes assistant triggers, observers, and legacy toolbar remnants.
+ *
+ * @param win - Window from which the assistant trigger should be removed.
+ * @returns Nothing.
+ */
 export function unregisterAssistantToolbarButton(win: Window) {
   states.get(win)?.cleanup();
   states.delete(win);
@@ -131,6 +161,12 @@ export function unregisterAssistantToolbarButton(win: Window) {
   cleanupLegacyToolbarButton(doc);
 }
 
+/**
+ * Resolves the active native or fallback side-navigation mount targets.
+ *
+ * @param win - Zotero main window whose side navigation should be inspected.
+ * @returns Unique elements suitable for mounting the assistant trigger.
+ */
 function findSidenavTargets(win: _ZoteroTypes.MainWindow) {
   const doc = win.document;
   const sidenavs = new Set<Element>();
@@ -159,10 +195,23 @@ function findSidenavTargets(win: _ZoteroTypes.MainWindow) {
   return [...targets];
 }
 
+/**
+ * Checks whether a target already contains a ZAIA assistant trigger.
+ *
+ * @param target - Potential side-navigation mount target.
+ * @returns True when a trigger is already mounted.
+ */
 function hasAssistantButton(target: Element) {
   return Boolean(target.querySelector(`[${BUTTON_ATTRIBUTE}="true"]`));
 }
 
+/**
+ * Creates the button variant appropriate for a Zotero side-navigation target.
+ *
+ * @param doc - Document used to create the control.
+ * @param target - Side-navigation target that determines the control variant.
+ * @returns Root and interactive element to mount.
+ */
 function createSidenavButton(doc: Document, target: Element) {
   if (isNativeSidenavElement(target)) {
     return createNativeSidenavButton(doc);
@@ -171,6 +220,12 @@ function createSidenavButton(doc: Document, target: Element) {
   return createFallbackSidenavButton(doc, target);
 }
 
+/**
+ * Finds Zotero's native item-pane side navigation for a target.
+ *
+ * @param target - Target itself or one of its descendants.
+ * @returns Native side-navigation element, or null when unavailable.
+ */
 function getNativeSidenavElement(target: Element) {
   if (isNativeSidenavElement(target)) {
     return target;
@@ -179,10 +234,22 @@ function getNativeSidenavElement(target: Element) {
   return target.closest("item-pane-sidenav");
 }
 
+/**
+ * Identifies Zotero's native item-pane side-navigation custom element.
+ *
+ * @param target - Element to inspect.
+ * @returns True when the element is a native item-pane side navigation.
+ */
 function isNativeSidenavElement(target: Element) {
   return target.localName === "item-pane-sidenav";
 }
 
+/**
+ * Builds a trigger that follows Zotero's native pinned-button structure.
+ *
+ * @param doc - Document used to create the HTML elements.
+ * @returns Mountable slot, interactive button, and keyboard requirement.
+ */
 function createNativeSidenavButton(doc: Document) {
   const slot = doc.createElementNS(HTML_NS, "div") as HTMLElement;
   slot.className = "zai-sidenav-assistant-slot";
@@ -219,6 +286,13 @@ function createNativeSidenavButton(doc: Document) {
   return { root: slot, button, needsKeyboardActivation: true };
 }
 
+/**
+ * Builds an HTML or XUL fallback button for older Zotero layouts.
+ *
+ * @param doc - Document used to create the control.
+ * @param target - Mount target whose namespace selects HTML or XUL.
+ * @returns Mountable fallback control.
+ */
 function createFallbackSidenavButton(doc: Document, target: Element) {
   const xulDoc = doc as XulDocument;
   const useXulButton = target.namespaceURI === XUL_NS;
@@ -250,6 +324,13 @@ function createFallbackSidenavButton(doc: Document, target: Element) {
   return { root: button, button, needsKeyboardActivation: false };
 }
 
+/**
+ * Inserts a trigger without disturbing a native side navigation's popup set.
+ *
+ * @param target - Side-navigation mount target.
+ * @param root - Trigger root to insert.
+ * @returns Nothing.
+ */
 function mountSidenavButton(target: Element, root: Element) {
   if (!isNativeSidenavElement(target)) {
     target.append(root);
@@ -259,6 +340,12 @@ function mountSidenavButton(target: Element, root: Element) {
   target.insertBefore(root, target.querySelector("popupset"));
 }
 
+/**
+ * Detaches every listener associated with a mounted trigger and removes it.
+ *
+ * @param mounted - Mounted trigger state to clean up.
+ * @returns Nothing.
+ */
 function cleanupMountedButton(mounted: MountedButton) {
   mounted.button.removeEventListener(
     mounted.activationEvent,
@@ -273,6 +360,12 @@ function cleanupMountedButton(mounted: MountedButton) {
   mounted.root.remove();
 }
 
+/**
+ * Removes all current ZAIA side-navigation controls from a document.
+ *
+ * @param doc - Document to clean.
+ * @returns Nothing.
+ */
 function removeAssistantButtons(doc: Document) {
   doc
     .querySelectorAll(`[${SLOT_ATTRIBUTE}="true"]`)
@@ -282,6 +375,12 @@ function removeAssistantButtons(doc: Document) {
     .forEach((button) => button.remove());
 }
 
+/**
+ * Removes toolbar elements left by the legacy assistant-button integration.
+ *
+ * @param doc - Document to clean.
+ * @returns Nothing.
+ */
 function cleanupLegacyToolbarButton(doc: Document) {
   doc.getElementById(LEGACY_BUTTON_ID)?.remove();
 
@@ -291,6 +390,11 @@ function cleanupLegacyToolbarButton(doc: Document) {
   }
 }
 
+/**
+ * Returns the chrome URL of the assistant icon packaged with the add-on.
+ *
+ * @returns Assistant icon URL.
+ */
 function getAssistantIcon() {
   return `chrome://${config.addonRef}/content/icons/IconPlugin.png`;
 }

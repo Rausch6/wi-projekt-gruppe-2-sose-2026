@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { embeddingProvider } from "../../src/ai/EmbeddingProvider.js";
 import { EmbeddingSearchService } from "../../src/core/EmbeddingSearchService";
 
+/**
+ * Verifies fallback chunk selection when semantic embedding search is disabled.
+ */
 describe("EmbeddingSearchService disabled mode", () => {
   afterEach(() => {
     EmbeddingSearchService.configure({ enabled: true });

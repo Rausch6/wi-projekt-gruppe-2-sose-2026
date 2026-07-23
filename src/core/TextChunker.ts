@@ -45,12 +45,32 @@ const WORDS_PER_TOKEN = 0.75;
 const REFERENCE_SECTION_HEADING =
   /(^|\n)\s*(?:\d+(?:\.\d+)*\.?\s+)?(?:references|bibliography|works cited|literatur|literaturverzeichnis|quellen|quellenverzeichnis)\b/iu;
 const NEGATION_WORDS = new Set([
-  "no", "not", "nor", "never", "neither", "none", "nobody",
-  "nothing", "nowhere", "cannot",
-  "nicht", "nichts", "nie", "niemals", "niemand",
-  "niemandem", "niemanden", "nirgendwo", "kein",
-  "keine", "keinem", "keinen", "keiner", "keines",
-  "weder", "ohne",
+  "no",
+  "not",
+  "nor",
+  "never",
+  "neither",
+  "none",
+  "nobody",
+  "nothing",
+  "nowhere",
+  "cannot",
+  "nicht",
+  "nichts",
+  "nie",
+  "niemals",
+  "niemand",
+  "niemandem",
+  "niemanden",
+  "nirgendwo",
+  "kein",
+  "keine",
+  "keinem",
+  "keinen",
+  "keiner",
+  "keines",
+  "weder",
+  "ohne",
 ]);
 const STOP_WORDS = new Set(
   [...naturalStopWords, ...stopwordsIso.de]
@@ -97,10 +117,12 @@ export function chunkPaperText(
     const targetSetting = addonSettings?.chunkTargetTokens;
     const overlapSetting = addonSettings?.chunkOverlapTokens;
 
-    if (typeof targetSetting === "number" && targetSetting > 0) defaultTarget = targetSetting;
-    if (typeof overlapSetting === "number" && overlapSetting >= 0) defaultOverlap = overlapSetting;
+    if (typeof targetSetting === "number" && targetSetting > 0)
+      defaultTarget = targetSetting;
+    if (typeof overlapSetting === "number" && overlapSetting >= 0)
+      defaultOverlap = overlapSetting;
   } catch (_e) {
-    // Fallback auf Standardwerte
+
   }
 
   const targetTokens = Math.min(8192, options.targetTokens ?? defaultTarget);
@@ -110,9 +132,10 @@ export function chunkPaperText(
   );
 
   try {
-    Zotero.debug(`[TextChunker] Chunking paper text... targetTokens=${targetTokens}, overlapTokens=${overlapTokens}`);
+    Zotero.debug(
+      `[TextChunker] Chunking paper text... targetTokens=${targetTokens}, overlapTokens=${overlapTokens}`,
+    );
   } catch (_e) {
-    // Zotero ggf. in Tests nicht verfügbar
   }
   const cleanedPages = removeReferenceSections(cleanPaperPages(pages));
   const units = createTextUnits(
@@ -278,7 +301,6 @@ function normalizeMarginLine(line: string) {
  */
 function removeReferenceSections(pages: PageTextChunk[]) {
   if (!pages.length) return pages;
-
   const minimumReferencePageIndex = Math.max(
     0,
     Math.floor(pages.length * 0.45),
@@ -473,6 +495,7 @@ function takeOverlapUnits(units: TextUnit[], overlapTokens: number) {
     if (!unit) continue;
     overlap.unshift(unit);
     tokens += unit.tokens;
+    
     if (tokens >= overlapTokens) break;
   }
 
@@ -517,6 +540,7 @@ function extractTerms(query: string) {
  * @returns Relevanz-Score des Chunks.
  */
 function scoreChunk(chunk: TextChunk, queryTerms: string[], index: number) {
+  
   if (!queryTerms.length) return index === 0 ? 1 : 0;
 
   const normalizedText = chunk.text
@@ -528,9 +552,10 @@ function scoreChunk(chunk: TextChunk, queryTerms: string[], index: number) {
 
   for (const term of queryTerms) {
     const matches = normalizedText.split(term).length - 1;
+    
     if (matches) score += 1 + Math.log2(matches + 1);
   }
-
+  
   return score / Math.sqrt(Math.max(1, chunk.estimatedTokens / 100));
 }
 

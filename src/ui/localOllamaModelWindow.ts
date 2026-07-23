@@ -2,8 +2,15 @@ import { config } from "../../package.json";
 import { createWindowAbortController } from "../utils/AbortController";
 import { LOCAL_OLLAMA_MODEL_CATALOG } from "./localOllamaModels";
 
+/**
+ * Event emitted after a local model has been installed and selected.
+ */
 export const LOCAL_OLLAMA_MODEL_INSTALLED_EVENT =
   "zai-local-ollama-model-installed";
+
+/**
+ * Event emitted whenever the set of installed local models changes.
+ */
 export const LOCAL_OLLAMA_MODELS_CHANGED_EVENT =
   "zai-local-ollama-models-changed";
 
@@ -25,6 +32,9 @@ const SIDEBAR_THEME_PROPERTIES = [
 ];
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 
+/**
+ * Lifecycle and active-operation state associated with an owner window.
+ */
 type LocalModelWindowState = {
   activeOperationModel?: string;
   cancelTimers: Map<string, number>;
@@ -34,14 +44,27 @@ type LocalModelWindowState = {
   window: Window;
 };
 
+/**
+ * Pair of model dialog and owning Zotero main window.
+ */
 type LocalModelWindowContext = {
   owner: _ZoteroTypes.MainWindow;
   window: Window;
 };
 
+/**
+ * Visual state supported by the window-level availability notice.
+ */
 type LocalModelNoticeState = "info" | "success" | "warning" | "error";
+
+/**
+ * Visual state supported by an individual model-row status.
+ */
 type LocalModelStatusState = "success" | "warning" | "error" | "";
 
+/**
+ * Normalized progress data reported while Ollama downloads a model.
+ */
 export type LocalModelProgress = {
   completed: number | null;
   done: boolean;
@@ -50,6 +73,9 @@ export type LocalModelProgress = {
   total: number | null;
 };
 
+/**
+ * Interactive DOM elements and operation state belonging to one model row.
+ */
 type LocalModelRowElements = {
   button: HTMLButtonElement;
   cancelButton: HTMLButtonElement;
@@ -63,6 +89,9 @@ type LocalModelRowElements = {
   status: HTMLElement;
 };
 
+/**
+ * Shared DOM elements created for the local model management window.
+ */
 type LocalModelWindowElements = {
   notice: HTMLElement;
   noticeActions: HTMLElement;
@@ -72,8 +101,17 @@ type LocalModelWindowElements = {
   setupButton: HTMLButtonElement;
 };
 
+/**
+ * Open model-window state keyed by the Zotero main window that owns it.
+ */
 const localModelWindows = new WeakMap<Window, LocalModelWindowState>();
 
+/**
+ * Opens or focuses the fixed-size local Ollama model management window.
+ *
+ * @param owner - Zotero main window that owns the model dialog.
+ * @returns Opened or existing model window, or null when opening fails.
+ */
 export function openLocalOllamaModelWindow(owner: _ZoteroTypes.MainWindow) {
   const existing = getLiveLocalModelWindow(owner);
   if (existing) {
@@ -115,6 +153,13 @@ export function openLocalOllamaModelWindow(owner: _ZoteroTypes.MainWindow) {
   return openedWindow;
 }
 
+/**
+ * Builds the model dialog, applies the Zotero theme, and loads model state.
+ *
+ * @param modelWindow - Local model dialog being initialized.
+ * @param owner - Zotero main window that owns the dialog.
+ * @returns Cleanup callback, or undefined when the root element is unavailable.
+ */
 export function initializeLocalOllamaModelWindow(
   modelWindow: Window,
   owner: _ZoteroTypes.MainWindow,
@@ -155,6 +200,13 @@ export function initializeLocalOllamaModelWindow(
   return state.cleanup;
 }
 
+/**
+ * Aborts active work and removes state for a closing model dialog.
+ *
+ * @param modelWindow - Local model dialog being unloaded.
+ * @param owner - Window that owns the dialog state.
+ * @returns Nothing.
+ */
 export function handleLocalOllamaModelWindowUnload(
   modelWindow: Window,
   owner: Window,
@@ -168,6 +220,12 @@ export function handleLocalOllamaModelWindowUnload(
   }
 }
 
+/**
+ * Resolves a live local model dialog and discards stale closed-window state.
+ *
+ * @param owner - Owner window whose dialog should be resolved.
+ * @returns Live dialog state, or null when no dialog is open.
+ */
 function getLiveLocalModelWindow(owner: Window) {
   const state = localModelWindows.get(owner);
   if (!state || state.window.closed) {
@@ -178,6 +236,13 @@ function getLiveLocalModelWindow(owner: Window) {
   return state;
 }
 
+/**
+ * Creates the complete model-window DOM and binds row actions.
+ *
+ * @param context - Owner and model-window context.
+ * @param state - Mutable model-window lifecycle state.
+ * @returns Shared UI elements and a fragment ready to mount.
+ */
 function createWindowContent(
   context: LocalModelWindowContext,
   state: LocalModelWindowState,
@@ -289,6 +354,13 @@ function createWindowContent(
   return { elements, fragment };
 }
 
+/**
+ * Creates controls and progress indicators for one curated Ollama model.
+ *
+ * @param context - Owner and model-window context.
+ * @param model - Catalog entry rendered by the row.
+ * @returns Row element collection and its operation state.
+ */
 function createModelRow(
   context: LocalModelWindowContext,
   model: (typeof LOCAL_OLLAMA_MODEL_CATALOG)[number],
@@ -356,6 +428,14 @@ function createModelRow(
   return rowElements;
 }
 
+/**
+ * Queries Ollama and synchronizes every row with installed model IDs.
+ *
+ * @param context - Owner and model-window context.
+ * @param state - Mutable model-window lifecycle state.
+ * @param elements - Shared model-window UI elements.
+ * @returns Promise resolved after model availability has been refreshed.
+ */
 async function refreshInstalledModels(
   context: LocalModelWindowContext,
   state: LocalModelWindowState,
@@ -393,13 +473,12 @@ async function refreshInstalledModels(
 }
 
 /**
- * Startet das externe Ollama-Setup aus dem lokalen Modellfenster, übernimmt
- * dessen Ergebnis und lädt nach erfolgreichem Start die Modellliste neu.
- * Währenddessen bleiben Setup- und Aktualisieren-Button gesperrt.
+ * Runs the external Ollama setup and refreshes models after a successful start.
  *
- * @param context - Kontext des geöffneten lokalen Modellfensters.
- * @param state - Veränderlicher Zustand des Modellfensters.
- * @param elements - Für Setup und Aktualisierung benötigte UI-Elemente.
+ * @param context - Owner and model-window context.
+ * @param state - Mutable model-window lifecycle state.
+ * @param elements - Shared model-window UI elements.
+ * @returns Promise resolved after setup and any subsequent refresh.
  */
 async function launchSetupAndRefresh(
   context: LocalModelWindowContext,
@@ -444,6 +523,13 @@ async function launchSetupAndRefresh(
   }
 }
 
+/**
+ * Retries the Ollama model-list request with a short delay between attempts.
+ *
+ * @param context - Owner and model-window context.
+ * @param attempts - Maximum number of list requests.
+ * @returns Installed model descriptors.
+ */
 async function waitForInstalledModels(
   context: LocalModelWindowContext,
   attempts: number,
@@ -464,6 +550,11 @@ async function waitForInstalledModels(
   throw lastError;
 }
 
+/**
+ * Requests installed models from the configured Ollama provider.
+ *
+ * @returns Installed Ollama model descriptors.
+ */
 async function listInstalledModels() {
   const provider = addon.api.ai.getProvider("ollama");
   if (typeof provider.listModels !== "function") {
@@ -473,6 +564,15 @@ async function listInstalledModels() {
   return (await provider.listModels()) as Array<{ id: string }>;
 }
 
+/**
+ * Downloads one model and mirrors progress, completion, or failure to its row.
+ *
+ * @param context - Owner and model-window context.
+ * @param state - Mutable model-window lifecycle state.
+ * @param elements - Shared model-window UI elements.
+ * @param row - Model row being downloaded.
+ * @returns Promise resolved when the download operation settles.
+ */
 async function downloadModel(
   context: LocalModelWindowContext,
   state: LocalModelWindowState,
@@ -550,6 +650,15 @@ async function downloadModel(
   }
 }
 
+/**
+ * Requests cancellation and schedules a fallback for an unresponsive download.
+ *
+ * @param context - Owner and model-window context.
+ * @param state - Mutable model-window lifecycle state.
+ * @param elements - Shared model-window UI elements.
+ * @param row - Model row whose download should stop.
+ * @returns Nothing.
+ */
 function cancelDownload(
   context: LocalModelWindowContext,
   state: LocalModelWindowState,
@@ -577,6 +686,17 @@ function cancelDownload(
   state.cancelTimers.set(row.model, timer);
 }
 
+/**
+ * Stops Ollama when a pull operation ignores its abort signal.
+ *
+ * @param context - Owner and model-window context.
+ * @param state - Mutable model-window lifecycle state.
+ * @param elements - Shared model-window UI elements.
+ * @param row - Model row whose download is being force-stopped.
+ * @param operationId - Operation token used to reject stale async work.
+ * @param controller - Abort controller belonging to the download.
+ * @returns Promise resolved after the fallback cancellation attempt.
+ */
 async function forceStopUnresponsiveDownloadCancel(
   context: LocalModelWindowContext,
   state: LocalModelWindowState,
@@ -621,6 +741,13 @@ async function forceStopUnresponsiveDownloadCancel(
   }
 }
 
+/**
+ * Selects an installed model for local chat and updates its row.
+ *
+ * @param context - Owner and model-window context.
+ * @param row - Installed model row being selected.
+ * @returns Nothing.
+ */
 function selectInstalledModel(
   context: LocalModelWindowContext,
   row: LocalModelRowElements,
@@ -632,6 +759,15 @@ function selectInstalledModel(
   row.button.dataset.state = "installed";
 }
 
+/**
+ * Deletes an installed model after confirmation and refreshes all rows.
+ *
+ * @param context - Owner and model-window context.
+ * @param state - Mutable model-window lifecycle state.
+ * @param elements - Shared model-window UI elements.
+ * @param row - Installed model row being deleted.
+ * @returns Promise resolved when deletion and verification settle.
+ */
 async function deleteInstalledModel(
   context: LocalModelWindowContext,
   state: LocalModelWindowState,
@@ -710,6 +846,14 @@ async function deleteInstalledModel(
   }
 }
 
+/**
+ * Applies a fresh set of installed model IDs to every catalog row.
+ *
+ * @param context - Owner and model-window context.
+ * @param rows - Model rows to synchronize.
+ * @param installedModelIds - Installed Ollama model identifiers.
+ * @returns Nothing.
+ */
 function syncInstalledRows(
   context: LocalModelWindowContext,
   rows: LocalModelRowElements[],
@@ -721,6 +865,13 @@ function syncInstalledRows(
   }
 }
 
+/**
+ * Renders one row's installed and selected state.
+ *
+ * @param _context - Owner and model-window context reserved for row behavior.
+ * @param row - Model row to synchronize.
+ * @returns Nothing.
+ */
 function syncInstalledRow(
   _context: LocalModelWindowContext,
   row: LocalModelRowElements,
@@ -756,6 +907,12 @@ function syncInstalledRow(
   clearStatus(row.status);
 }
 
+/**
+ * Locks all model actions while installed models are being queried.
+ *
+ * @param rows - Model rows to place in the checking state.
+ * @returns Nothing.
+ */
 function setRowsChecking(rows: LocalModelRowElements[]) {
   for (const row of rows) {
     row.button.disabled = true;
@@ -769,6 +926,12 @@ function setRowsChecking(rows: LocalModelRowElements[]) {
   }
 }
 
+/**
+ * Disables all model actions while Ollama is unavailable.
+ *
+ * @param rows - Model rows to disable.
+ * @returns Nothing.
+ */
 function setRowsUnavailable(rows: LocalModelRowElements[]) {
   for (const row of rows) {
     row.button.disabled = true;
@@ -782,6 +945,14 @@ function setRowsUnavailable(rows: LocalModelRowElements[]) {
   }
 }
 
+/**
+ * Locks unrelated rows while a single model operation is active.
+ *
+ * @param _context - Owner and model-window context reserved for future use.
+ * @param state - Mutable model-window operation state.
+ * @param rows - Model rows to update.
+ * @returns Nothing.
+ */
 function syncOperationLocks(
   _context: LocalModelWindowContext,
   state: LocalModelWindowState,
@@ -803,6 +974,13 @@ function syncOperationLocks(
   }
 }
 
+/**
+ * Restores action availability for every row after an operation completes.
+ *
+ * @param context - Owner and model-window context.
+ * @param rows - Model rows to unlock.
+ * @returns Nothing.
+ */
 function syncUnlockedRows(
   context: LocalModelWindowContext,
   rows: LocalModelRowElements[],
@@ -812,6 +990,13 @@ function syncUnlockedRows(
   }
 }
 
+/**
+ * Restores the correct idle actions for one installed or downloadable model.
+ *
+ * @param _context - Owner and model-window context reserved for row behavior.
+ * @param row - Model row to update.
+ * @returns Nothing.
+ */
 function syncRowActionState(
   _context: LocalModelWindowContext,
   row: LocalModelRowElements,
@@ -842,6 +1027,12 @@ function syncRowActionState(
   row.deleteButton.textContent = "Löschen";
 }
 
+/**
+ * Places a row into its active download state.
+ *
+ * @param row - Model row being downloaded.
+ * @returns Nothing.
+ */
 function setRowDownloading(row: LocalModelRowElements) {
   row.button.disabled = true;
   row.button.dataset.state = "loading";
@@ -854,6 +1045,12 @@ function setRowDownloading(row: LocalModelRowElements) {
   setStatus(row.status, `${row.model} wird installiert...`, "warning");
 }
 
+/**
+ * Places a row into its active deletion state.
+ *
+ * @param row - Installed model row being deleted.
+ * @returns Nothing.
+ */
 function setRowDeleting(row: LocalModelRowElements) {
   row.button.disabled = true;
   row.cancelButton.hidden = true;
@@ -864,6 +1061,13 @@ function setRowDeleting(row: LocalModelRowElements) {
   setStatus(row.status, `${row.model} wird gelöscht...`, "warning");
 }
 
+/**
+ * Applies normalized Ollama download progress to a model row.
+ *
+ * @param row - Model row being downloaded.
+ * @param progress - Latest normalized download progress.
+ * @returns Nothing.
+ */
 function updateDownloadProgress(
   row: LocalModelRowElements,
   progress: LocalModelProgress,
@@ -878,6 +1082,14 @@ function updateDownloadProgress(
   setStatus(row.status, formatProgressStatus(progress), "warning");
 }
 
+/**
+ * Restores a row after a completed, failed, or cancelled download.
+ *
+ * @param context - Owner and model-window context.
+ * @param row - Model row to reset.
+ * @param buttonText - Idle action label for a non-installed model.
+ * @returns Nothing.
+ */
 function resetDownloadRow(
   context: LocalModelWindowContext,
   row: LocalModelRowElements,
@@ -899,6 +1111,12 @@ function resetDownloadRow(
   setProgress(row, null);
 }
 
+/**
+ * Restores installed-model actions after a failed deletion.
+ *
+ * @param row - Installed model row to reset.
+ * @returns Nothing.
+ */
 function resetDeleteRow(row: LocalModelRowElements) {
   row.button.disabled = getSelectedLocalModel() === row.model;
   row.button.textContent =
@@ -912,6 +1130,13 @@ function resetDeleteRow(row: LocalModelRowElements) {
   setProgress(row, null);
 }
 
+/**
+ * Marks one model operation active and increments its stale-work token.
+ *
+ * @param state - Mutable model-window operation state.
+ * @param row - Model row starting the operation.
+ * @returns New operation identifier.
+ */
 function beginRowOperation(
   state: LocalModelWindowState,
   row: LocalModelRowElements,
@@ -922,6 +1147,15 @@ function beginRowOperation(
   return row.operationId;
 }
 
+/**
+ * Verifies that asynchronous row work still belongs to the live operation.
+ *
+ * @param context - Owner and model-window context.
+ * @param state - Mutable model-window lifecycle state.
+ * @param row - Model row associated with the work.
+ * @param operationId - Operation identifier captured before awaiting.
+ * @returns True when the window and operation token are still current.
+ */
 function isRowOperationActive(
   context: LocalModelWindowContext,
   state: LocalModelWindowState,
@@ -933,6 +1167,14 @@ function isRowOperationActive(
   );
 }
 
+/**
+ * Clears a fallback cancellation timer using the active window context.
+ *
+ * @param context - Owner and model-window context.
+ * @param state - Mutable model-window operation state.
+ * @param model - Model identifier whose timer should be removed.
+ * @returns Nothing.
+ */
 function clearCancelTimer(
   context: LocalModelWindowContext,
   state: LocalModelWindowState,
@@ -945,6 +1187,13 @@ function clearCancelTimer(
   }
 }
 
+/**
+ * Clears a model's fallback cancellation timer directly from stored state.
+ *
+ * @param state - Mutable model-window operation state.
+ * @param model - Model identifier whose timer should be removed.
+ * @returns Nothing.
+ */
 function clearCancelTimerForModel(state: LocalModelWindowState, model: string) {
   const timer = state.cancelTimers.get(model);
   if (timer !== undefined) {
@@ -953,6 +1202,13 @@ function clearCancelTimerForModel(state: LocalModelWindowState, model: string) {
   }
 }
 
+/**
+ * Updates progress-bar visibility, width, and ARIA state.
+ *
+ * @param row - Model row containing the progress bar.
+ * @param percent - Progress percentage, or null to hide the bar.
+ * @returns Nothing.
+ */
 function setProgress(row: LocalModelRowElements, percent: number | null) {
   if (percent === null) {
     row.progress.hidden = true;
@@ -967,6 +1223,12 @@ function setProgress(row: LocalModelRowElements, percent: number | null) {
   row.progressFill.style.width = `${value}%`;
 }
 
+/**
+ * Formats normalized pull progress as a German user-facing status.
+ *
+ * @param progress - Latest Ollama download progress.
+ * @returns Human-readable progress text.
+ */
 export function formatProgressStatus(progress: LocalModelProgress) {
   if (progress.done) return "Download abgeschlossen.";
 
@@ -986,6 +1248,12 @@ export function formatProgressStatus(progress: LocalModelProgress) {
   return "Download läuft...";
 }
 
+/**
+ * Formats a byte count using compact binary units.
+ *
+ * @param value - Byte count to format.
+ * @returns Compact size label from bytes through terabytes.
+ */
 function formatBytes(value: number) {
   const units = ["B", "KB", "MB", "GB", "TB"];
   let size = value;
@@ -1000,6 +1268,15 @@ function formatBytes(value: number) {
   return `${size.toFixed(decimals)} ${units[unitIndex]}`;
 }
 
+/**
+ * Updates the window-level availability notice and optional recovery actions.
+ *
+ * @param elements - Shared model-window UI elements.
+ * @param text - Notice text.
+ * @param state - Notice visual state.
+ * @param options - Visibility controls for the notice and its actions.
+ * @returns Nothing.
+ */
 function setNotice(
   elements: LocalModelWindowElements,
   text: string,
@@ -1017,6 +1294,12 @@ function setNotice(
   elements.refreshButton.disabled = false;
 }
 
+/**
+ * Maps provider, setup, network, and cancellation failures to friendly text.
+ *
+ * @param error - Error-like value produced by an Ollama operation.
+ * @returns German error message suitable for the model window.
+ */
 export function getFriendlyErrorMessage(error: unknown) {
   if (isAbortError(error)) return "Download abgebrochen.";
 
@@ -1066,6 +1349,12 @@ export function getFriendlyErrorMessage(error: unknown) {
   return "Die Aktion konnte nicht abgeschlossen werden.";
 }
 
+/**
+ * Detects the standard abort error shape across Zotero window realms.
+ *
+ * @param error - Error-like value to inspect.
+ * @returns True when the value represents an aborted operation.
+ */
 export function isAbortError(error: unknown) {
   return (
     error !== null &&
@@ -1076,6 +1365,12 @@ export function isAbortError(error: unknown) {
   );
 }
 
+/**
+ * Records non-cancellation model errors through Zotero's error logger.
+ *
+ * @param error - Error-like value to record.
+ * @returns Nothing.
+ */
 function logLocalModelError(error: unknown) {
   if (isAbortError(error)) return;
 
@@ -1085,24 +1380,48 @@ function logLocalModelError(error: unknown) {
   }
 }
 
+/**
+ * Reads the currently selected Ollama chat model from plugin settings.
+ *
+ * @returns Trimmed model identifier or an empty string.
+ */
 function getSelectedLocalModel() {
   return typeof addon.data.settings.ollamaModel === "string"
     ? addon.data.settings.ollamaModel.trim()
     : "";
 }
 
+/**
+ * Hides and clears a row-level status element.
+ *
+ * @param element - Status element to reset.
+ * @returns Nothing.
+ */
 function clearStatus(element: HTMLElement) {
   element.textContent = "";
   element.dataset.state = "";
   element.hidden = true;
 }
 
+/**
+ * Resolves after a delay scheduled in the dialog's window realm.
+ *
+ * @param win - Window providing the timer implementation.
+ * @param ms - Delay in milliseconds.
+ * @returns Promise resolved after the delay.
+ */
 function wait(win: Window, ms: number) {
   return new Promise<void>((resolve) => {
     win.setTimeout(resolve, ms);
   });
 }
 
+/**
+ * Cancels pending timers and download controllers during window cleanup.
+ *
+ * @param state - Model-window state whose operations should be aborted.
+ * @returns Nothing.
+ */
 function abortActiveDownloads(state: LocalModelWindowState) {
   for (const timer of state.cancelTimers.values()) {
     state.window.clearTimeout(timer);
@@ -1116,6 +1435,13 @@ function abortActiveDownloads(state: LocalModelWindowState) {
   state.activeOperationModel = undefined;
 }
 
+/**
+ * Checks whether state still belongs to an open, undisposed model window.
+ *
+ * @param context - Owner and model-window context.
+ * @param state - Model-window lifecycle state.
+ * @returns True while asynchronous work may still update the dialog.
+ */
 function isLocalModelWindowActive(
   context: LocalModelWindowContext,
   state: LocalModelWindowState,
@@ -1123,6 +1449,13 @@ function isLocalModelWindowActive(
   return !state.disposed && !context.window.closed;
 }
 
+/**
+ * Announces model selection to UI components in the owner window.
+ *
+ * @param context - Owner and model-window context.
+ * @param model - Installed model identifier.
+ * @returns Nothing.
+ */
 function notifyModelInstalled(context: LocalModelWindowContext, model: string) {
   context.owner.dispatchEvent(
     new context.owner.CustomEvent(LOCAL_OLLAMA_MODEL_INSTALLED_EVENT, {
@@ -1131,12 +1464,26 @@ function notifyModelInstalled(context: LocalModelWindowContext, model: string) {
   );
 }
 
+/**
+ * Announces an installed-model catalog change to the owner window.
+ *
+ * @param context - Owner and model-window context.
+ * @returns Nothing.
+ */
 function notifyModelsChanged(context: LocalModelWindowContext) {
   context.owner.dispatchEvent(
     new context.owner.CustomEvent(LOCAL_OLLAMA_MODELS_CHANGED_EVENT),
   );
 }
 
+/**
+ * Shows row-level operation status text with a visual state.
+ *
+ * @param element - Status element to update.
+ * @param text - User-facing status text.
+ * @param state - Optional visual status state.
+ * @returns Nothing.
+ */
 function setStatus(
   element: HTMLElement,
   text: string,
@@ -1147,6 +1494,14 @@ function setStatus(
   element.hidden = false;
 }
 
+/**
+ * Copies sidebar colors and typography into the separate model dialog.
+ *
+ * @param modelWindow - Dialog receiving the theme.
+ * @param owner - Zotero main window used as the theme source.
+ * @param root - Model-window root element receiving inherited colors.
+ * @returns Nothing.
+ */
 function syncLocalModelWindowAppearance(
   modelWindow: Window,
   owner: _ZoteroTypes.MainWindow,
@@ -1210,6 +1565,13 @@ function syncLocalModelWindowAppearance(
   root.style.color = "inherit";
 }
 
+/**
+ * Copies font-related computed properties between style declarations.
+ *
+ * @param sourceStyle - Computed source style.
+ * @param targetStyle - Inline target style.
+ * @returns Nothing.
+ */
 function copyFontStyle(
   sourceStyle: CSSStyleDeclaration,
   targetStyle: CSSStyleDeclaration,
@@ -1227,6 +1589,14 @@ function copyFontStyle(
   }
 }
 
+/**
+ * Copies one non-empty computed CSS property to an inline style.
+ *
+ * @param sourceStyle - Computed source style.
+ * @param targetStyle - Inline target style.
+ * @param property - CSS property to copy.
+ * @returns Nothing.
+ */
 function copyStyleProperty(
   sourceStyle: CSSStyleDeclaration,
   targetStyle: CSSStyleDeclaration,
@@ -1238,6 +1608,14 @@ function copyStyleProperty(
   }
 }
 
+/**
+ * Writes a non-empty CSS value to an inline style.
+ *
+ * @param targetStyle - Inline target style.
+ * @param property - CSS property to write.
+ * @param value - Candidate CSS value.
+ * @returns Nothing.
+ */
 function setStyleProperty(
   targetStyle: CSSStyleDeclaration,
   property: string,
@@ -1248,6 +1626,12 @@ function setStyleProperty(
   }
 }
 
+/**
+ * Keeps the model window at the dimensions expected by its fixed layout.
+ *
+ * @param win - Model dialog whose resize events should be guarded.
+ * @returns Cleanup callback removing the resize listener.
+ */
 function installFixedSizeGuard(win: Window) {
   let pendingFrame: number | undefined;
 
@@ -1277,6 +1661,15 @@ function installFixedSizeGuard(win: Window) {
   };
 }
 
+/**
+ * Creates an XHTML element with optional class and text content.
+ *
+ * @param doc - Document that owns the element.
+ * @param tagName - HTML tag name to create.
+ * @param className - Optional CSS class.
+ * @param text - Optional text content.
+ * @returns Created XHTML element.
+ */
 function createHtmlElement<K extends keyof HTMLElementTagNameMap>(
   doc: Document,
   tagName: K,
@@ -1289,6 +1682,14 @@ function createHtmlElement<K extends keyof HTMLElementTagNameMap>(
   return element;
 }
 
+/**
+ * Creates a typed XHTML button with shared defaults.
+ *
+ * @param doc - Document that owns the button.
+ * @param className - CSS class applied to the button.
+ * @param text - Button label.
+ * @returns Configured button element.
+ */
 function createHtmlButton(doc: Document, className: string, text: string) {
   const button = doc.createElementNS(HTML_NS, "button") as HTMLButtonElement;
   button.className = className;

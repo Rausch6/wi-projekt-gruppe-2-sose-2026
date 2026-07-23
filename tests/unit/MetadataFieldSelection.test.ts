@@ -7,6 +7,9 @@ import {
   normalizeMetadataFieldSelection,
 } from "../../src/core/MetadataFieldSelection";
 
+/**
+ * Verifies normalization, legacy preset support, and labels for metadata selections.
+ */
 describe("MetadataFieldSelection", () => {
   it("uses the default metadata fields for invalid values", () => {
     expect(getMetadataFieldsForSelection(undefined)).toEqual([

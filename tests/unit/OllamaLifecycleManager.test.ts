@@ -5,6 +5,12 @@ import {
   type OllamaLifecycleDependencies,
 } from "../../src/ai/OllamaLifecycleManager";
 
+/**
+ * Creates an Ollama lifecycle manager with controllable dependency mocks.
+ *
+ * @param options - Reachability and installation behavior for the harness.
+ * @returns Harness containing the manager and its spyable dependencies.
+ */
 function createHarness(
   options: {
     reachable?: boolean;
@@ -43,6 +49,9 @@ function createHarness(
   };
 }
 
+/**
+ * Verifies lifecycle behavior for detecting, starting, and stopping Ollama.
+ */
 describe("Ollama lifecycle manager", () => {
   it("does not start or stop an externally reachable Ollama", async () => {
     const harness = createHarness({ reachable: true });

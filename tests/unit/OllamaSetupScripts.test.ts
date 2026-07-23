@@ -16,6 +16,9 @@ const ollamaProvider = readFileSync(
   "utf8",
 );
 
+/**
+ * Verifies that bundled Ollama setup scripts install the app safely and report outcomes.
+ */
 describe("Ollama app setup scripts", () => {
   it("installs only the desktop app and leaves model downloads to ZAIA", () => {
     for (const script of [macosScript, windowsScript]) {

@@ -13,7 +13,6 @@ import {
   trimQueuedItems,
   trimSelections,
   getSelectedPapers,
-  getSelectedLibraryIDs,
   normalizeSearchText,
 } from "./state";
 import {
@@ -314,20 +313,36 @@ export async function rebuildIndex(
     return;
   }
 
-  const libraryIDs = getSelectedLibraryIDs(state);
+  if (state.libraries.length === 0) {
+    setStatus(
+      elements.status,
+      "Es ist keine Bibliothek für den Neuaufbau verfügbar.",
+      "warning",
+    );
+    renderIndexManager(window, elements, state);
+    return;
+  }
+
+  const result = await showLibrarySelectionPrompt(window, state.libraries, {
+    title: "ZAIA-Index für ausgewählte Bibliotheken neu aufbauen?",
+    confirmLabel: "Index neu aufbauen",
+    description:
+      "Die bestehenden Indexdaten dieser Bibliotheken werden gelöscht und neu aufgebaut. Das kann einige Minuten dauern.",
+    selectedLibraryIDs: state.selectedLibraryIDs,
+  });
+  if (!result.confirmed) {
+    renderIndexManager(window, elements, state);
+    return;
+  }
+
+  const libraryIDs = result.libraryIDs;
   if (libraryIDs.length === 0) {
     setStatus(
       elements.status,
       "Wähle mindestens eine Bibliothek für den Neuaufbau aus.",
       "warning",
     );
-    return;
-  }
-
-  const confirmed = window.confirm(
-    "Den ZAIA-Index für die ausgewählten Bibliotheken komplett neu aufbauen? Das kann einige Minuten dauern.",
-  );
-  if (!confirmed) {
+    renderIndexManager(window, elements, state);
     return;
   }
 
@@ -438,7 +453,7 @@ export async function maybeShowInitialIndexPrompt(
 ): Promise<void> {
   if (!shouldShowInitialIndexPrompt() || state.libraries.length === 0) return;
 
-  const result = await showInitialIndexPrompt(window, state.libraries);
+  const result = await showLibrarySelectionPrompt(window, state.libraries);
   markInitialIndexPromptShown();
 
   if (!result.confirmed) return;
@@ -507,8 +522,12 @@ export function markInitialIndexPromptShown(): void {
 export function showInitialIndexPrompt(
   window: Window,
   libraries: LibraryFilterOption[],
+  options: LibrarySelectionPromptOptions = {},
 ): Promise<{ confirmed: boolean; libraryIDs: number[] }> {
   const doc = window.document;
+  const selectedLibraryIDs = options.selectedLibraryIDs
+    ? new Set(options.selectedLibraryIDs)
+    : null;
   const overlay = doc.createElement("div");
   overlay.className = "initial-index-prompt-backdrop";
   overlay.setAttribute("role", "presentation");
@@ -518,10 +537,20 @@ export function showInitialIndexPrompt(
   dialog.setAttribute("role", "dialog");
   dialog.setAttribute("aria-modal", "true");
   dialog.setAttribute("aria-labelledby", "initial-index-prompt-title");
+  if (options.description) {
+    dialog.setAttribute("aria-describedby", "initial-index-prompt-description");
+  }
 
   const title = doc.createElement("h2");
   title.id = "initial-index-prompt-title";
-  title.textContent = "Indexierung der gesamten Library starten?";
+  title.textContent =
+    options.title ?? "Indexierung der gesamten Library starten?";
+
+  const description = doc.createElement("p");
+  description.id = "initial-index-prompt-description";
+  description.className = "initial-index-prompt-description";
+  description.textContent = options.description ?? "";
+  description.hidden = !options.description;
 
   const list = doc.createElement("div");
   list.className = "initial-index-library-list";
@@ -533,7 +562,8 @@ export function showInitialIndexPrompt(
     const checkbox = doc.createElement("input");
     checkbox.type = "checkbox";
     checkbox.value = String(library.libraryID);
-    checkbox.checked = true;
+    checkbox.checked =
+      selectedLibraryIDs === null || selectedLibraryIDs.has(library.libraryID);
 
     const text = doc.createElement("span");
     text.textContent = library.name;
@@ -547,14 +577,14 @@ export function showInitialIndexPrompt(
 
   const startButton = doc.createElement("button");
   startButton.type = "button";
-  startButton.textContent = "Indexierung starten";
+  startButton.textContent = options.confirmLabel ?? "Indexierung starten";
 
   const skipButton = doc.createElement("button");
   skipButton.type = "button";
   skipButton.textContent = "Nicht jetzt";
 
   actions.append(skipButton, startButton);
-  dialog.append(title, list, actions);
+  dialog.append(title, description, list, actions);
   overlay.append(dialog);
   doc.body.append(overlay);
 

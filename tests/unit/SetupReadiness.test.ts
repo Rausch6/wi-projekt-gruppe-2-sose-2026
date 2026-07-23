@@ -9,6 +9,9 @@ const baseSettings = {
   embeddingSearchEnabled: true,
 };
 
+/**
+ * Verifies setup milestone derivation for cloud, local, and embedding readiness states.
+ */
 describe("setup readiness", () => {
   it("allows cloud without semantic search and without embeddings", () => {
     const readiness = deriveSetupReadiness(

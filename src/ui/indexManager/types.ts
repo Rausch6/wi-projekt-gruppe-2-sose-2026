@@ -2,10 +2,24 @@ import { type LibraryScope } from "../../core/LibraryScopeManager";
 import { vectorStore } from "../../core/OramaService";
 import { backgroundIndexer } from "../../core/BackgroundIndexer";
 
+/**
+ * Concrete vector-store service type used by the application singleton.
+ */
 export type VectorStore = typeof vectorStore;
+
+/**
+ * Concrete background-indexer service type used by the application singleton.
+ */
 export type BackgroundIndexerService = typeof backgroundIndexer;
+
+/**
+ * Index-manager column containing a paper.
+ */
 export type IndexSide = "indexed" | "unindexed";
 
+/**
+ * UI-friendly representation of a Zotero paper and its index state.
+ */
 export type PaperRecord = {
   itemID: number;
   libraryID: number;
@@ -18,8 +32,17 @@ export type PaperRecord = {
   searchText: string;
 };
 
-export type LibraryFilterOption = Pick<LibraryScope, "libraryID" | "name" | "type">;
+/**
+ * Library data required by the index manager's scope filter.
+ */
+export type LibraryFilterOption = Pick<
+  LibraryScope,
+  "libraryID" | "name" | "type"
+>;
 
+/**
+ * Required DOM elements of the index manager window.
+ */
 export type IndexManagerElements = {
   searchInput: HTMLInputElement;
   libraryFilter: HTMLSelectElement;
@@ -43,6 +66,9 @@ export type IndexManagerElements = {
   indexedCount: HTMLElement;
 };
 
+/**
+ * Mutable filter, selection, queue, and loading state for the index manager.
+ */
 export type IndexManagerState = {
   papers: PaperRecord[];
   libraries: LibraryFilterOption[];

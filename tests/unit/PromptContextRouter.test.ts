@@ -8,6 +8,9 @@ const baseRouterOptions = {
   candidates: routerCandidates,
 };
 
+/**
+ * Verifies prompt routing corrections, heuristic fallbacks, and metadata filtering.
+ */
 describe("PromptContextRouter", () => {
   it("routes metadata-only questions to metadata even if the model suggests otherwise", async () => {
     const decision = await decidePromptContextRoute({

@@ -61,6 +61,13 @@ const ABOUT_LINKS = [
   },
 ];
 
+/**
+ * Renders the assistant sidebar into a host element and binds chat behavior.
+ *
+ * @param host - Host element that should contain the sidebar.
+ * @param options - Rendering options for optional sidebar controls.
+ * @returns Nothing.
+ */
 export function renderAssistantSidebar(
   host: HTMLElement,
   options: AssistantSidebarRenderOptions = {},
@@ -76,6 +83,13 @@ export function renderAssistantSidebar(
   bindAssistantChat(host);
 }
 
+/**
+ * Creates the full assistant sidebar DOM structure.
+ *
+ * @param doc - Document used to create DOM nodes.
+ * @param options - Rendering options for optional controls.
+ * @returns Sidebar root element.
+ */
 function createSidebar(doc: Document, options: AssistantSidebarRenderOptions) {
   const sidebar = createHtmlElement(doc, "section", "zai-sidebar");
   sidebar.setAttribute("aria-label", "Zotero AI Assistent");
@@ -232,6 +246,12 @@ function createSidebar(doc: Document, options: AssistantSidebarRenderOptions) {
   return sidebar;
 }
 
+/**
+ * Creates the setup timeline shown while ZAIA prerequisites are incomplete.
+ *
+ * @param doc - Document used to create DOM nodes.
+ * @returns Setup timeline element.
+ */
 function createSetupTimeline(doc: Document) {
   const setup = createHtmlElement(doc, "section", "zai-setup-timeline");
   setup.hidden = true;
@@ -267,6 +287,12 @@ function createSetupTimeline(doc: Document) {
   return setup;
 }
 
+/**
+ * Creates the about view with project team and project links.
+ *
+ * @param doc - Document used to create DOM nodes.
+ * @returns About view element.
+ */
 function createAboutView(doc: Document) {
   const view = createHtmlElement(doc, "article", "zai-about-view");
   view.hidden = true;
@@ -310,6 +336,14 @@ function createAboutView(doc: Document) {
   return view;
 }
 
+/**
+ * Creates an about page text section.
+ *
+ * @param doc - Document used to create DOM nodes.
+ * @param title - Section title.
+ * @param paragraphs - Paragraph texts to render.
+ * @returns About section element.
+ */
 function createAboutSection(
   doc: Document,
   title: string,
@@ -327,6 +361,13 @@ function createAboutSection(
   return section;
 }
 
+/**
+ * Creates a clickable about link card.
+ *
+ * @param doc - Document used to create DOM nodes.
+ * @param link - Link metadata and icon identifier.
+ * @returns Anchor element for the link card.
+ */
 function createAboutLinkCard(
   doc: Document,
   link: { label: string; description: string; url: string; icon: string },
@@ -353,6 +394,13 @@ function createAboutLinkCard(
   return anchor;
 }
 
+/**
+ * Creates the icon wrapper for an about link.
+ *
+ * @param doc - Document used to create DOM nodes.
+ * @param icon - Icon identifier to render.
+ * @returns Icon wrapper element.
+ */
 function createAboutLinkIcon(doc: Document, icon: string) {
   const wrap = createHtmlElement(doc, "span", "zai-about-link-icon");
   if (icon === "instagram") {
@@ -365,12 +413,26 @@ function createAboutLinkIcon(doc: Document, icon: string) {
   return wrap;
 }
 
+/**
+ * Creates a button element with consistent type handling.
+ *
+ * @param doc - Document used to create DOM nodes.
+ * @param className - CSS class name assigned to the button.
+ * @param text - Optional button text.
+ * @returns Button element.
+ */
 function createButton(doc: Document, className: string, text?: string) {
   const button = createHtmlElement(doc, "button", className, text);
   button.setAttribute("type", "button");
   return button as HTMLButtonElement;
 }
 
+/**
+ * Creates the header button that requests the assistant popout window.
+ *
+ * @param doc - Document used to create DOM nodes.
+ * @returns Popout button element.
+ */
 function createPopoutButton(doc: Document) {
   const popoutButton = createButton(
     doc,
@@ -390,6 +452,12 @@ function createPopoutButton(doc: Document) {
   return popoutButton;
 }
 
+/**
+ * Creates the collapsible model picker area.
+ *
+ * @param doc - Document used to create DOM nodes.
+ * @returns Model picker element.
+ */
 function createModelPicker(doc: Document) {
   const picker = createHtmlElement(
     doc,
@@ -431,8 +499,6 @@ function createProviderToggle(doc: Document) {
   const localButton = createButton(doc, "zai-provider-toggle-button", "Lokal");
   localButton.dataset.provider = "ollama";
 
-  // Beim Erzeugen der Sidebar wird der gespeicherte Provider sofort visuell
-  // markiert, bevor der Controller die weiteren Ereignisse bindet.
   const buttons = [cloudButton, localButton];
   syncProviderToggleButtons(buttons, addon.data.settings.provider);
 
@@ -473,6 +539,12 @@ function createModelSelect(doc: Document) {
   return modelWrap;
 }
 
+/**
+ * Creates the metadata and paper context popover control.
+ *
+ * @param doc - Document used to create DOM nodes.
+ * @returns Metadata field control element.
+ */
 function createMetadataFieldControl(doc: Document) {
   const control = createHtmlElement(doc, "div", "zai-metadata-control");
 
@@ -604,6 +676,15 @@ function syncProviderToggleButtons(
   }
 }
 
+/**
+ * Creates an HTML element in the XHTML namespace.
+ *
+ * @param doc - Document used to create DOM nodes.
+ * @param tagName - HTML tag name to create.
+ * @param className - Optional CSS class name.
+ * @param text - Optional text content.
+ * @returns Created HTML element.
+ */
 function createHtmlElement<K extends keyof HTMLElementTagNameMap>(
   doc: Document,
   tagName: K,
@@ -620,6 +701,12 @@ function createHtmlElement<K extends keyof HTMLElementTagNameMap>(
   return element;
 }
 
+/**
+ * Creates the send button icon.
+ *
+ * @param doc - Document used to create SVG nodes.
+ * @returns SVG icon element.
+ */
 function createSendIcon(doc: Document) {
   const svg = createIconSvg(doc, "20");
 
@@ -633,6 +720,12 @@ function createSendIcon(doc: Document) {
   return svg;
 }
 
+/**
+ * Creates the metadata control icon.
+ *
+ * @param doc - Document used to create SVG nodes.
+ * @returns SVG icon element.
+ */
 function createMetadataIcon(doc: Document) {
   const svg = createIconSvg(doc, "18");
 
@@ -658,6 +751,12 @@ function createMetadataIcon(doc: Document) {
   return svg;
 }
 
+/**
+ * Creates the Ollama power action icon.
+ *
+ * @param doc - Document used to create SVG nodes.
+ * @returns SVG icon element.
+ */
 function createPowerIcon(doc: Document) {
   const svg = createIconSvg(doc, "18");
 
@@ -671,6 +770,12 @@ function createPowerIcon(doc: Document) {
   return svg;
 }
 
+/**
+ * Creates the about view question icon.
+ *
+ * @param doc - Document used to create SVG nodes.
+ * @returns SVG icon element.
+ */
 function createQuestionIcon(doc: Document) {
   const svg = createIconSvg(doc, "18");
 
@@ -689,6 +794,12 @@ function createQuestionIcon(doc: Document) {
   return svg;
 }
 
+/**
+ * Creates the Instagram link icon.
+ *
+ * @param doc - Document used to create SVG nodes.
+ * @returns SVG icon element.
+ */
 function createInstagramIcon(doc: Document) {
   const svg = createIconSvg(doc, "18");
 
@@ -712,6 +823,12 @@ function createInstagramIcon(doc: Document) {
   return svg;
 }
 
+/**
+ * Creates the website link icon.
+ *
+ * @param doc - Document used to create SVG nodes.
+ * @returns SVG icon element.
+ */
 function createGlobeIcon(doc: Document) {
   const svg = createIconSvg(doc, "18");
 
@@ -730,6 +847,12 @@ function createGlobeIcon(doc: Document) {
   return svg;
 }
 
+/**
+ * Creates the GitHub link icon.
+ *
+ * @param doc - Document used to create SVG nodes.
+ * @returns SVG icon element.
+ */
 function createGitHubIcon(doc: Document) {
   const svg = createIconSvg(doc, "18");
 
@@ -746,6 +869,12 @@ function createGitHubIcon(doc: Document) {
   return svg;
 }
 
+/**
+ * Creates the settings gear icon.
+ *
+ * @param doc - Document used to create SVG nodes.
+ * @returns SVG icon element.
+ */
 function createGearIcon(doc: Document) {
   const svg = createIconSvg(doc, "18");
 
@@ -764,6 +893,12 @@ function createGearIcon(doc: Document) {
   return svg;
 }
 
+/**
+ * Creates the popout window icon.
+ *
+ * @param doc - Document used to create SVG nodes.
+ * @returns SVG icon element.
+ */
 function createPopoutIcon(doc: Document) {
   const svg = createIconSvg(doc, "18");
 
@@ -780,6 +915,12 @@ function createPopoutIcon(doc: Document) {
   return svg;
 }
 
+/**
+ * Creates the back navigation icon.
+ *
+ * @param doc - Document used to create SVG nodes.
+ * @returns SVG icon element.
+ */
 function createBackIcon(doc: Document) {
   const svg = createIconSvg(doc, "18");
 
@@ -793,6 +934,12 @@ function createBackIcon(doc: Document) {
   return svg;
 }
 
+/**
+ * Creates the chat favorite icon.
+ *
+ * @param doc - Document used to create SVG nodes.
+ * @returns SVG icon element.
+ */
 function createHeartIcon(doc: Document) {
   const svg = createIconSvg(doc, "18");
 
@@ -806,6 +953,12 @@ function createHeartIcon(doc: Document) {
   return svg;
 }
 
+/**
+ * Creates the chat delete icon.
+ *
+ * @param doc - Document used to create SVG nodes.
+ * @returns SVG icon element.
+ */
 function createTrashIcon(doc: Document) {
   const svg = createIconSvg(doc, "18");
 
@@ -828,6 +981,13 @@ function createTrashIcon(doc: Document) {
   return svg;
 }
 
+/**
+ * Creates a base SVG icon element with shared stroke attributes.
+ *
+ * @param doc - Document used to create SVG nodes.
+ * @param size - Width and height of the icon.
+ * @returns SVG root element.
+ */
 function createIconSvg(doc: Document, size: string) {
   const svg = doc.createElementNS(SVG_NS, "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
@@ -843,6 +1003,12 @@ function createIconSvg(doc: Document, size: string) {
   return svg;
 }
 
+/**
+ * Creates a checkmark icon.
+ *
+ * @param doc - Document used to create SVG nodes.
+ * @returns SVG icon element.
+ */
 function createCheckIcon(doc: Document) {
   const svg = createIconSvg(doc, "14");
   const check = doc.createElementNS(SVG_NS, "path");
@@ -851,6 +1017,12 @@ function createCheckIcon(doc: Document) {
   return svg;
 }
 
+/**
+ * Formats a duration in milliseconds for compact status display.
+ *
+ * @param ms - Duration in milliseconds.
+ * @returns Human-readable duration string.
+ */
 function formatDuration(ms: number): string {
   const totalSeconds = Math.round(ms / 1000);
   const m = Math.floor(totalSeconds / 60);
@@ -859,13 +1031,22 @@ function formatDuration(ms: number): string {
   return `${s}s`;
 }
 
+/**
+ * Formats the skipped-paper suffix for indexing status messages.
+ *
+ * @param skippedCount - Number of skipped papers.
+ * @returns Suffix text or an empty string.
+ */
 function formatSkippedSuffix(skippedCount?: number): string {
   if (!skippedCount) return "";
   return ` ${skippedCount} Paper ohne extrahierbaren Text übersprungen.`;
 }
 
 /**
- * Erzeugt den Indizierungs-Status-Banner, der direkt über dem Kompositor angezeigt wird.
+ * Creates the indexing status banner shown above the composer.
+ *
+ * @param doc - Document used to create DOM nodes.
+ * @returns Indexing status banner element.
  */
 function createIndexingStatusBanner(doc: Document) {
   const banner = createHtmlElement(
@@ -895,7 +1076,6 @@ function createIndexingStatusBanner(doc: Document) {
   stopButton.style.fontSize = "0.9em";
   stopButton.style.opacity = "0.8";
 
-  // Hover effect using simple mouse events since it's inline styled
   stopButton.addEventListener("mouseenter", () => {
     stopButton.style.opacity = "1";
     stopButton.style.background = "rgba(128, 128, 128, 0.2)";
@@ -946,8 +1126,6 @@ function createIndexingStatusBanner(doc: Document) {
     banner.classList.add("zai-indexing-banner--active");
   }
 
-  // Auto-hide-Delay analog zu STATUS_AUTO_HIDE_DELAY_MS im Index Manager
-  // (src/ui/indexManager/render.ts), damit beide Banner sich identisch verhalten.
   const STATIC_AUTO_HIDE_DELAY_MS = 5000;
 
   function showStatic(text: string, type: "success" | "warning" | "error") {
@@ -1111,6 +1289,12 @@ function createIndexingStatusBanner(doc: Document) {
   return banner;
 }
 
+/**
+ * Creates the warning banner shown when attached paper context has not been indexed.
+ *
+ * @param doc - Document used to create DOM nodes.
+ * @returns Paper context indexing warning element.
+ */
 function createPaperContextIndexWarning(doc: Document) {
   const banner = createHtmlElement(
     doc,

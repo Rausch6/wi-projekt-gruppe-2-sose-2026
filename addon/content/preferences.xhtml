@@ -6,6 +6,7 @@
   class="zaia-pref-root"
   onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window })"
 >
+  <!-- Cloud-provider credentials, models, connection check, and endpoint. -->
   <html:section class="zaia-pref-section">
     <html:header class="zaia-pref-section-header">
       <html:h3 data-l10n-id="pref-cloud-section-title"></html:h3>
@@ -91,6 +92,7 @@
     </html:details>
   </html:section>
 
+  <!-- Local Ollama model selection, connection check, and endpoint. -->
   <html:section class="zaia-pref-section">
     <html:header class="zaia-pref-section-header">
       <html:h3 data-l10n-id="pref-local-section-title"></html:h3>
@@ -144,6 +146,7 @@
     </html:details>
   </html:section>
 
+  <!-- Semantic paper search, index access, routing, and chunking controls. -->
   <html:section class="zaia-pref-section">
     <html:header class="zaia-pref-section-header">
       <html:h3 data-l10n-id="pref-context-section-title"></html:h3>
@@ -277,6 +280,7 @@
     </html:details>
   </html:section>
 
+  <!-- Local chat retention behavior. -->
   <html:section class="zaia-pref-section">
     <html:header class="zaia-pref-section-header">
       <html:h3 data-l10n-id="pref-chat-section-title"></html:h3>
@@ -295,6 +299,7 @@
     </html:div>
   </html:section>
 
+  <!-- Build diagnostics and reset-to-default action. -->
   <html:div class="zaia-pref-footer">
     <html:div class="zaia-pref-build-info">
       <html:dl>

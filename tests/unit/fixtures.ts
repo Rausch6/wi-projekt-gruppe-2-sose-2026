@@ -1,5 +1,8 @@
 import type { PromptContextRouterCandidate } from "../../src/core/PromptContextRouter";
 
+/**
+ * Shared prompt-router candidates used by router-focused tests.
+ */
 export const routerCandidates: PromptContextRouterCandidate[] = [
   {
     itemID: 101,
@@ -40,6 +43,12 @@ export const routerCandidates: PromptContextRouterCandidate[] = [
   },
 ];
 
+/**
+ * Creates a router chat mock that returns fixed content.
+ *
+ * @param content - Assistant response content returned by the mock chat function.
+ * @returns Async chat function compatible with the prompt router.
+ */
 export function createRouterChat(content: string) {
   return async () => ({ content });
 }

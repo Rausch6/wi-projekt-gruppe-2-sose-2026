@@ -6,6 +6,14 @@ import {
   httpClient,
 } from "../../src/utils/httpClient.js";
 
+/**
+ * Creates a fetch response mock with iterable headers and a text body.
+ *
+ * @param {number} status - HTTP response status code.
+ * @param {string} body - Raw response body returned by text().
+ * @param {Record<string, string>} headers - Response headers exposed through forEach().
+ * @returns {object} Mocked fetch response.
+ */
 function createFetchResponse(status, body, headers = {}) {
   return {
     status,
@@ -20,6 +28,9 @@ function createFetchResponse(status, body, headers = {}) {
   };
 }
 
+/**
+ * Verifies HTTP client serialization, parsing, error handling, and ping behavior.
+ */
 describe("httpClient", () => {
   afterEach(() => {
     vi.restoreAllMocks();

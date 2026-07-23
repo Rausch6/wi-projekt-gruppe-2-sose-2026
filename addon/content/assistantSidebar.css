@@ -1,3 +1,4 @@
+/* Assistant trigger in Zotero's native and legacy side navigations. */
 .zai-sidenav-button {
   -moz-context-properties: fill, stroke;
   fill: currentColor;
@@ -80,6 +81,7 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   width: 0;
 }
 
+/* Sidebar shell shared by the embedded panel and the detached popout. */
 .zai-standalone-sidebar {
   background: var(--material-sidepane, var(--material-background, #fff));
   border-left: 1px solid var(--border-color, rgba(0, 0, 0, 0.18));
@@ -123,6 +125,7 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   width: 100%;
 }
 
+/* Header, view navigation, provider picker, and active-chat controls. */
 .zai-top {
   box-sizing: border-box;
   min-width: 0;
@@ -339,6 +342,7 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   margin: 12px 0;
 }
 
+/* Recent-chat list and actions for the currently active conversation. */
 .zai-active-chat-bar {
   align-items: center;
   box-sizing: border-box;
@@ -559,6 +563,7 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   width: 16px;
 }
 
+/* Main empty, about, and chat views. */
 .zai-main {
   box-sizing: border-box;
   min-height: 0;
@@ -761,6 +766,7 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   width: 21px;
 }
 
+/* First-run setup timeline and its provider/embedding milestones. */
 .zai-setup-timeline {
   align-self: stretch;
   box-sizing: border-box;
@@ -1040,6 +1046,7 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   }
 }
 
+/* Chat bubbles and the rich Markdown elements rendered in assistant replies. */
 .zai-messages {
   display: grid;
   gap: 10px;
@@ -1333,6 +1340,7 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   font-weight: 650;
 }
 
+/* Composer, context controls, and send/terminate actions. */
 .zai-footer {
   box-sizing: border-box;
   min-width: 0;
@@ -1470,6 +1478,7 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   opacity: 0.55;
 }
 
+/* Metadata and paper-context popover, including library search results. */
 .zai-metadata-popover {
   background: var(--material-background, #fff);
   border: 1px solid var(--border-color, rgba(0, 0, 0, 0.16));
@@ -1727,6 +1736,7 @@ item-pane-sidenav.stacked .zai-sidenav-assistant-slot > .divider {
   outline: none;
 }
 
+/* Custom model selector and the composer status line. */
 .zai-model-select-wrap {
   align-items: center;
   background: var(--material-background, #fff);
