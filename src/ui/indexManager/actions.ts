@@ -519,10 +519,10 @@ export function markInitialIndexPromptShown(): void {
  * @param libraries - Die zur Auswahl stehenden Bibliotheken.
  * @returns Ein Promise, das mit dem Bestätigungsstatus und den ausgewählten Bibliotheks-IDs aufgelöst wird.
  */
-export function showInitialIndexPrompt(
+export function showLibrarySelectionPrompt(
   window: Window,
   libraries: LibraryFilterOption[],
-  options: LibrarySelectionPromptOptions = {},
+  options: { title?: string; description?: string; confirmLabel?: string; selectedLibraryIDs?: Set<number> } = {},
 ): Promise<{ confirmed: boolean; libraryIDs: number[] }> {
   const doc = window.document;
   const selectedLibraryIDs = options.selectedLibraryIDs
