@@ -174,7 +174,7 @@ und keine echte Paper-Sammlung.
 ## Lizenz
 
 ZAIA wird gemäß der Projektkonfiguration unter der MIT-Lizenz
-veröffentlicht. Siehe [license.txt](license.txt) für Details.
+veröffentlicht. Siehe [MIT_Licence.txt](MIT_Licence.txt) für Details.
 
 ---
 
