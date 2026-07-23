@@ -4,11 +4,12 @@ import type { PageTextChunk } from "./PdfExtractor";
 
 declare const Zotero: any;
 import { config } from "../../package.json";
-// Fall back to Zotero's global add-on instance when no module export is available.
-const getAddon = () =>
-  (globalThis as any).Zotero?.[config.addonInstance] ||
-  (globalThis as any).addon;
 
+const getAddon = () => (globalThis as any).Zotero?.[config.addonInstance] || (globalThis as any).addon;
+
+/**
+ * Ein einzelner Text-Chunk mit Metadaten zur Seitenposition und Token-Schätzung.
+ */
 export interface TextChunk {
   id: string;
   text: string;
@@ -17,11 +18,17 @@ export interface TextChunk {
   estimatedTokens: number;
 }
 
+/**
+ * Optionen für die Chunking-Konfiguration.
+ */
 export interface ChunkOptions {
   targetTokens?: number;
   overlapTokens?: number;
 }
 
+/**
+ * Optionen für die Auswahl relevanter Chunks bei einer Suchanfrage.
+ */
 export interface SelectChunkOptions {
   maxChunks?: number;
   maxTokens?: number;
@@ -33,9 +40,7 @@ type TextUnit = {
   tokens: number;
 };
 
-const DEFAULT_TARGET_TOKENS = 512;
 const DEFAULT_OVERLAP_TOKENS = 100;
-// A lightweight approximation avoids requiring a tokenizer for chunk creation.
 const WORDS_PER_TOKEN = 0.75;
 const REFERENCE_SECTION_HEADING =
   /(^|\n)\s*(?:\d+(?:\.\d+)*\.?\s+)?(?:references|bibliography|works cited|literatur|literaturverzeichnis|quellen|quellenverzeichnis)\b/iu;
@@ -67,15 +72,19 @@ const NEGATION_WORDS = new Set([
   "weder",
   "ohne",
 ]);
-// Negations are deliberately retained because removing them can reverse the
-// meaning of a sentence and reduce both keyword and embedding quality.
 const STOP_WORDS = new Set(
   [...naturalStopWords, ...stopwordsIso.de]
     .map(normalizeTerm)
     .filter((term) => isStopWordCandidate(term) && !NEGATION_WORDS.has(term)),
 );
 
-/** Normalizes extracted page text and removes recurring headers and footers. */
+/**
+ * Bereinigt und normalisiert Seitentext aus einem extrahierten PDF.
+ * Entfernt wiederholte Seitenränder (Kopf- und Fußzeilen).
+ *
+ * @param pages - Rohe Seiten-Chunks aus dem PDF-Extraktor.
+ * @returns Bereinigte Seiten-Chunks.
+ */
 export function cleanPaperPages(pages: PageTextChunk[]) {
   const normalizedPages = pages
     .map((page) => ({
@@ -88,22 +97,22 @@ export function cleanPaperPages(pages: PageTextChunk[]) {
 }
 
 /**
- * Converts PDF pages into overlapping, page-aware text chunks.
+ * Zerlegt den Volltext eines Papers in überlappende Text-Chunks.
+ * Liest Chunk-Größen aus den Addon-Einstellungen oder den übergebenen Optionen.
+ * Entfernt vor dem Chunking Stoppwörter und Referenzabschnitte.
  *
- * The pipeline cleans extraction artifacts, removes references and stop words,
- * splits the remaining text at paragraph or sentence boundaries, and finally
- * assembles units up to the configured token target.
+ * @param pages - Seitentext-Chunks des Papers.
+ * @param options - Optionale Chunking-Parameter (targetTokens, overlapTokens).
+ * @returns Liste von Text-Chunks mit Metadaten.
  */
 export function chunkPaperText(
   pages: PageTextChunk[],
   options: ChunkOptions = {},
 ): TextChunk[] {
   let defaultTarget = 1024;
-  let defaultOverlap = 100;
+  let defaultOverlap = DEFAULT_OVERLAP_TOKENS;
 
   try {
-    // Runtime settings override the constants while explicit function options
-    // still take precedence below, which keeps this function easy to test.
     const addonSettings = getAddon()?.data?.settings;
     const targetSetting = addonSettings?.chunkTargetTokens;
     const overlapSetting = addonSettings?.chunkOverlapTokens;
@@ -113,12 +122,10 @@ export function chunkPaperText(
     if (typeof overlapSetting === "number" && overlapSetting >= 0)
       defaultOverlap = overlapSetting;
   } catch (_e) {
-    // Keep the constants when the add-on runtime is unavailable.
+
   }
 
-  const targetTokens = options.targetTokens ?? defaultTarget;
-  // Limiting overlap to half a chunk prevents duplicated context from becoming
-  // larger than the new content added to each subsequent chunk.
+  const targetTokens = Math.min(8192, options.targetTokens ?? defaultTarget);
   const overlapTokens = Math.min(
     options.overlapTokens ?? defaultOverlap,
     Math.floor(targetTokens / 2),
@@ -129,7 +136,6 @@ export function chunkPaperText(
       `[TextChunker] Chunking paper text... targetTokens=${targetTokens}, overlapTokens=${overlapTokens}`,
     );
   } catch (_e) {
-    // ignore if Zotero is not defined in tests
   }
   const cleanedPages = removeReferenceSections(cleanPaperPages(pages));
   const units = createTextUnits(
@@ -143,8 +149,6 @@ export function chunkPaperText(
   for (const unit of units) {
     if (current.length && currentTokens + unit.tokens > targetTokens) {
       chunks.push(createChunk(chunks.length, current));
-      // Reuse complete trailing units so overlap never cuts through a paragraph
-      // or sentence group.
       current = takeOverlapUnits(current, overlapTokens);
       currentTokens = sumTokens(current);
     }
@@ -161,7 +165,13 @@ export function chunkPaperText(
 }
 
 /**
- * Keyword-based relevance selection used directly or as the embedding fallback.
+ * Wählt aus einer Liste von Chunks die für eine Suchanfrage relevantesten aus.
+ * Bewertet Chunks anhand der Häufigkeit der Suchbegriffe im Text.
+ *
+ * @param chunks - Alle verfügbaren Text-Chunks eines Papers.
+ * @param query - Die Nutzersuchanfrage.
+ * @param options - Optionale Grenzen für Chunk-Anzahl und Token-Gesamtzahl.
+ * @returns Sortierte Liste der relevantesten Chunks.
  */
 export function selectRelevantChunks(
   chunks: TextChunk[],
@@ -196,20 +206,29 @@ export function selectRelevantChunks(
     usedTokens += candidate.chunk.estimatedTokens;
   }
 
-  // Ranking determines which chunks are selected; document order determines how
-  // they are presented to the language model.
   return selected.sort((a, b) => a.index - b.index).map(({ chunk }) => chunk);
 }
 
-/** Estimates token usage from whitespace-separated words. */
+/**
+ * Schätzt die Anzahl der Tokens in einem Text anhand der Wortanzahl.
+ *
+ * @param text - Der zu schätzende Text.
+ * @returns Geschätzte Token-Anzahl (mindestens 1).
+ */
 export function estimateTokens(text: string) {
   const words = text.trim().match(/\S+/g)?.length ?? 0;
   return Math.max(1, Math.ceil(words / WORDS_PER_TOKEN));
 }
 
+/**
+ * Normalisiert den aus einem PDF extrahierten Rohtext.
+ * Entfernt Soft-Hyphens, normalisiert Zeilenumbrüche und
+ * rekonstruiert durch Silbentrennung unterbrochene Wörter.
+ *
+ * @param text - Der zu normalisierende Rohtext.
+ * @returns Bereinigter Text.
+ */
 function normalizeExtractedText(text: string) {
-  // Remove soft hyphens and join words split by PDF line wrapping, but retain a
-  // hyphen when the following line does not clearly continue a lowercase word.
   return text
     .replace(/\u00ad/g, "")
     .replace(/\r\n?/g, "\n")
@@ -222,9 +241,14 @@ function normalizeExtractedText(text: string) {
     .trim();
 }
 
+/**
+ * Entfernt wiederholt auftretende Kopf- und Fußzeilen aus dem Seitentext.
+ * Zeilen, die auf mindestens 60 % der Seiten identisch sind, werden gelöscht.
+ *
+ * @param pages - Normalisierte Seiten-Chunks.
+ * @returns Seiten-Chunks ohne wiederkehrende Randzeilen.
+ */
 function removeRepeatedPageMargins(pages: PageTextChunk[]) {
-  // Three pages are required to distinguish recurring margins from ordinary
-  // first or last lines with reasonable confidence.
   if (pages.length < 3) return pages;
 
   const candidates = pages.flatMap((page) => {
@@ -239,8 +263,6 @@ function removeRepeatedPageMargins(pages: PageTextChunk[]) {
     const key = normalizeMarginLine(candidate);
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
-  // Page numbers are normalized to `#`, allowing headers such as "Page 4" and
-  // "Page 5" to be recognized as the same recurring margin.
   const threshold = Math.ceil(pages.length * 0.6);
   const repeated = new Set(
     [...counts.entries()]
@@ -260,15 +282,25 @@ function removeRepeatedPageMargins(pages: PageTextChunk[]) {
   }));
 }
 
+/**
+ * Normalisiert eine Randzeile für den Vergleich: Kleinschreibung,
+ * Ziffern zu `#`, mehrfache Leerzeichen zu einem.
+ *
+ * @param line - Die zu normalisierende Zeile.
+ * @returns Normalisierte Randzeile.
+ */
 function normalizeMarginLine(line: string) {
   return line.toLowerCase().replace(/\d+/g, "#").replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Entfernt Literaturverzeichnis-Abschnitte ab dem späteren Drittel des Dokuments.
+ *
+ * @param pages - Bereinigte Seiten-Chunks.
+ * @returns Seiten-Chunks bis einschließlich des letzten Inhalts vor dem Literaturverzeichnis.
+ */
 function removeReferenceSections(pages: PageTextChunk[]) {
   if (!pages.length) return pages;
-
-  // Reference detection only starts in the latter 55% of a paper to avoid
-  // treating an early table of contents or literature overview as the appendix.
   const minimumReferencePageIndex = Math.max(
     0,
     Math.floor(pages.length * 0.45),
@@ -281,8 +313,6 @@ function removeReferenceSections(pages: PageTextChunk[]) {
   ) {
     const page = pages[index];
     const match = REFERENCE_SECTION_HEADING.exec(page.text);
-    // A heading alone is insufficient; citation-like markers must also occur in
-    // the following text before the remainder of the document is removed.
     if (!match || !looksLikeReferenceSection(page.text.slice(match.index))) {
       continue;
     }
@@ -299,6 +329,13 @@ function removeReferenceSections(pages: PageTextChunk[]) {
   return pages;
 }
 
+/**
+ * Prüft anhand typischer Referenz-Muster, ob ein Textabschnitt
+ * tatsächlich ein Literaturverzeichnis ist.
+ *
+ * @param text - Der zu prüfende Textabschnitt.
+ * @returns True, wenn typische Referenz-Muster gefunden wurden.
+ */
 function looksLikeReferenceSection(text: string) {
   const sample = text.slice(0, 2_000);
   const referenceMarkers = [
@@ -314,9 +351,13 @@ function looksLikeReferenceSection(text: string) {
   return referenceMarkers.some((marker) => marker.test(sample));
 }
 
+/**
+ * Entfernt Stoppwörter aus allen Seiten eines Papers.
+ *
+ * @param pages - Seiten-Chunks mit normalem Text.
+ * @returns Seiten-Chunks ohne Stoppwörter.
+ */
 function removeStopWordsFromPages(pages: PageTextChunk[]) {
-  // Filtering before chunk assembly gives the available token budget to content
-  // words while keeping punctuation and paragraph boundaries intact.
   return pages
     .map((page) => ({
       ...page,
@@ -325,9 +366,15 @@ function removeStopWordsFromPages(pages: PageTextChunk[]) {
     .filter((page) => page.text);
 }
 
+/**
+ * Entfernt Stoppwörter aus einem Text und bereinigt daraus entstandene Lücken.
+ *
+ * @param text - Der zu bereinigende Text.
+ * @returns Text ohne Stoppwörter.
+ */
 function removeStopWords(text: string) {
   return text
-    .replace(/[\p{L}\p{N}]+(?:[-'’][\p{L}\p{N}]+)*/gu, (term) =>
+    .replace(/[\p{L}\p{N}]+(?:[-''][\p{L}\p{N}]+)*/gu, (term) =>
       STOP_WORDS.has(normalizeTerm(term)) ? "" : term,
     )
     .split("\n")
@@ -337,6 +384,12 @@ function removeStopWords(text: string) {
     .trim();
 }
 
+/**
+ * Bereinigt eine Zeile nach der Stoppwort-Entfernung (z. B. Leerzeichen vor Satzzeichen).
+ *
+ * @param line - Die zu bereinigende Zeile.
+ * @returns Bereinigte Zeile.
+ */
 function cleanStopWordLine(line: string) {
   return line
     .replace(/[ \t]+/g, " ")
@@ -344,14 +397,20 @@ function cleanStopWordLine(line: string) {
     .replace(/([([{])\s+/g, "$1")
     .replace(/\s+([)\]}])/g, "$1")
     .replace(/^[,.;:!?]+(?:\s+|$)/g, "")
-    .replace(/[([{][ \t]*[)\]}]/g, "")
+    .replace(/([([{][ \t]*[)\]}])/g, "")
     .replace(/-{2,}/g, "-")
     .trim();
 }
 
+/**
+ * Erzeugt aus Seiten-Chunks eine flache Liste von Text-Einheiten (Paragraphen/Sätze).
+ * Zu große Einheiten werden weiter in Sätze aufgeteilt.
+ *
+ * @param pages - Seiten-Chunks ohne Stoppwörter.
+ * @param targetTokens - Maximale Token-Anzahl pro Einheit.
+ * @returns Flache Liste von Text-Einheiten.
+ */
 function createTextUnits(pages: PageTextChunk[], targetTokens: number) {
-  // Paragraphs are the preferred atomic units because they preserve local
-  // meaning and page metadata across later overlap operations.
   return pages.flatMap((page) => {
     const paragraphs = page.text.split(/\n{2,}/).filter(Boolean);
     return paragraphs.flatMap((paragraph) =>
@@ -360,6 +419,14 @@ function createTextUnits(pages: PageTextChunk[], targetTokens: number) {
   });
 }
 
+/**
+ * Teilt eine zu große Text-Einheit an Satzgrenzen in kleinere Einheiten auf.
+ *
+ * @param text - Der aufzuteilende Text.
+ * @param page - Die Seitennummer der Einheit.
+ * @param targetTokens - Maximale Token-Anzahl pro Einheit.
+ * @returns Liste von Text-Einheiten, die das Token-Limit einhalten.
+ */
 function splitOversizedUnit(
   text: string,
   page: number | null,
@@ -369,8 +436,6 @@ function splitOversizedUnit(
     return [{ text, page, tokens: estimateTokens(text) }];
   }
 
-  // Oversized paragraphs are grouped by sentence where possible. A single
-  // sentence may remain above the target rather than being cut mid-sentence.
   const sentences = text.split(/(?<=[.!?])\s+(?=\p{Lu}|\d)/u);
   const units: TextUnit[] = [];
   let current = "";
@@ -392,6 +457,13 @@ function splitOversizedUnit(
   return units;
 }
 
+/**
+ * Erstellt einen TextChunk aus einer Liste von Text-Einheiten.
+ *
+ * @param index - Index des Chunks in der Gesamtliste (für die ID-Vergabe).
+ * @param units - Text-Einheiten, die zu einem Chunk zusammengeführt werden.
+ * @returns Fertiger TextChunk mit Metadaten.
+ */
 function createChunk(index: number, units: TextUnit[]): TextChunk {
   const pages = units
     .map((unit) => unit.page)
@@ -407,6 +479,13 @@ function createChunk(index: number, units: TextUnit[]): TextChunk {
   };
 }
 
+/**
+ * Wählt die letzten Text-Einheiten eines Chunks als Überlappung für den nächsten Chunk aus.
+ *
+ * @param units - Aktuelle Text-Einheiten des vorigen Chunks.
+ * @param overlapTokens - Gewünschte Token-Anzahl für die Überlappung.
+ * @returns Letzte Einheiten, die zusammen mindestens `overlapTokens` Token umfassen.
+ */
 function takeOverlapUnits(units: TextUnit[], overlapTokens: number) {
   const overlap: TextUnit[] = [];
   let tokens = 0;
@@ -416,18 +495,30 @@ function takeOverlapUnits(units: TextUnit[], overlapTokens: number) {
     if (!unit) continue;
     overlap.unshift(unit);
     tokens += unit.tokens;
-    // Whole units are retained, so the actual overlap can slightly exceed the
-    // requested token count.
+    
     if (tokens >= overlapTokens) break;
   }
 
   return overlap;
 }
 
+/**
+ * Summiert die Token-Anzahl einer Liste von Text-Einheiten.
+ *
+ * @param units - Liste von Text-Einheiten.
+ * @returns Gesamtanzahl der Tokens.
+ */
 function sumTokens(units: TextUnit[]) {
   return units.reduce((sum, unit) => sum + unit.tokens, 0);
 }
 
+/**
+ * Extrahiert normalisierte, eindeutige Suchbegriffe aus einer Suchanfrage.
+ * Filtert Stoppwörter und Begriffe mit weniger als 3 Zeichen heraus.
+ *
+ * @param query - Die Nutzersuchanfrage.
+ * @returns Liste eindeutiger, normalisierter Suchbegriffe.
+ */
 function extractTerms(query: string) {
   return [
     ...new Set(
@@ -439,9 +530,17 @@ function extractTerms(query: string) {
   ];
 }
 
+/**
+ * Berechnet einen Relevanz-Score für einen Chunk anhand der Suchbegriffe.
+ * Berücksichtigt Häufigkeit der Begriffe und normalisiert nach Chunk-Länge.
+ *
+ * @param chunk - Der zu bewertende Text-Chunk.
+ * @param queryTerms - Normalisierte Suchbegriffe aus der Suchanfrage.
+ * @param index - Position des Chunks in der Gesamtliste (für Positions-Bonus).
+ * @returns Relevanz-Score des Chunks.
+ */
 function scoreChunk(chunk: TextChunk, queryTerms: string[], index: number) {
-  // With no usable search terms, prefer the opening chunk because it commonly
-  // contains the abstract or introduction.
+  
   if (!queryTerms.length) return index === 0 ? 1 : 0;
 
   const normalizedText = chunk.text
@@ -453,15 +552,20 @@ function scoreChunk(chunk: TextChunk, queryTerms: string[], index: number) {
 
   for (const term of queryTerms) {
     const matches = normalizedText.split(term).length - 1;
-    // Logarithmic frequency rewards repeated matches without allowing one very
-    // frequent term to dominate the complete score.
+    
     if (matches) score += 1 + Math.log2(matches + 1);
   }
-
-  // Length normalization reduces the inherent advantage of larger chunks.
+  
   return score / Math.sqrt(Math.max(1, chunk.estimatedTokens / 100));
 }
 
+/**
+ * Normalisiert einen Begriff: Kleinschreibung, NFKD-Normalisierung,
+ * Diakritika-Entfernung und ß → ss.
+ *
+ * @param term - Der zu normalisierende Begriff.
+ * @returns Normalisierter Begriff.
+ */
 function normalizeTerm(term: string) {
   return term
     .toLowerCase()
@@ -470,6 +574,14 @@ function normalizeTerm(term: string) {
     .replace(/ß/g, "ss");
 }
 
+/**
+ * Prüft, ob ein Begriff als Stoppwort-Kandidat geeignet ist.
+ * Muss ausschließlich aus Buchstaben bestehen und mehr als 1 Zeichen haben
+ * (Ausnahmen: "a" und "i").
+ *
+ * @param term - Der zu prüfende Begriff.
+ * @returns True, wenn der Begriff ein Stoppwort-Kandidat ist.
+ */
 function isStopWordCandidate(term: string) {
   return (
     /^[\p{L}]+$/u.test(term) &&

@@ -28,20 +28,19 @@ import {
   getItemCreators,
   getItemField,
   getItemType,
-  loadItemCompletely,
 } from "./zoteroUtils";
 
 declare const Zotero: any;
 
 /**
- * Reloads Zotero papers, index membership, filters, and selections.
+ * Lädt alle Paper aus allen bekannten Bibliotheken neu und aktualisiert die Ansicht des IndexManagers.
+ * Zeigt während des Ladevorgangs einen Busy-Zustand an und gibt nach Abschluss eine Statusmeldung aus.
  *
- * @param window - Index manager dialog window.
- * @param elements - Required index manager controls.
- * @param state - Mutable index manager state.
- * @param vectorStoreService - Vector store used to resolve indexed item IDs.
- * @param backgroundIndexerService - Background indexer used for running state.
- * @returns Promise resolved after the manager has been refreshed.
+ * @param window - Das aktive Browserfenster.
+ * @param elements - Die DOM-Elemente des IndexManagers.
+ * @param state - Der aktuelle Zustand des IndexManagers.
+ * @param vectorStoreService - Der Dienst für den Vektorindex.
+ * @param backgroundIndexerService - Der Hintergrund-Indexierungsdienst.
  */
 export async function reloadPapers(
   window: Window,
@@ -87,10 +86,19 @@ export async function reloadPapers(
 }
 
 /**
- * Collects indexable papers from every accessible Zotero library.
+ * Sammelt alle indexierbaren Paper aus sämtlichen bekannten Bibliotheken.
  *
- * @param vectorStoreService - Vector store used to mark indexed papers.
- * @returns Available library scopes and sorted paper records.
+ * Die Items werden in zwei Schritten geladen:
+ * Zunächst werden nur die Item-IDs der jeweiligen Bibliothek abgefragt,
+ * anschließend werden die vollständigen Item-Objekte per Batch über
+ * Zotero.Items.getAsync aus der Datenbank geladen.
+ * Dieses Vorgehen stellt sicher, dass Metadaten auch dann
+ * korrekt verfügbar sind, wenn die Bibliothek noch nicht in der
+ * Zotero-Seitenleiste geöffnet wurde.
+ * 
+ * @param vectorStoreService - Der Dienst für den Vektorindex,
+ *                             der die bereits indexierten Item-IDs liefert.
+ * @returns Ein Objekt mit der Liste der Bibliotheken und den zugehörigen PaperRecords.
  */
 export async function collectPapers(
   vectorStoreService: VectorStore,
@@ -104,15 +112,14 @@ export async function collectPapers(
   const papers: PaperRecord[] = [];
 
   for (const library of libraries) {
-    let items: any[] = [];
+    let loadedItems: any[] = [];
     try {
-      items = await Zotero.Items.getAll(library.libraryID, false, false, false);
+      const itemIDs: number[] = await Zotero.Items.getAllIDs(library.libraryID);
+      loadedItems = await Zotero.Items.getAsync(itemIDs);
     } catch (error) {
       logError(error);
       continue;
     }
-
-    const loadedItems = await Promise.all(items.map(loadItemCompletely));
 
     papers.push(
       ...loadedItems.filter(isIndexableItem).map((item: any) => {
@@ -158,13 +165,13 @@ export async function collectPapers(
 }
 
 /**
- * Enqueues selected unindexed papers for background indexing.
+ * Startet die Indexierung aller ausgewählten, noch nicht indexierten Paper.
+ * Zeigt eine Warnung, falls keine Paper ausgewählt sind.
  *
- * @param window - Index manager dialog window.
- * @param elements - Required index manager controls.
- * @param state - Mutable index manager state.
- * @param backgroundIndexerService - Background indexer receiving item IDs.
- * @returns Promise resolved after selected papers have been queued.
+ * @param window - Das aktive Browserfenster.
+ * @param elements - Die DOM-Elemente des IndexManagers.
+ * @param state - Der aktuelle Zustand des IndexManagers.
+ * @param backgroundIndexerService - Der Hintergrund-Indexierungsdienst.
  */
 export async function indexSelectedPapers(
   window: Window,
@@ -214,13 +221,14 @@ export async function indexSelectedPapers(
 }
 
 /**
- * Removes selected indexed papers from the vector store after confirmation.
+ * Entfernt alle ausgewählten, bereits indexierten Paper aus dem ZAIA-Index.
+ * Der Nutzer muss den Vorgang zuvor in einem Bestätigungsdialog bestätigen.
+ * Die Zotero-Einträge selbst bleiben dabei erhalten.
  *
- * @param window - Index manager dialog window.
- * @param elements - Required index manager controls.
- * @param state - Mutable index manager state.
- * @param vectorStoreService - Vector store from which papers are removed.
- * @returns Promise resolved after selected papers have been removed.
+ * @param window - Das aktive Browserfenster.
+ * @param elements - Die DOM-Elemente des IndexManagers.
+ * @param state - Der aktuelle Zustand des IndexManagers.
+ * @param vectorStoreService - Der Dienst für den Vektorindex.
  */
 export async function unindexSelectedPapers(
   window: Window,
@@ -280,13 +288,15 @@ export async function unindexSelectedPapers(
 }
 
 /**
- * Prompts for Zotero libraries and rebuilds their vector index.
+ * Baut den ZAIA-Index für die ausgewählten Bibliotheken vollständig neu auf.
+ * Der Nutzer muss den Vorgang zuvor in einem Bestätigungsdialog bestätigen.
+ * Gibt eine Warnung aus, falls bereits eine Indexierung läuft oder keine
+ * Bibliothek ausgewählt ist.
  *
- * @param window - Index manager dialog window.
- * @param elements - Required index manager controls.
- * @param state - Mutable index manager state.
- * @param backgroundIndexerService - Background indexer performing the rebuild.
- * @returns Promise resolved once the rebuild has been started.
+ * @param window - Das aktive Browserfenster.
+ * @param elements - Die DOM-Elemente des IndexManagers.
+ * @param state - Der aktuelle Zustand des IndexManagers.
+ * @param backgroundIndexerService - Der Hintergrund-Indexierungsdienst.
  */
 export async function rebuildIndex(
   window: Window,
@@ -384,13 +394,14 @@ export async function rebuildIndex(
 }
 
 /**
- * Clears the complete vector index without deleting Zotero items.
+ * Leert den gesamten ZAIA-Index aller Paper.
+ * Der Nutzer muss den Vorgang zuvor in einem Bestätigungsdialog bestätigen.
+ * Die Zotero-Einträge selbst bleiben dabei erhalten.
  *
- * @param window - Index manager dialog window.
- * @param elements - Required index manager controls.
- * @param state - Mutable index manager state.
- * @param vectorStoreService - Vector store to clear.
- * @returns Promise resolved after the vector index has been cleared.
+ * @param window - Das aktive Browserfenster.
+ * @param elements - Die DOM-Elemente des IndexManagers.
+ * @param state - Der aktuelle Zustand des IndexManagers.
+ * @param vectorStoreService - Der Dienst für den Vektorindex.
  */
 export async function clearIndex(
   window: Window,
@@ -425,13 +436,14 @@ export async function clearIndex(
 }
 
 /**
- * Offers a one-time full-library indexing prompt to first-time users.
+ * Zeigt beim ersten Öffnen des IndexManagers einen Dialog an,
+ * der den Nutzer fragt, ob die gesamte Bibliothek indexiert werden soll.
+ * Wurde der Dialog bereits einmal angezeigt, wird er nicht erneut geöffnet.
  *
- * @param window - Index manager dialog window.
- * @param elements - Required index manager controls.
- * @param state - Mutable index manager state.
- * @param backgroundIndexerService - Background indexer used when confirmed.
- * @returns Promise resolved after the prompt decision has been handled.
+ * @param window - Das aktive Browserfenster.
+ * @param elements - Die DOM-Elemente des IndexManagers.
+ * @param state - Der aktuelle Zustand des IndexManagers.
+ * @param backgroundIndexerService - Der Hintergrund-Indexierungsdienst.
  */
 export async function maybeShowInitialIndexPrompt(
   window: Window,
@@ -474,9 +486,9 @@ export async function maybeShowInitialIndexPrompt(
 }
 
 /**
- * Reads whether the one-time initial indexing prompt is still pending.
+ * Prüft, ob der Erststart-Indexierungsdialog dem Nutzer noch angezeigt werden soll.
  *
- * @returns True when the prompt should be displayed.
+ * @returns `true`, wenn der Dialog noch nicht angezeigt wurde, sonst `false`.
  */
 export function shouldShowInitialIndexPrompt(): boolean {
   try {
@@ -492,33 +504,22 @@ export function shouldShowInitialIndexPrompt(): boolean {
 }
 
 /**
- * Persists that the initial indexing prompt has already been displayed.
- *
- * @returns Nothing.
+ * Speichert in den Zotero-Einstellungen, dass der Erststart-Indexierungsdialog
+ * bereits angezeigt wurde, damit er nicht erneut erscheint.
  */
 export function markInitialIndexPromptShown(): void {
   Zotero.Prefs.set(`${config.prefsPrefix}.initialIndexPromptShown`, true, true);
 }
 
 /**
- * Customizes the reusable library-selection dialog.
- */
-type LibrarySelectionPromptOptions = {
-  title?: string;
-  confirmLabel?: string;
-  description?: string;
-  selectedLibraryIDs?: Iterable<number>;
-};
-
-/**
- * Renders an accessible library-selection dialog for indexing operations.
+ * Zeigt einen modalen Dialog an, in dem der Nutzer auswählen kann,
+ * welche Bibliotheken initial indexiert werden sollen.
  *
- * @param window - Index manager dialog window hosting the overlay.
- * @param libraries - Zotero libraries offered for selection.
- * @param options - Optional labels and initially selected libraries.
- * @returns Prompt result containing confirmation and selected library IDs.
+ * @param window - Das aktive Browserfenster.
+ * @param libraries - Die zur Auswahl stehenden Bibliotheken.
+ * @returns Ein Promise, das mit dem Bestätigungsstatus und den ausgewählten Bibliotheks-IDs aufgelöst wird.
  */
-export function showLibrarySelectionPrompt(
+export function showInitialIndexPrompt(
   window: Window,
   libraries: LibraryFilterOption[],
   options: LibrarySelectionPromptOptions = {},
@@ -614,10 +615,9 @@ export function showLibrarySelectionPrompt(
 }
 
 /**
- * Forwards an unknown UI error to Zotero's error log.
+ * Protokolliert einen Fehler über die Zotero-interne Fehlerprotokollierung.
  *
- * @param error - Error-like value to record.
- * @returns Nothing.
+ * @param error - Der zu protokollierende Fehler.
  */
 export function logError(error: unknown): void {
   Zotero.logError(error instanceof Error ? error : new Error(String(error)));

@@ -167,6 +167,21 @@ function bindPreferenceEvents(window: Window) {
   bindCommand(window, "reset-preferences", () => {
     resetPreferences(window);
   });
+
+  const clampChunkLimit = (fieldName: string, prefName: keyof PluginSettings) => {
+    const input = getElement<HTMLInputElement>(window, fieldName);
+    if (input) {
+      input.addEventListener("change", () => {
+        const val = parseInt(input.value, 10);
+        if (val > 8192) {
+          input.value = "8192";
+          setPluginPreference(prefName, 8192);
+        }
+      });
+    }
+  };
+  clampChunkLimit("chunk-target-tokens", "chunkTargetTokens");
+  clampChunkLimit("chunk-overlap-tokens", "chunkOverlapTokens");
 }
 
 /**
