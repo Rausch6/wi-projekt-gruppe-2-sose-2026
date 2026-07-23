@@ -1,3 +1,4 @@
+/* Fixed minimum geometry and inherited Zotero theme for the popout window. */
 :root {
   background: var(--material-sidepane, var(--material-background, #fff));
   color: var(--text-primary, #1f2933);
@@ -27,6 +28,7 @@ body {
   width: 100vw;
 }
 
+/* Popout-specific color corrections for the assistant composer. */
 .zai-assistant-popout {
   background: var(--material-sidepane, var(--material-background, #fff));
   color: var(--text-primary, #1f2933);
@@ -42,6 +44,7 @@ body {
   stroke: currentColor;
 }
 
+/* Fallback shown when the XHTML bridge cannot initialize the plugin UI. */
 .zai-assistant-window-error {
   box-sizing: border-box;
   color: var(--text-primary);

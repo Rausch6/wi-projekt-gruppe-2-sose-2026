@@ -1,10 +1,42 @@
-import type { IndexManagerElements, IndexManagerState, PaperRecord, IndexSide } from "./types";
-import { getLibraryFilteredPapers, getVisiblePapers, getSelectionSet, getSelectedPapers, syncStringFilterSelection, uniqueSorted, togglePaperSelection } from "./state";
+import type {
+  IndexManagerElements,
+  IndexManagerState,
+  PaperRecord,
+  IndexSide,
+} from "./types";
+import {
+  getLibraryFilteredPapers,
+  getVisiblePapers,
+  getSelectionSet,
+  getSelectedPapers,
+  syncStringFilterSelection,
+  uniqueSorted,
+  togglePaperSelection,
+} from "./state";
 
+/**
+ * Sentinel select value representing every available filter option.
+ */
 export const ALL_FILTER_VALUE = "__all__";
+
+/**
+ * Time a completed action status remains visible.
+ */
 export const STATUS_AUTO_HIDE_DELAY_MS = 5000;
+
+/**
+ * Pending status-dismiss timers keyed by their status element.
+ */
 export const statusHideTimers = new WeakMap<HTMLElement, number>();
 
+/**
+ * Rebuilds type and year options from papers in the selected libraries.
+ *
+ * @param window - Index manager dialog window.
+ * @param elements - Required index manager controls.
+ * @param state - Mutable index manager state.
+ * @returns Nothing.
+ */
 export function updateFilterOptions(
   window: Window,
   elements: IndexManagerElements,
@@ -41,6 +73,14 @@ export function updateFilterOptions(
   renderAllFilterDropdowns(window, elements, state);
 }
 
+/**
+ * Renders the Zotero library filter and restores its current selection.
+ *
+ * @param window - Index manager dialog window.
+ * @param elements - Required index manager controls.
+ * @param state - Current index manager state.
+ * @returns Nothing.
+ */
 export function renderLibraryFilter(
   window: Window,
   elements: IndexManagerElements,
@@ -64,6 +104,14 @@ export function renderLibraryFilter(
   );
 }
 
+/**
+ * Renders library, type, and year select controls from current state.
+ *
+ * @param window - Index manager dialog window.
+ * @param elements - Required index manager controls.
+ * @param state - Current index manager state.
+ * @returns Nothing.
+ */
 export function renderAllFilterDropdowns(
   window: Window,
   elements: IndexManagerElements,
@@ -100,10 +148,27 @@ export function renderAllFilterDropdowns(
   );
 }
 
-export function toOptions(values: string[]): { value: string; label: string }[] {
+/**
+ * Maps plain strings to value-label pairs for HTML select options.
+ *
+ * @param values - Values to convert.
+ * @returns Select option descriptors.
+ */
+export function toOptions(
+  values: string[],
+): { value: string; label: string }[] {
   return values.map((value) => ({ value, label: value }));
 }
 
+/**
+ * Replaces a select's options and marks the active value as selected.
+ *
+ * @param window - Window whose document creates the option elements.
+ * @param select - Select control to update.
+ * @param options - Option value-label pairs.
+ * @param selectedValue - Value that should remain selected.
+ * @returns Nothing.
+ */
 export function replaceSelectOptions(
   window: Window,
   select: HTMLSelectElement,
@@ -120,6 +185,14 @@ export function replaceSelectOptions(
   }
 }
 
+/**
+ * Renders both paper columns, counts, filters, and action availability.
+ *
+ * @param window - Index manager dialog window.
+ * @param elements - Required index manager controls.
+ * @param state - Current index manager state.
+ * @returns Nothing.
+ */
 export function renderIndexManager(
   window: Window,
   elements: IndexManagerElements,
@@ -179,6 +252,17 @@ export function renderIndexManager(
     state.papers.every((paper) => !paper.indexed);
 }
 
+/**
+ * Renders selectable paper rows for one side of the index manager.
+ *
+ * @param window - Index manager dialog window.
+ * @param list - List container receiving paper rows.
+ * @param papers - Papers visible in this column.
+ * @param side - Indexed or unindexed column.
+ * @param state - Mutable index manager state.
+ * @param onSelectionChange - Callback used to rerender after a selection.
+ * @returns Nothing.
+ */
 export function renderPaperList(
   window: Window,
   list: HTMLElement,
@@ -223,6 +307,15 @@ export function renderPaperList(
   }
 }
 
+/**
+ * Updates the global busy flag and rerenders all controls.
+ *
+ * @param window - Index manager dialog window.
+ * @param elements - Required index manager controls.
+ * @param state - Mutable index manager state.
+ * @param busy - Whether a blocking UI action is in progress.
+ * @returns Nothing.
+ */
 export function setBusy(
   window: Window,
   elements: IndexManagerElements,
@@ -233,6 +326,14 @@ export function setBusy(
   renderIndexManager(window, elements, state);
 }
 
+/**
+ * Displays a temporary terminal status and hides active progress content.
+ *
+ * @param statusEl - Status element to update.
+ * @param message - User-facing status text, or empty text to clear it.
+ * @param type - Visual status variant.
+ * @returns Nothing.
+ */
 export function setStatus(
   statusEl: HTMLElement,
   message: string,
@@ -274,6 +375,13 @@ export function setStatus(
   statusHideTimers.set(statusEl, timerID);
 }
 
+/**
+ * Displays persistent active-indexing progress in the status banner.
+ *
+ * @param elements - Required index manager controls.
+ * @param text - Current indexing progress text.
+ * @returns Nothing.
+ */
 export function showIndexingActive(
   elements: IndexManagerElements,
   text: string,
@@ -288,6 +396,13 @@ export function showIndexingActive(
   setBannerVisualState(elements.indexingBanner, "active");
 }
 
+/**
+ * Applies the appropriate visual class and visibility to the status banner.
+ *
+ * @param banner - Status banner to update.
+ * @param state - Active or terminal visual state; null hides the banner.
+ * @returns Nothing.
+ */
 export function setBannerVisualState(
   banner: HTMLElement | null | undefined,
   state: "active" | "success" | "warning" | "error" | "" | null,
@@ -310,6 +425,12 @@ export function setBannerVisualState(
   if (state) banner.classList.add(`indexing-banner--${state}`);
 }
 
+/**
+ * Cancels a pending automatic status dismissal.
+ *
+ * @param statusEl - Status element whose timer should be cleared.
+ * @returns Nothing.
+ */
 export function clearStatusHideTimer(statusEl: HTMLElement): void {
   const timerID = statusHideTimers.get(statusEl);
   if (timerID === undefined) {
@@ -320,6 +441,13 @@ export function clearStatusHideTimer(statusEl: HTMLElement): void {
   statusHideTimers.delete(statusEl);
 }
 
+/**
+ * Formats the metadata subtitle shown below a paper title.
+ *
+ * @param paper - Paper record to format.
+ * @param queued - Whether to append an active-indexing label.
+ * @returns Human-readable metadata segments separated by middle dots.
+ */
 export function formatMeta(paper: PaperRecord, queued = false): string {
   const chunks = [
     paper.author,
@@ -333,6 +461,12 @@ export function formatMeta(paper: PaperRecord, queued = false): string {
   return chunks.join(" · ");
 }
 
+/**
+ * Formats milliseconds as compact minutes and seconds.
+ *
+ * @param ms - Duration in milliseconds.
+ * @returns Compact duration string.
+ */
 export function formatDuration(ms: number): string {
   const totalSeconds = Math.round(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
@@ -340,6 +474,13 @@ export function formatDuration(ms: number): string {
   return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 }
 
+/**
+ * Formats a filtered count relative to the total available records.
+ *
+ * @param visible - Number of records visible after all filters.
+ * @param total - Total records in the selected libraries.
+ * @returns Total alone or a "visible of total" label.
+ */
 export function formatCount(visible: number, total: number): string {
   return visible === total ? String(total) : `${visible} von ${total}`;
 }

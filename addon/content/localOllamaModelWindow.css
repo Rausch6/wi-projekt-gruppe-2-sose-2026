@@ -1,3 +1,4 @@
+/* Fixed window geometry and Zotero-aware color tokens. */
 :root {
   background: var(--material-sidepane, var(--material-background, #fff));
   color: var(--text-primary, #1f2933);
@@ -55,6 +56,7 @@ body {
   width: 100vw;
 }
 
+/* Dialog heading and connection/setup notice. */
 .zai-local-model-window-header {
   background: var(--material-sidepane, var(--material-background, #fff));
   border-bottom: 1px solid var(--zai-local-border);
@@ -134,6 +136,7 @@ body {
   min-width: 0;
 }
 
+/* Curated model catalog and per-model metadata. */
 .zai-local-model-window-content {
   align-content: start;
   display: grid;
@@ -199,6 +202,7 @@ body {
   overflow: visible;
 }
 
+/* Download, delete, cancellation, and recovery buttons. */
 .zai-local-model-download-button {
   appearance: none;
   background: var(--zai-local-accent);
@@ -298,6 +302,7 @@ body {
   color: color-mix(in srgb, #b91c1c 86%, currentColor);
 }
 
+/* Download progress bar and row-level operation feedback. */
 .zai-local-model-progress {
   background: color-mix(in srgb, currentColor 10%, transparent);
   border-radius: 999px;
@@ -348,6 +353,7 @@ body {
   display: none !important;
 }
 
+/* Link to Ollama's full model library. */
 .zai-local-model-window-footer {
   align-items: center;
   background: var(--material-sidepane, var(--material-background, #fff));
