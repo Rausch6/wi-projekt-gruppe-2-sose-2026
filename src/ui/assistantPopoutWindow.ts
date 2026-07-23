@@ -25,6 +25,9 @@ type PopoutCallbacks = {
   onClose?: () => void;
 };
 
+/**
+ * Tracks a popout window and the callbacks associated with its owner window.
+ */
 type PopoutState = {
   callbacks: PopoutCallbacks;
   cleanup?: () => void;
@@ -34,6 +37,13 @@ type PopoutState = {
 
 const popouts = new WeakMap<Window, PopoutState>();
 
+/**
+ * Opens the assistant popout window for a Zotero main window or focuses an existing one.
+ *
+ * @param owner - Zotero main window that owns the popout.
+ * @param callbacks - Optional lifecycle callbacks for open and close transitions.
+ * @returns Opened popout window, existing popout window, or null when opening fails.
+ */
 export function openAssistantPopoutWindow(
   owner: _ZoteroTypes.MainWindow,
   callbacks: PopoutCallbacks = {},
@@ -84,6 +94,13 @@ export function openAssistantPopoutWindow(
   return openedWindow;
 }
 
+/**
+ * Closes the assistant popout window for a Zotero main window.
+ *
+ * @param owner - Zotero main window that owns the popout.
+ * @param options - Optional close behavior flags.
+ * @returns True when a popout was closed, otherwise false.
+ */
 export function closeAssistantPopoutWindow(
   owner: _ZoteroTypes.MainWindow,
   options: { restoreSidebar?: boolean } = {},
@@ -100,10 +117,22 @@ export function closeAssistantPopoutWindow(
   return true;
 }
 
+/**
+ * Checks whether an owner window currently has a live assistant popout.
+ *
+ * @param owner - Owner window to inspect.
+ * @returns True when the popout exists and is not closed.
+ */
 export function isAssistantPopoutWindowOpen(owner: Window) {
   return Boolean(getLivePopoutState(owner));
 }
 
+/**
+ * Focuses the assistant popout window for an owner window.
+ *
+ * @param owner - Owner window whose popout should be focused.
+ * @returns True when a live popout was focused.
+ */
 export function focusAssistantPopoutWindow(owner: Window) {
   const state = getLivePopoutState(owner);
   if (!state) return false;
@@ -112,6 +141,13 @@ export function focusAssistantPopoutWindow(owner: Window) {
   return true;
 }
 
+/**
+ * Initializes the content and lifecycle handlers inside a popout window.
+ *
+ * @param popoutWindow - Popout window being initialized.
+ * @param owner - Zotero main window that owns the popout.
+ * @returns Cleanup callback for popout event handlers, or undefined when initialization cannot continue.
+ */
 export function initializeAssistantPopoutWindow(
   popoutWindow: Window,
   owner: _ZoteroTypes.MainWindow,
@@ -165,6 +201,13 @@ export function initializeAssistantPopoutWindow(
   return state.cleanup;
 }
 
+/**
+ * Handles popout unload by clearing state and optionally restoring the sidebar.
+ *
+ * @param popoutWindow - Popout window that is unloading.
+ * @param owner - Zotero main window that owns the popout.
+ * @returns Nothing.
+ */
 export function handleAssistantPopoutWindowUnload(
   popoutWindow: Window,
   owner: _ZoteroTypes.MainWindow,
@@ -184,6 +227,13 @@ export function handleAssistantPopoutWindowUnload(
   }
 }
 
+/**
+ * Synchronizes all popout buttons in a window with the current popout state.
+ *
+ * @param win - Window containing popout buttons.
+ * @param open - Whether the popout is currently open.
+ * @returns Nothing.
+ */
 export function syncAssistantPopoutButtons(win: Window, open: boolean) {
   const doc = win.document;
   const label = open
@@ -200,6 +250,12 @@ export function syncAssistantPopoutButtons(win: Window, open: boolean) {
     });
 }
 
+/**
+ * Returns a live popout state and clears stale closed-window state.
+ *
+ * @param owner - Owner window whose popout state should be inspected.
+ * @returns Live popout state, or null when no live popout exists.
+ */
 function getLivePopoutState(owner: Window) {
   const state = popouts.get(owner);
   if (!state) return null;
@@ -214,6 +270,13 @@ function getLivePopoutState(owner: Window) {
   return state;
 }
 
+/**
+ * Emits a popout state event on the owner window.
+ *
+ * @param owner - Owner window receiving the event.
+ * @param open - Current popout open state.
+ * @returns Nothing.
+ */
 function emitAssistantPopoutState(owner: Window, open: boolean) {
   owner.dispatchEvent(
     new owner.CustomEvent(ASSISTANT_POPOUT_STATE_EVENT, {
@@ -222,6 +285,14 @@ function emitAssistantPopoutState(owner: Window, open: boolean) {
   );
 }
 
+/**
+ * Copies relevant sidebar theme values into the popout document.
+ *
+ * @param popoutWindow - Popout window whose document should be styled.
+ * @param owner - Owner window used as the style source.
+ * @param root - Popout root element receiving inherited appearance.
+ * @returns Nothing.
+ */
 function syncPopoutAppearance(
   popoutWindow: Window,
   owner: _ZoteroTypes.MainWindow,
@@ -285,6 +356,13 @@ function syncPopoutAppearance(
   root.style.color = "inherit";
 }
 
+/**
+ * Copies font-related style properties from one style declaration to another.
+ *
+ * @param sourceStyle - Computed style used as the source.
+ * @param targetStyle - Inline style declaration receiving values.
+ * @returns Nothing.
+ */
 function copyFontStyle(
   sourceStyle: CSSStyleDeclaration,
   targetStyle: CSSStyleDeclaration,
@@ -302,6 +380,14 @@ function copyFontStyle(
   }
 }
 
+/**
+ * Copies a non-empty CSS property value between style declarations.
+ *
+ * @param sourceStyle - Computed style used as the source.
+ * @param targetStyle - Inline style declaration receiving values.
+ * @param property - CSS property name to copy.
+ * @returns Nothing.
+ */
 function copyStyleProperty(
   sourceStyle: CSSStyleDeclaration,
   targetStyle: CSSStyleDeclaration,
@@ -313,6 +399,14 @@ function copyStyleProperty(
   }
 }
 
+/**
+ * Sets a CSS property when the value is non-empty.
+ *
+ * @param targetStyle - Inline style declaration receiving the value.
+ * @param property - CSS property name to set.
+ * @param value - CSS value to apply.
+ * @returns Nothing.
+ */
 function setStyleProperty(
   targetStyle: CSSStyleDeclaration,
   property: string,
@@ -323,6 +417,12 @@ function setStyleProperty(
   }
 }
 
+/**
+ * Keeps a popout window from being resized below the supported minimum size.
+ *
+ * @param win - Popout window to guard.
+ * @returns Cleanup callback that removes resize handlers.
+ */
 function installResizeGuard(win: Window) {
   let pendingFrame: number | undefined;
 
@@ -352,6 +452,12 @@ function installResizeGuard(win: Window) {
   };
 }
 
+/**
+ * Focuses the assistant composer after the popout content has rendered.
+ *
+ * @param win - Popout window containing the composer.
+ * @returns Nothing.
+ */
 function focusComposer(win: Window) {
   win.setTimeout(() => {
     win.document.querySelector<HTMLTextAreaElement>(".zai-input")?.focus();

@@ -16,6 +16,10 @@ const SIDEBAR_ID = `${config.addonRef}-standalone-ai-sidebar`;
 const DEFAULT_PANEL_WIDTH = 390;
 const MIN_PANEL_WIDTH = 240;
 const ASSISTANT_TRIGGER_SELECTOR = '[data-zai-assistant-trigger="true"]';
+
+/**
+ * Event name emitted when the standalone assistant sidebar open state changes.
+ */
 export const ASSISTANT_STATE_EVENT = `${config.addonRef}-ai-assistant-state-change`;
 
 const states = new WeakMap<
@@ -45,6 +49,12 @@ type PanelMetrics = {
   panelBottom: number;
 };
 
+/**
+ * Registers the standalone assistant sidebar controller for a Zotero main window.
+ *
+ * @param win - Zotero main window that should host the sidebar panel.
+ * @returns Nothing.
+ */
 export function registerAssistantSidebarController(
   win: _ZoteroTypes.MainWindow,
 ) {
@@ -240,6 +250,12 @@ export function registerAssistantSidebarController(
   });
 }
 
+/**
+ * Unregisters the standalone assistant sidebar controller for a window.
+ *
+ * @param win - Window whose sidebar controller should be removed.
+ * @returns Nothing.
+ */
 export function unregisterAssistantSidebarController(win: Window) {
   states.get(win)?.cleanup();
   states.delete(win);
@@ -248,15 +264,33 @@ export function unregisterAssistantSidebarController(win: Window) {
   doc.getElementById(SIDEBAR_ID)?.remove();
 }
 
+/**
+ * Opens the assistant sidebar, creating the controller if needed.
+ *
+ * @param win - Zotero main window whose sidebar should open.
+ * @returns Nothing.
+ */
 export function openAssistantSidebar(win: _ZoteroTypes.MainWindow) {
   const state = ensureAssistantSidebarController(win);
   state?.setOpen(true);
 }
 
+/**
+ * Closes the assistant sidebar for a Zotero main window.
+ *
+ * @param win - Zotero main window whose sidebar should close.
+ * @returns Nothing.
+ */
 export function closeAssistantSidebar(win: _ZoteroTypes.MainWindow) {
   states.get(win)?.setOpen(false);
 }
 
+/**
+ * Opens and focuses the assistant sidebar.
+ *
+ * @param win - Zotero main window whose sidebar should receive focus.
+ * @returns True when a controller is available.
+ */
 export function focusAssistantSidebar(win: _ZoteroTypes.MainWindow) {
   const state = ensureAssistantSidebarController(win);
   state?.setOpen(true);
@@ -274,21 +308,45 @@ export function focusAssistantSidebar(win: _ZoteroTypes.MainWindow) {
   return Boolean(state);
 }
 
+/**
+ * Toggles the assistant sidebar open state.
+ *
+ * @param win - Zotero main window whose sidebar should toggle.
+ * @returns New open state, or false when no controller is available.
+ */
 export function toggleAssistantSidebar(win: _ZoteroTypes.MainWindow) {
   const state = ensureAssistantSidebarController(win);
   return state?.toggle() ?? false;
 }
 
+/**
+ * Checks whether the assistant sidebar is open.
+ *
+ * @param win - Zotero main window to inspect.
+ * @returns True when the sidebar is open.
+ */
 export function isAssistantSidebarOpen(win: _ZoteroTypes.MainWindow) {
   return states.get(win)?.isOpen() ?? false;
 }
 
+/**
+ * Checks whether keyboard focus is currently inside the assistant sidebar.
+ *
+ * @param win - Zotero main window to inspect.
+ * @returns True when the active element belongs to the sidebar.
+ */
 export function isAssistantSidebarFocused(win: _ZoteroTypes.MainWindow) {
   const panel = getAssistantSidebarElement(win);
   const activeElement = win.document.activeElement;
   return Boolean(panel && activeElement && panel.contains(activeElement));
 }
 
+/**
+ * Prepares a Zotero side navigation body to host assistant-specific content.
+ *
+ * @param body - Side navigation body element to mark and clear.
+ * @returns Nothing.
+ */
 export function markAssistantSidenavBody(body: HTMLElement) {
   body.classList.add("zai-assistant-sidenav-body");
   body.replaceChildren();
@@ -298,6 +356,13 @@ function getAssistantSidebarElement(win: Window) {
   return win.document.getElementById(SIDEBAR_ID) as HTMLElement | null;
 }
 
+/**
+ * Registers listeners that close the assistant sidebar when Zotero sidenav entries are activated.
+ *
+ * @param win - Zotero main window containing side navigation elements.
+ * @param close - Listener called for side navigation activation events.
+ * @returns Cleanup callback that removes the listeners.
+ */
 function addSidenavCloseListeners(
   win: _ZoteroTypes.MainWindow,
   close: (event: Event) => void,
@@ -320,11 +385,23 @@ function addSidenavCloseListeners(
   };
 }
 
+/**
+ * Checks whether an event originated from the assistant trigger.
+ *
+ * @param event - Event to inspect.
+ * @returns True when the event came from an assistant trigger element.
+ */
 function isAssistantTriggerEvent(event: Event) {
   const target = event.target as Element | null;
   return Boolean(target?.closest?.(ASSISTANT_TRIGGER_SELECTOR));
 }
 
+/**
+ * Collects Zotero side navigation elements that can switch context pane content.
+ *
+ * @param win - Zotero main window to inspect.
+ * @returns Side navigation elements found in the window.
+ */
 function getSidenavElements(win: _ZoteroTypes.MainWindow) {
   const doc = win.document;
   const sidenavs = new Set<Element>();
@@ -348,6 +425,13 @@ function getSidenavElements(win: _ZoteroTypes.MainWindow) {
   return [...sidenavs];
 }
 
+/**
+ * Observes the native Zotero item pane for layout-affecting mutations.
+ *
+ * @param win - Zotero main window containing the native item pane.
+ * @param observer - Mutation observer to attach.
+ * @returns Nothing.
+ */
 function observeNativeItemPane(
   win: _ZoteroTypes.MainWindow,
   observer: MutationObserver,
@@ -363,6 +447,13 @@ function observeNativeItemPane(
   });
 }
 
+/**
+ * Collapses or expands Zotero's native item pane.
+ *
+ * @param win - Zotero main window containing the native item pane.
+ * @param collapsed - Whether the native pane should be collapsed.
+ * @returns Nothing.
+ */
 function setNativeItemPaneCollapsed(
   win: _ZoteroTypes.MainWindow,
   collapsed: boolean,
@@ -376,11 +467,23 @@ function setNativeItemPaneCollapsed(
   getZoteroPane(win)?.updateLayoutConstraints?.();
 }
 
+/**
+ * Checks whether Zotero's native item pane is currently collapsed.
+ *
+ * @param win - Zotero main window containing the native item pane.
+ * @returns True when the native item pane is collapsed.
+ */
 function isNativeItemPaneCollapsed(win: _ZoteroTypes.MainWindow) {
   const pane = getNativeItemPane(win);
   return pane?.collapsed === true || pane?.getAttribute("collapsed") === "true";
 }
 
+/**
+ * Gets Zotero's native item pane element.
+ *
+ * @param win - Zotero main window to inspect.
+ * @returns Native item pane element, or null/false when unavailable.
+ */
 function getNativeItemPane(win: _ZoteroTypes.MainWindow) {
   const zoteroPane = getZoteroPane(win);
   return (
@@ -391,17 +494,38 @@ function getNativeItemPane(win: _ZoteroTypes.MainWindow) {
   );
 }
 
+/**
+ * Gets ZoteroPane from a Zotero main window.
+ *
+ * @param win - Zotero main window to inspect.
+ * @returns ZoteroPane instance, or undefined when unavailable.
+ */
 function getZoteroPane(win: _ZoteroTypes.MainWindow) {
   return (win as unknown as { ZoteroPane?: _ZoteroTypes.ZoteroPane })
     .ZoteroPane;
 }
 
+/**
+ * Emits the assistant sidebar state-change event.
+ *
+ * @param win - Window receiving the event.
+ * @param open - Current sidebar open state.
+ * @returns Nothing.
+ */
 function emitStateChange(win: Window, open: boolean) {
   win.dispatchEvent(
     new win.CustomEvent(ASSISTANT_STATE_EVENT, { detail: { open } }),
   );
 }
 
+/**
+ * Measures the right-side content area that the assistant sidebar should overlay.
+ *
+ * @param win - Zotero main window to inspect.
+ * @param winWidth - Current window width.
+ * @param winHeight - Current window height.
+ * @returns Overlay rectangle, or undefined when no right-side target is visible.
+ */
 function getRightSideOverlayRect(
   win: _ZoteroTypes.MainWindow,
   winWidth: number,
@@ -420,6 +544,14 @@ function getRightSideOverlayRect(
   return getPaneContentRect(win, paneTarget);
 }
 
+/**
+ * Finds the visible right-side content element preferred for sidebar placement.
+ *
+ * @param win - Zotero main window to inspect.
+ * @param winWidth - Current window width.
+ * @param winHeight - Current window height.
+ * @returns Matching content element, or undefined when none is visible.
+ */
 function getRightSideContentTarget(
   win: _ZoteroTypes.MainWindow,
   winWidth: number,
@@ -443,6 +575,14 @@ function getRightSideContentTarget(
   return undefined;
 }
 
+/**
+ * Finds the visible right-side pane element used for fallback sidebar placement.
+ *
+ * @param win - Zotero main window to inspect.
+ * @param winWidth - Current window width.
+ * @param winHeight - Current window height.
+ * @returns Matching pane element, or undefined when none is visible.
+ */
 function getRightSidePaneTarget(
   win: _ZoteroTypes.MainWindow,
   winWidth: number,
@@ -495,6 +635,13 @@ function getRightSidePaneTarget(
   return isRightSidePane(sidenav, winWidth, winHeight) ? sidenav : undefined;
 }
 
+/**
+ * Calculates the content rectangle of a pane excluding a visible sidenav.
+ *
+ * @param win - Zotero main window to inspect.
+ * @param pane - Pane element whose usable content rect should be calculated.
+ * @returns Overlay rectangle for the pane content.
+ */
 function getPaneContentRect(win: _ZoteroTypes.MainWindow, pane: Element) {
   const paneRect = pane.getBoundingClientRect();
   const sidenav = getVisibleSidenavForPane(win, pane);
@@ -521,6 +668,13 @@ function getPaneContentRect(win: _ZoteroTypes.MainWindow, pane: Element) {
   return paneRect;
 }
 
+/**
+ * Gets the visible sidenav associated with a pane.
+ *
+ * @param win - Zotero main window to inspect.
+ * @param pane - Pane element whose sidenav should be found.
+ * @returns Visible sidenav element, or undefined when none exists.
+ */
 function getVisibleSidenavForPane(win: _ZoteroTypes.MainWindow, pane: Element) {
   const doc = win.document;
   const candidates =
@@ -538,6 +692,14 @@ function getVisibleSidenavForPane(win: _ZoteroTypes.MainWindow, pane: Element) {
   return undefined;
 }
 
+/**
+ * Determines whether an element is a visible right-side Zotero pane.
+ *
+ * @param element - Element to inspect.
+ * @param winWidth - Current window width.
+ * @param winHeight - Current window height.
+ * @returns True when the element is a visible right-side pane.
+ */
 function isRightSidePane(
   element: Element | null | undefined,
   winWidth: number,
@@ -563,6 +725,12 @@ function isRightSidePane(
   );
 }
 
+/**
+ * Ensures a sidebar controller exists for a Zotero main window.
+ *
+ * @param win - Zotero main window that should have a controller.
+ * @returns Registered sidebar controller state, or undefined if registration failed.
+ */
 function ensureAssistantSidebarController(win: _ZoteroTypes.MainWindow) {
   if (!states.has(win)) {
     registerAssistantSidebarController(win);
@@ -570,6 +738,12 @@ function ensureAssistantSidebarController(win: _ZoteroTypes.MainWindow) {
   return states.get(win);
 }
 
+/**
+ * Builds fallback sidebar panel metrics when no Zotero pane can be measured.
+ *
+ * @param winHeight - Current window height.
+ * @returns Fallback panel metrics.
+ */
 function getFallbackPanelMetrics(winHeight: number): PanelMetrics {
   return {
     rightOffset: 0,
@@ -579,6 +753,12 @@ function getFallbackPanelMetrics(winHeight: number): PanelMetrics {
   };
 }
 
+/**
+ * Creates the standalone assistant sidebar panel element.
+ *
+ * @param doc - Document used to create DOM elements.
+ * @returns Sidebar panel element.
+ */
 function createPanel(doc: Document) {
   const panel = doc.createElementNS(HTML_NS, "aside") as HTMLElement;
   panel.id = SIDEBAR_ID;
@@ -591,6 +771,12 @@ function createPanel(doc: Document) {
   return panel;
 }
 
+/**
+ * Applies inline fallback styles for environments where the stylesheet has not loaded yet.
+ *
+ * @param panel - Sidebar panel element to style.
+ * @returns Nothing.
+ */
 function applyPanelFallbackStyles(panel: HTMLElement) {
   panel.style.background = "var(--material-sidepane, #2b2b2b)";
   panel.style.borderLeft = "1px solid var(--border-color, rgba(0, 0, 0, 0.18))";

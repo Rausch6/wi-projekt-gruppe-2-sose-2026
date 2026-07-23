@@ -1,8 +1,14 @@
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const HEADING_TAGS = ["h1", "h2", "h3", "h4", "h5", "h6"] as const;
 
+/**
+ * DOM containers into which parsed Markdown nodes can be appended.
+ */
 type AppendTarget = DocumentFragment | HTMLElement;
 
+/**
+ * Parsed list item including nesting, marker type, and optional task state.
+ */
 type ListItem = {
   checked: boolean | null;
   indent: number;
@@ -10,22 +16,42 @@ type ListItem = {
   text: string;
 };
 
+/**
+ * Rendered list together with the first source line after the list.
+ */
 type ListBlock = {
   element: HTMLOListElement | HTMLUListElement;
   nextIndex: number;
 };
 
+/**
+ * Parsed GitHub-style table and the first source line after the table.
+ */
 type TableBlock = {
   headers: string[];
   nextIndex: number;
   rows: string[][];
 };
 
+/**
+ * Converts supported Markdown into safe DOM nodes without using innerHTML.
+ *
+ * @param doc - Document that owns the rendered elements.
+ * @param markdown - Markdown source to render.
+ * @returns Document fragment containing the rendered content.
+ */
 export function renderMarkdownContent(doc: Document, markdown: string) {
   const normalized = markdown.replace(/\r\n?/g, "\n");
   return renderMarkdownLines(doc, normalized.split("\n"));
 }
 
+/**
+ * Parses and renders a sequence of normalized Markdown lines.
+ *
+ * @param doc - Document that owns the rendered elements.
+ * @param lines - Markdown source split into lines.
+ * @returns Document fragment containing block-level elements.
+ */
 function renderMarkdownLines(doc: Document, lines: string[]) {
   const fragment = doc.createDocumentFragment();
   let index = 0;
@@ -101,6 +127,13 @@ function renderMarkdownLines(doc: Document, lines: string[]) {
   return fragment;
 }
 
+/**
+ * Collects a fenced code block and its optional language identifier.
+ *
+ * @param lines - Complete Markdown line sequence.
+ * @param startIndex - Index of the opening fence.
+ * @returns Code content, normalized language, and next unread line index.
+ */
 function collectCodeBlock(lines: string[], startIndex: number) {
   const openingLine = lines[startIndex] ?? "";
   const openingMatch = openingLine.match(/^\s*(```|~~~)\s*([A-Za-z0-9_-]*)/);
@@ -130,6 +163,13 @@ function collectCodeBlock(lines: string[], startIndex: number) {
   };
 }
 
+/**
+ * Collects single-line or fenced display-math content.
+ *
+ * @param lines - Complete Markdown line sequence.
+ * @param startIndex - Index of the opening math delimiter.
+ * @returns Math content and next unread line index.
+ */
 function collectMathBlock(lines: string[], startIndex: number) {
   const openingLine = lines[startIndex]?.trim() ?? "";
   const inlineMatch = openingLine.match(/^\$\$\s*(.*?)\s*\$\$$/);
@@ -172,6 +212,13 @@ function collectMathBlock(lines: string[], startIndex: number) {
   };
 }
 
+/**
+ * Removes quote markers from consecutive blockquote lines.
+ *
+ * @param lines - Complete Markdown line sequence.
+ * @param startIndex - Index of the first quoted line.
+ * @returns Inner quote lines and next unread line index.
+ */
 function collectBlockquote(lines: string[], startIndex: number) {
   const quoteLines: string[] = [];
   let index = startIndex;
@@ -190,6 +237,16 @@ function collectBlockquote(lines: string[], startIndex: number) {
   };
 }
 
+/**
+ * Recursively renders consecutive list items at one indentation level.
+ *
+ * @param doc - Document that owns the rendered list.
+ * @param lines - Complete Markdown line sequence.
+ * @param startIndex - Index of the first list item.
+ * @param baseIndent - Indentation belonging to this list level.
+ * @param ordered - Whether this list uses ordered markers.
+ * @returns Rendered list and next unread line index.
+ */
 function collectListBlock(
   doc: Document,
   lines: string[],
@@ -253,6 +310,13 @@ function collectListBlock(
   };
 }
 
+/**
+ * Collects paragraph lines until a blank line or a new block starts.
+ *
+ * @param lines - Complete Markdown line sequence.
+ * @param startIndex - Index of the first paragraph line.
+ * @returns Paragraph lines and next unread line index.
+ */
 function collectParagraph(lines: string[], startIndex: number) {
   const paragraphLines: string[] = [];
   let index = startIndex;
@@ -272,6 +336,15 @@ function collectParagraph(lines: string[], startIndex: number) {
   };
 }
 
+/**
+ * Appends a heading with recursively rendered inline Markdown.
+ *
+ * @param doc - Document that owns the heading.
+ * @param target - Container receiving the heading.
+ * @param level - Markdown heading level from one through six.
+ * @param text - Heading content.
+ * @returns Nothing.
+ */
 function appendHeading(
   doc: Document,
   target: AppendTarget,
@@ -283,12 +356,28 @@ function appendHeading(
   target.append(heading);
 }
 
+/**
+ * Appends a paragraph while preserving source line breaks.
+ *
+ * @param doc - Document that owns the paragraph.
+ * @param target - Container receiving the paragraph.
+ * @param lines - Paragraph source lines.
+ * @returns Nothing.
+ */
 function appendParagraph(doc: Document, target: AppendTarget, lines: string[]) {
   const paragraph = createHtmlElement(doc, "p");
   appendInlineLines(doc, paragraph, lines);
   target.append(paragraph);
 }
 
+/**
+ * Appends a blockquote whose inner lines are parsed as Markdown blocks.
+ *
+ * @param doc - Document that owns the blockquote.
+ * @param target - Container receiving the blockquote.
+ * @param lines - Blockquote content without quote markers.
+ * @returns Nothing.
+ */
 function appendBlockquote(
   doc: Document,
   target: AppendTarget,
@@ -299,6 +388,14 @@ function appendBlockquote(
   target.append(blockquote);
 }
 
+/**
+ * Appends normal inline content or a disabled task-list checkbox.
+ *
+ * @param doc - Document that owns the list item controls.
+ * @param listItem - List item element to populate.
+ * @param item - Parsed list-item data.
+ * @returns Nothing.
+ */
 function appendListItemContent(
   doc: Document,
   listItem: HTMLLIElement,
@@ -322,6 +419,14 @@ function appendListItemContent(
   listItem.append(checkbox, text);
 }
 
+/**
+ * Appends a scrollable table with inline Markdown in every cell.
+ *
+ * @param doc - Document that owns the table.
+ * @param target - Container receiving the table wrapper.
+ * @param tableBlock - Parsed headers and body rows.
+ * @returns Nothing.
+ */
 function appendTable(
   doc: Document,
   target: AppendTarget,
@@ -360,6 +465,15 @@ function appendTable(
   target.append(scroll);
 }
 
+/**
+ * Appends a fenced code block using textContent for safe rendering.
+ *
+ * @param doc - Document that owns the code elements.
+ * @param target - Container receiving the code block.
+ * @param content - Literal code content.
+ * @param language - Sanitized language identifier for styling.
+ * @returns Nothing.
+ */
 function appendCodeBlock(
   doc: Document,
   target: AppendTarget,
@@ -377,6 +491,14 @@ function appendCodeBlock(
   target.append(pre);
 }
 
+/**
+ * Appends display-math source for CSS-based presentation.
+ *
+ * @param doc - Document that owns the math element.
+ * @param target - Container receiving the math block.
+ * @param content - Literal math source.
+ * @returns Nothing.
+ */
 function appendMathBlock(doc: Document, target: AppendTarget, content: string) {
   const math = createHtmlElement(doc, "div");
   math.className = "zai-math-block";
@@ -384,6 +506,14 @@ function appendMathBlock(doc: Document, target: AppendTarget, content: string) {
   target.append(math);
 }
 
+/**
+ * Renders each paragraph line and inserts explicit line-break elements.
+ *
+ * @param doc - Document that owns inserted nodes.
+ * @param target - Container receiving inline content.
+ * @param lines - Source lines to render.
+ * @returns Nothing.
+ */
 function appendInlineLines(
   doc: Document,
   target: AppendTarget,
@@ -397,6 +527,17 @@ function appendInlineLines(
   });
 }
 
+/**
+ * Parses supported inline Markdown markers into safe nested DOM elements.
+ *
+ * Supported syntax includes emphasis, underline, strike-through, highlights,
+ * code, inline math, subscript, and superscript. Backslashes escape markers.
+ *
+ * @param doc - Document that owns inserted nodes.
+ * @param target - Container receiving inline content.
+ * @param text - Inline Markdown source.
+ * @returns Nothing.
+ */
 function appendInlineMarkdown(
   doc: Document,
   target: AppendTarget,
@@ -581,6 +722,12 @@ function appendInlineMarkdown(
   flushPlainText();
 }
 
+/**
+ * Parses an ATX heading line.
+ *
+ * @param line - Markdown line to inspect.
+ * @returns Heading level and text, or null when the line is not a heading.
+ */
 function parseHeading(line: string) {
   const match = line.match(/^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/);
   if (!match) return null;
@@ -591,6 +738,12 @@ function parseHeading(line: string) {
   };
 }
 
+/**
+ * Parses unordered, ordered, and task-list item markers.
+ *
+ * @param line - Markdown line to inspect.
+ * @returns Parsed list item, or null when no list marker is present.
+ */
 function parseListItem(line: string): ListItem | null {
   const match = line.match(/^([ \t]*)([-+*]|\d+[.)])\s+(.*)$/);
   if (!match) return null;
@@ -613,6 +766,13 @@ function parseListItem(line: string): ListItem | null {
   };
 }
 
+/**
+ * Parses a GitHub-style pipe table beginning at a line index.
+ *
+ * @param lines - Complete Markdown line sequence.
+ * @param startIndex - Candidate header-row index.
+ * @returns Parsed table block, or null when no valid separator follows.
+ */
 function parseTableBlock(
   lines: string[],
   startIndex: number,
@@ -640,6 +800,12 @@ function parseTableBlock(
   };
 }
 
+/**
+ * Splits a pipe-table row while preserving escaped pipe characters.
+ *
+ * @param line - Table row source.
+ * @returns Trimmed cell contents.
+ */
 function splitTableCells(line: string) {
   const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
   const cells: string[] = [];
@@ -666,6 +832,13 @@ function splitTableCells(line: string) {
   return cells;
 }
 
+/**
+ * Detects whether a line starts any supported block-level construct.
+ *
+ * @param lines - Complete Markdown line sequence.
+ * @param index - Line index to inspect.
+ * @returns True when the line begins a non-paragraph block.
+ */
 function isBlockStart(lines: string[], index: number) {
   const line = lines[index] ?? "";
   return (
@@ -679,38 +852,88 @@ function isBlockStart(lines: string[], index: number) {
   );
 }
 
+/**
+ * Detects a backtick or tilde code fence.
+ *
+ * @param line - Markdown line to inspect.
+ * @returns True when the line opens a fenced code block.
+ */
 function isCodeFenceStart(line: string) {
   return /^\s*(```|~~~)/.test(line);
 }
 
+/**
+ * Detects an opening display-math delimiter.
+ *
+ * @param line - Markdown line to inspect.
+ * @returns True when the line starts with a double dollar delimiter.
+ */
 function isMathBlockStart(line: string) {
   return /^\s*\$\$/.test(line);
 }
 
+/**
+ * Detects a Markdown blockquote marker.
+ *
+ * @param line - Markdown line to inspect.
+ * @returns True when the line belongs to a blockquote.
+ */
 function isBlockquoteLine(line: string) {
   return /^\s{0,3}>/.test(line);
 }
 
+/**
+ * Detects Markdown horizontal rules made from repeated matching markers.
+ *
+ * @param line - Markdown line to inspect.
+ * @returns True when the line represents a horizontal rule.
+ */
 function isHorizontalRule(line: string) {
   return /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line);
 }
 
+/**
+ * Checks whether a line contains at least two pipe-separated cells.
+ *
+ * @param line - Markdown line to inspect.
+ * @returns True when the line has table-row structure.
+ */
 function isTableRow(line: string) {
   return line.includes("|") && splitTableCells(line).length > 1;
 }
 
+/**
+ * Checks whether every table cell is a valid alignment separator.
+ *
+ * @param line - Markdown line to inspect.
+ * @returns True when the line separates table headers from body rows.
+ */
 function isTableSeparator(line: string) {
   if (!isTableRow(line)) return false;
 
   return splitTableCells(line).every((cell) => /^:?-{3,}:?$/.test(cell));
 }
 
+/**
+ * Counts indentation while treating a tab as four spaces.
+ *
+ * @param value - Leading whitespace to measure.
+ * @returns Equivalent indentation width in spaces.
+ */
 function countIndent(value: string) {
   return [...value].reduce((count, character) => {
     return count + (character === "\t" ? 4 : 1);
   }, 0);
 }
 
+/**
+ * Finds the next unescaped occurrence of a multi-character marker.
+ *
+ * @param text - Inline source to scan.
+ * @param marker - Closing marker to find.
+ * @param startIndex - First character index to inspect.
+ * @returns Closing-marker index, or -1 when unmatched.
+ */
 function findClosingSequence(text: string, marker: string, startIndex: number) {
   for (let index = startIndex; index < text.length; index += 1) {
     if (text.startsWith(marker, index) && !isEscaped(text, index)) {
@@ -721,6 +944,14 @@ function findClosingSequence(text: string, marker: string, startIndex: number) {
   return -1;
 }
 
+/**
+ * Finds an unescaped marker that is not part of a doubled marker.
+ *
+ * @param text - Inline source to scan.
+ * @param marker - Single-character closing marker.
+ * @param startIndex - First character index to inspect.
+ * @returns Closing-marker index, or -1 when unmatched.
+ */
 function findClosingSingleMarker(
   text: string,
   marker: string,
@@ -737,6 +968,13 @@ function findClosingSingleMarker(
   return -1;
 }
 
+/**
+ * Reads an unwrapped alphanumeric superscript immediately after a caret.
+ *
+ * @param text - Inline source containing the superscript.
+ * @param startIndex - Index immediately after the opening caret.
+ * @returns Parsed value and next index, or null when no value follows.
+ */
 function readCompactSuperscript(text: string, startIndex: number) {
   const match = text.slice(startIndex).match(/^[A-Za-z0-9+-]+/);
   if (!match?.[0]) return null;
@@ -747,6 +985,13 @@ function readCompactSuperscript(text: string, startIndex: number) {
   };
 }
 
+/**
+ * Determines whether a character is preceded by an odd number of backslashes.
+ *
+ * @param text - Inline source containing the character.
+ * @param index - Character index to inspect.
+ * @returns True when the character is escaped.
+ */
 function isEscaped(text: string, index: number) {
   let slashCount = 0;
   let cursor = index - 1;
@@ -759,15 +1004,34 @@ function isEscaped(text: string, index: number) {
   return slashCount % 2 === 1;
 }
 
+/**
+ * Sanitizes a code-fence language for use in a CSS class name.
+ *
+ * @param language - Raw language suffix from an opening fence.
+ * @returns First safe language token, or an empty string.
+ */
 function normalizeLanguage(language: string) {
   const firstToken = language.trim().split(/\s+/)[0] ?? "";
   return firstToken.replace(/[^A-Za-z0-9_-]/g, "");
 }
 
+/**
+ * Escapes regular-expression metacharacters in a literal string.
+ *
+ * @param value - Literal value to escape.
+ * @returns Regex-safe string.
+ */
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/**
+ * Creates a typed XHTML element in Zotero's document namespace.
+ *
+ * @param doc - Document that owns the element.
+ * @param tagName - HTML tag name to create.
+ * @returns Typed element in the XHTML namespace.
+ */
 function createHtmlElement<K extends keyof HTMLElementTagNameMap>(
   doc: Document,
   tagName: K,

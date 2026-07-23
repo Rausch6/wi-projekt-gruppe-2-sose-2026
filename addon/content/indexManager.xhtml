@@ -10,6 +10,7 @@
     <meta charset="utf-8" />
     <title data-l10n-id="index-manager-title">ZAIA Index Manager</title>
     <style>
+      /* Theme tokens and minimum geometry for the standalone Zotero dialog. */
       :root {
         color-scheme: light dark;
         min-height: 600px;
@@ -53,6 +54,7 @@
         overflow: hidden;
       }
 
+      /* Window shell, toolbar, and scrollable main-content grid. */
       .index-manager-window {
         height: 100vh;
         min-height: 600px;
@@ -100,6 +102,7 @@
         overflow-y: auto;
       }
 
+      /* Live indexing progress and temporary action-result banner. */
       .indexing-banner {
         grid-area: status;
         align-items: center;
@@ -202,6 +205,7 @@
         }
       }
 
+      /* Search, library, item-type, and publication-year filters. */
       .filter-strip {
         grid-area: filters;
         display: grid;
@@ -227,6 +231,7 @@
         min-height: 30px;
       }
 
+      /* Two-column board separating indexed and unindexed papers. */
       .index-board {
         grid-area: board;
         display: grid;
@@ -275,6 +280,7 @@
         overflow: hidden;
       }
 
+      /* Selectable paper cards, metadata, transfer actions, and empty states. */
       .paper-list {
         height: 100%;
         min-height: 0;
@@ -365,6 +371,7 @@
         display: none;
       }
 
+      /* First-use library selection modal shown before initial indexing. */
       .initial-index-prompt-backdrop {
         position: fixed;
         inset: 0;
@@ -423,6 +430,7 @@
         border-top: 1px solid var(--zaia-border);
       }
 
+      /* Collapse filters and paper columns for unusually narrow dialogs. */
       @media (max-width: 760px) {
         .window-header {
           align-items: flex-start;
@@ -455,6 +463,7 @@
         }
       }
     </style>
+    <!-- Bridge the XHTML dialog lifecycle to the running plugin instance. -->
     <script type="application/javascript">
       <![CDATA[
         (function () {
@@ -516,6 +525,7 @@
   </head>
   <body>
     <div class="index-manager-window">
+      <!-- Destructive and global index commands remain visible in the header. -->
       <header class="window-header">
         <h1 class="window-title" data-l10n-id="index-manager-title">
           ZAIA Index Manager
@@ -537,6 +547,7 @@
       </header>
 
       <main class="window-content">
+        <!-- Filters narrow both paper columns without changing index state. -->
         <section class="filter-strip" aria-label="Index-Filter">
           <div class="filter-field">
             <label for="index-search-input" data-l10n-id="index-manager-search"
@@ -565,6 +576,7 @@
           </div>
         </section>
 
+        <!-- Polite live region for progress and completed operation feedback. -->
         <div
           id="indexing-banner"
           class="indexing-banner"
@@ -578,9 +590,7 @@
             hidden="hidden"
           >
             <span class="indexing-banner-spinner" aria-hidden="true">⏳</span>
-            <span
-              class="indexing-banner-text"
-              id="indexing-banner-active-text"
+            <span class="indexing-banner-text" id="indexing-banner-active-text"
               >Achtung: Indexierung aktiv</span
             >
             <button
@@ -591,9 +601,14 @@
               Abbrechen
             </button>
           </span>
-          <span id="index-action-status" class="action-status" hidden="hidden"></span>
+          <span
+            id="index-action-status"
+            class="action-status"
+            hidden="hidden"
+          ></span>
         </div>
 
+        <!-- Papers move between columns through index and unindex actions. -->
         <section
           class="index-board"
           aria-label="Indexierte und nicht indexierte Paper"

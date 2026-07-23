@@ -3,6 +3,12 @@ declare namespace Zotero {
   type Item = any;
 }
 
+/**
+ * Determines whether a Zotero item can appear in the paper index manager.
+ *
+ * @param item - Zotero item to classify.
+ * @returns True for regular items and standalone PDF attachments.
+ */
 export function isIndexableItem(item: Zotero.Item): boolean {
   if (isDeletedItem(item)) {
     return false;
@@ -30,6 +36,12 @@ export function isIndexableItem(item: Zotero.Item): boolean {
   return Boolean(item.isPDFAttachment?.());
 }
 
+/**
+ * Reads Zotero's internal deletion flag without querying an invalid field.
+ *
+ * @param item - Zotero item to inspect.
+ * @returns True when Zotero marks the item as deleted.
+ */
 export function isDeletedItem(item: Zotero.Item): boolean {
   try {
     // item.deleted is the correct internal Zotero property.
@@ -40,6 +52,12 @@ export function isDeletedItem(item: Zotero.Item): boolean {
   }
 }
 
+/**
+ * Ensures item data is loaded and falls back to fetching a fresh Zotero item.
+ *
+ * @param item - Potentially partially loaded Zotero item.
+ * @returns Fully loaded replacement when available, otherwise the original item.
+ */
 export async function loadItemCompletely(
   item: Zotero.Item,
 ): Promise<Zotero.Item> {
@@ -58,6 +76,12 @@ export async function loadItemCompletely(
   }
 }
 
+/**
+ * Resolves an item's title, using an attachment filename as a fallback.
+ *
+ * @param item - Zotero item whose display title is needed.
+ * @returns Displayable title or a generic fallback.
+ */
 export function getItemTitle(item: Zotero.Item): string {
   const title = getItemField(item, "title", "");
   if (title) {
@@ -72,6 +96,14 @@ export function getItemTitle(item: Zotero.Item): string {
   }
 }
 
+/**
+ * Safely reads a Zotero metadata field.
+ *
+ * @param item - Zotero item containing the field.
+ * @param field - Zotero field name to read.
+ * @param fallback - Value returned when the field is empty or inaccessible.
+ * @returns String field value or the supplied fallback.
+ */
 export function getItemField(
   item: Zotero.Item,
   field: string,
@@ -85,6 +117,12 @@ export function getItemField(
   }
 }
 
+/**
+ * Formats up to three creator names for an index-manager row.
+ *
+ * @param item - Zotero item whose creators should be displayed.
+ * @returns Comma-separated creator names or a generic fallback.
+ */
 export function getItemCreators(item: Zotero.Item): string {
   try {
     const creators = item.getCreators?.();
@@ -104,6 +142,12 @@ export function getItemCreators(item: Zotero.Item): string {
   }
 }
 
+/**
+ * Resolves a concise item-type label and normalizes PDF attachments.
+ *
+ * @param item - Zotero item whose type should be displayed.
+ * @returns Item-type label for the index manager.
+ */
 export function getItemType(item: Zotero.Item): string {
   if (item.isPDFAttachment?.()) {
     return "PDF";

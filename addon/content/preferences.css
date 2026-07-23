@@ -1,3 +1,4 @@
+/* Keep the preference-pane icon within Zotero's compact header geometry. */
 img[src$="LogoPlugin.png"],
 image[src$="LogoPlugin.png"] {
   align-self: center;
@@ -10,6 +11,7 @@ image[src$="LogoPlugin.png"] {
   width: auto !important;
 }
 
+/* Page width, major settings sections, and section headings. */
 .zaia-pref-root {
   color: var(--text-primary, inherit);
   max-width: 780px;
@@ -56,6 +58,7 @@ image[src$="LogoPlugin.png"] {
   margin: 0;
 }
 
+/* Labels, inputs, selects, checkboxes, and keyboard focus feedback. */
 .zaia-pref-field {
   display: grid;
   gap: 0.4rem;
@@ -113,6 +116,7 @@ image[src$="LogoPlugin.png"] {
   margin-block-start: 0.1rem;
 }
 
+/* Command buttons and live connection/setup status messages. */
 .zaia-pref-actions {
   align-items: center;
   display: flex;
@@ -147,6 +151,7 @@ image[src$="LogoPlugin.png"] {
   color: var(--accent-blue, #1f6feb);
 }
 
+/* Collapsible advanced settings and contextual notices. */
 .zaia-pref-secondary {
   border: 1px solid var(--border-color, rgba(0, 0, 0, 0.16));
   border-radius: 6px;
@@ -186,6 +191,7 @@ image[src$="LogoPlugin.png"] {
   width: min(100%, 36rem);
 }
 
+/* Read-only and build metadata displayed at the bottom of the pane. */
 .zaia-pref-readonly {
   align-items: center;
   display: flex;
@@ -242,6 +248,7 @@ image[src$="LogoPlugin.png"] {
   padding-block-start: 1.35rem;
 }
 
+/* Stack controls and metadata on narrow preference panes. */
 @media (max-width: 560px) {
   .zaia-pref-root {
     padding-inline-end: 0.25rem;

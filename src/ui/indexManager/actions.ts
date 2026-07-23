@@ -34,6 +34,16 @@ import {
 
 declare const Zotero: any;
 
+/**
+ * Reloads Zotero papers, index membership, filters, and selections.
+ *
+ * @param window - Index manager dialog window.
+ * @param elements - Required index manager controls.
+ * @param state - Mutable index manager state.
+ * @param vectorStoreService - Vector store used to resolve indexed item IDs.
+ * @param backgroundIndexerService - Background indexer used for running state.
+ * @returns Promise resolved after the manager has been refreshed.
+ */
 export async function reloadPapers(
   window: Window,
   elements: IndexManagerElements,
@@ -77,6 +87,12 @@ export async function reloadPapers(
   }
 }
 
+/**
+ * Collects indexable papers from every accessible Zotero library.
+ *
+ * @param vectorStoreService - Vector store used to mark indexed papers.
+ * @returns Available library scopes and sorted paper records.
+ */
 export async function collectPapers(
   vectorStoreService: VectorStore,
 ): Promise<{ libraries: LibraryFilterOption[]; papers: PaperRecord[] }> {
@@ -142,6 +158,15 @@ export async function collectPapers(
   };
 }
 
+/**
+ * Enqueues selected unindexed papers for background indexing.
+ *
+ * @param window - Index manager dialog window.
+ * @param elements - Required index manager controls.
+ * @param state - Mutable index manager state.
+ * @param backgroundIndexerService - Background indexer receiving item IDs.
+ * @returns Promise resolved after selected papers have been queued.
+ */
 export async function indexSelectedPapers(
   window: Window,
   elements: IndexManagerElements,
@@ -189,6 +214,15 @@ export async function indexSelectedPapers(
   }
 }
 
+/**
+ * Removes selected indexed papers from the vector store after confirmation.
+ *
+ * @param window - Index manager dialog window.
+ * @param elements - Required index manager controls.
+ * @param state - Mutable index manager state.
+ * @param vectorStoreService - Vector store from which papers are removed.
+ * @returns Promise resolved after selected papers have been removed.
+ */
 export async function unindexSelectedPapers(
   window: Window,
   elements: IndexManagerElements,
@@ -246,6 +280,15 @@ export async function unindexSelectedPapers(
   }
 }
 
+/**
+ * Rebuilds the vector index for all currently selected Zotero libraries.
+ *
+ * @param window - Index manager dialog window.
+ * @param elements - Required index manager controls.
+ * @param state - Mutable index manager state.
+ * @param backgroundIndexerService - Background indexer performing the rebuild.
+ * @returns Promise resolved once the rebuild has been started.
+ */
 export async function rebuildIndex(
   window: Window,
   elements: IndexManagerElements,
@@ -325,6 +368,15 @@ export async function rebuildIndex(
   }
 }
 
+/**
+ * Clears the complete vector index without deleting Zotero items.
+ *
+ * @param window - Index manager dialog window.
+ * @param elements - Required index manager controls.
+ * @param state - Mutable index manager state.
+ * @param vectorStoreService - Vector store to clear.
+ * @returns Promise resolved after the vector index has been cleared.
+ */
 export async function clearIndex(
   window: Window,
   elements: IndexManagerElements,
@@ -357,6 +409,15 @@ export async function clearIndex(
   }
 }
 
+/**
+ * Offers a one-time full-library indexing prompt to first-time users.
+ *
+ * @param window - Index manager dialog window.
+ * @param elements - Required index manager controls.
+ * @param state - Mutable index manager state.
+ * @param backgroundIndexerService - Background indexer used when confirmed.
+ * @returns Promise resolved after the prompt decision has been handled.
+ */
 export async function maybeShowInitialIndexPrompt(
   window: Window,
   elements: IndexManagerElements,
@@ -397,6 +458,11 @@ export async function maybeShowInitialIndexPrompt(
     });
 }
 
+/**
+ * Reads whether the one-time initial indexing prompt is still pending.
+ *
+ * @returns True when the prompt should be displayed.
+ */
 export function shouldShowInitialIndexPrompt(): boolean {
   try {
     return (
@@ -410,10 +476,22 @@ export function shouldShowInitialIndexPrompt(): boolean {
   }
 }
 
+/**
+ * Persists that the initial indexing prompt has already been displayed.
+ *
+ * @returns Nothing.
+ */
 export function markInitialIndexPromptShown(): void {
   Zotero.Prefs.set(`${config.prefsPrefix}.initialIndexPromptShown`, true, true);
 }
 
+/**
+ * Renders an accessible library-selection dialog for initial indexing.
+ *
+ * @param window - Index manager dialog window hosting the overlay.
+ * @param libraries - Zotero libraries offered for selection.
+ * @returns Prompt result containing confirmation and selected library IDs.
+ */
 export function showInitialIndexPrompt(
   window: Window,
   libraries: LibraryFilterOption[],
@@ -494,6 +572,12 @@ export function showInitialIndexPrompt(
   });
 }
 
+/**
+ * Forwards an unknown UI error to Zotero's error log.
+ *
+ * @param error - Error-like value to record.
+ * @returns Nothing.
+ */
 export function logError(error: unknown): void {
   Zotero.logError(error instanceof Error ? error : new Error(String(error)));
 }
