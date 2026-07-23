@@ -371,7 +371,7 @@
         display: none;
       }
 
-      /* First-use library selection modal shown before initial indexing. */
+      /* Library selection modal used for initial indexing and index rebuilds. */
       .initial-index-prompt-backdrop {
         position: fixed;
         inset: 0;
@@ -390,7 +390,7 @@
         background: var(--zaia-surface);
         color: var(--zaia-text);
         display: grid;
-        grid-template-rows: auto minmax(0, 1fr) auto;
+        grid-template-rows: auto auto minmax(0, 1fr) auto;
         overflow: hidden;
         box-shadow: 0 12px 34px color-mix(in srgb, CanvasText 18%, transparent);
       }
@@ -401,6 +401,17 @@
         border-bottom: 1px solid var(--zaia-border);
         font-size: 1.08rem;
         letter-spacing: 0;
+      }
+
+      .initial-index-prompt-description {
+        margin: 0;
+        padding: 14px 20px 0;
+        color: var(--zaia-muted);
+        line-height: 1.4;
+      }
+
+      .initial-index-prompt-description[hidden] {
+        display: none;
       }
 
       .initial-index-library-list {
