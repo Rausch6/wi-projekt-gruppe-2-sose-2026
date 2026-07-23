@@ -144,8 +144,8 @@
 Zotero unterstützt die Sammlung, Strukturierung und Zitation wissenschaftlicher
 Literatur. Für inhaltliche Fragen, Vergleiche oder Zusammenfassungen müssen
 Nutzer:innen ihre Quellen jedoch häufig in ein separates KI-Werkzeug übertragen.
-Dadurch entstehen Medienbrüche: Dokumente werden mehrfach ausgewählt oder
-hochgeladen, der Bezug zur bestehenden Bibliotheksstruktur geht verloren und bei
+Dadurch müssen Dokumente mehrfach ausgewählt oder
+hochgeladen werden, der Bezug zur bestehenden Bibliotheksstruktur geht verloren und bei
 externen Diensten ist nicht immer transparent, welche Inhalte den lokalen
 Arbeitsplatz verlassen.
 
@@ -254,7 +254,7 @@ ZAIA selbst gestartet hat.
 \subsection{Kontextauswahl, Indexierung und Retrieval}
 
 ZAIA extrahiert Text aus PDF-Anhängen und zerlegt ihn standardmäßig in Abschnitte
-von ungefähr 512 Tokens mit 100 Tokens Überlappung. Abstrakte werden als eigene
+von ungefähr 1024 Tokens mit 100 Tokens Überlappung. Abstrakte werden als eigene
 Quellen berücksichtigt. Für die semantische Suche erzeugt das lokale
 Embedding-Modell \texttt{bge-m3:latest} Vektoren mit 1024 Dimensionen. Die
 Dokumente und Vektoren werden in einer lokalen Orama-Datenbank gespeichert. Je
@@ -353,7 +353,7 @@ Betriebsschicht & Readiness-Prüfung, signaturgeprüftes Setup,
 
 \begin{enumerate}
   \item Der Chat-Controller validiert Eingabe und Betriebsbereitschaft des
-    gewählten Providers sowie -- falls aktiviert -- des Embedding-Dienstes.
+    gewählten Providers sowie, falls aktiviert, des Embedding-Dienstes.
   \item ZAIA persistiert den Nutzer-Prompt und ermittelt automatisch markierte
     sowie manuell angehängte Paper.
   \item Wenn kein Kontext erzwungen wurde, bewertet der Kontext-Router die
@@ -457,7 +457,7 @@ Kontext und Retrieval & Embedding-Fallback, Kontext-Router,
 Index-Manager & Auswahlzustand, UI-Aktionen, Abbruch und Indexsteuerung \\
 Integration & Provider-Pipeline sowie Paper-Kontext vom Zotero-Mock bis zum
   Retrieval-Ergebnis \\
-Build & Add-on-Bündelung, XPI-Erzeugung und \texttt{tsc --noEmit} \\
+Build & Add-on-Bündelung, XPI-Erzeugung und TypeScript-Typprüfung \\
 \bottomrule
 \end{tabularx}
 
@@ -491,7 +491,7 @@ Hochschulen & Offen lizenzierbare, lokal betreibbare Ergänzung zu
 \bottomrule
 \end{tabularx}
 
-Der wichtigste qualitative Nutzen liegt in der Vermeidung von Medienbrüchen.
+Der wesentliche qualitative Nutzen liegt in einer Umsetzung eines zentralen Systems.
 Quellen müssen nicht erneut hochgeladen oder außerhalb Zotero organisiert
 werden. Der Kontext kann aus Auswahl, Metadaten und Bibliotheksindex erzeugt
 werden; das verkürzt insbesondere wiederkehrende Orientierungs- und
@@ -591,11 +591,11 @@ bibliotheksbezogener Kontextauswahl, semantischem Retrieval und lokaler
 Chat-Persistenz. Besonders relevant sind die durchgängige Integration in den
 Literaturbestand, die Unterstützung von Gruppenbibliotheken sowie die Wahl
 zwischen Komfort und lokalem Datenschutz. Der erfolgreiche Build und 74
-bestandene automatisierte Tests belegen, dass nicht nur ein Oberflächenentwurf,
-sondern ein technisch zusammenhängender Prototyp vorliegt.
+bestandene automatisierte Tests belegen, dass ein technisch zusammenhängender
+Prototyp vorliegt.
 
 Gleichzeitig bleibt ZAIA ein Forschungs- und Lehrprojekt. Die Aussagequalität
-hängt von Modell, Prompt, Index und PDF-Text ab; KI-Antworten ersetzen keine
+hängt von Modell, Prompt, Index und PDF-Text ab - KI-Antworten ersetzen keine
 Prüfung der Originalquellen. Für eine nachhaltige Weiterführung sollten die
 nächsten Schritte in folgender Reihenfolge bearbeitet werden:
 \begin{enumerate}
@@ -612,8 +612,8 @@ nächsten Schritte in folgender Reihenfolge bearbeitet werden:
 \end{enumerate}
 
 Damit bietet das Projekt eine tragfähige Grundlage für weitere Entwicklung. Der
-größte nächste Erkenntnisgewinn liegt nicht in zusätzlichen Einzel-Features,
-sondern in der systematischen Prüfung, wie zuverlässig, verständlich und
+größte nächste Erkenntnisgewinn liegt vor allem in der systematischen
+Prüfung, wie zuverlässig, verständlich und
 zeitsparend ZAIA im tatsächlichen wissenschaftlichen Arbeitsprozess ist.
 
 \end{document}
